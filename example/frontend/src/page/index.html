@@ -1,0 +1,233 @@
+{% extends 'layout/layout.html' %}
+
+{% block title %}ToToolManager — AI-Powered Service Management{% endblock %}
+
+{% block content %}
+<!-- Hero -->
+<section class="relative overflow-hidden">
+    <div class="absolute inset-0 bg-gradient-to-br from-indigo-50 via-white to-purple-50"></div>
+    <div class="relative max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-20 pb-24 text-center">
+        <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-indigo-100 text-indigo-700 text-sm font-medium mb-8">
+            <span class="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>
+            Now with AI Agent Integration
+        </div>
+        <h1 class="text-5xl sm:text-6xl font-extrabold text-gray-900 tracking-tight mb-6">
+            Turn your Python services<br>
+            <span class="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-purple-600">into AI agent tools</span>
+        </h1>
+        <p class="text-xl text-gray-500 max-w-2xl mx-auto mb-10 leading-relaxed">
+            <strong class="text-gray-700">to_tool_manager</strong> converts plain Python service classes
+            into tool specifications that any LLM can call. No framework lock-in. One service = one tool.
+        </p>
+        <div class="flex justify-center gap-4">
+            <a href="/login" class="inline-flex items-center px-8 py-3.5 text-base font-semibold rounded-lg text-white bg-indigo-600 hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-all hover:shadow-xl hover:-translate-y-0.5">
+                Open Admin Panel
+                <svg class="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+            </a>
+            <a href="https://github.com" target="_blank" class="inline-flex items-center px-8 py-3.5 text-base font-semibold rounded-lg text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 transition-all">
+                <svg class="mr-2 w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+                View Source
+            </a>
+        </div>
+    </div>
+</section>
+
+<!-- Features -->
+<section class="py-20 bg-white border-y border-gray-100">
+    <div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="text-center mb-14">
+            <h2 class="text-3xl font-bold text-gray-900 mb-3">Why to_tool_manager?</h2>
+            <p class="text-gray-500 text-lg max-w-xl mx-auto">Stop writing boilerplate tool adapters. Write Python services, get AI tools for free.</p>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div class="p-6 rounded-xl border border-gray-200 hover:border-indigo-300 hover:shadow-md transition-all">
+                <div class="w-11 h-11 bg-indigo-100 rounded-lg flex items-center justify-center mb-4">
+                    <svg class="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 mb-2">Service = Tool</h3>
+                <p class="text-gray-500 text-sm leading-relaxed">Each Python class becomes exactly one AI tool. No manual schema writing, no adapter code.</p>
+            </div>
+            <div class="p-6 rounded-xl border border-gray-200 hover:border-indigo-300 hover:shadow-md transition-all">
+                <div class="w-11 h-11 bg-green-100 rounded-lg flex items-center justify-center mb-4">
+                    <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 mb-2">Batch Operations</h3>
+                <p class="text-gray-500 text-sm leading-relaxed">Send multiple operations in a single tool call. Create a user AND place an order at once.</p>
+            </div>
+            <div class="p-6 rounded-xl border border-gray-200 hover:border-indigo-300 hover:shadow-md transition-all">
+                <div class="w-11 h-11 bg-purple-100 rounded-lg flex items-center justify-center mb-4">
+                    <svg class="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/></svg>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 mb-2">AI Agent Ready</h3>
+                <p class="text-gray-500 text-sm leading-relaxed">Integrate with pydantic-ai, FastMCP, or raw OpenAI/Anthropic tool calls. Framework agnostic.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Code Example: Define Service -->
+<section class="py-20 bg-gray-50">
+    <div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="text-center mb-14">
+            <h2 class="text-3xl font-bold text-gray-900 mb-3">How it works</h2>
+            <p class="text-gray-500 text-lg">Three steps: define your service, register it, and call it.</p>
+        </div>
+
+        <!-- Step 1 -->
+        <div class="mb-16">
+            <div class="flex items-center gap-3 mb-4">
+                <span class="flex items-center justify-center w-8 h-8 rounded-full bg-indigo-600 text-white text-sm font-bold">1</span>
+                <h3 class="text-xl font-semibold text-gray-900">Define your Python service</h3>
+            </div>
+            <div class="bg-gray-900 rounded-xl overflow-hidden shadow-lg">
+                <div class="flex items-center gap-2 px-4 py-3 bg-gray-800 border-b border-gray-700">
+                    <span class="w-3 h-3 rounded-full bg-red-400"></span>
+                    <span class="w-3 h-3 rounded-full bg-yellow-400"></span>
+                    <span class="w-3 h-3 rounded-full bg-green-400"></span>
+                    <span class="ml-3 text-gray-400 text-xs font-mono">service/user.py</span>
+                </div>
+                <pre class="p-6 text-sm font-mono text-gray-300 overflow-x-auto leading-relaxed"><code><span class="text-purple-400">class</span> <span class="text-yellow-300">UserService</span>:
+    <span class="text-gray-400">"""Manages user accounts."""</span>
+
+    <span class="text-purple-400">def</span> <span class="text-blue-300">__init__</span>(self, repo: UserRepository):
+        self._repo = repo
+
+    <span class="text-purple-400">def</span> <span class="text-blue-300">create_user</span>(self, user_name: str, email: str):
+        <span class="text-gray-400">"""Creates a new user account."""</span>
+        user = User(user_name=user_name, email=email)
+        self._repo.add(user)
+        <span class="text-purple-400">return</span> user
+
+    <span class="text-purple-400">def</span> <span class="text-blue-300">get_users</span>(self):
+        <span class="text-gray-400">"""Returns all users."""</span>
+        <span class="text-purple-400">return</span> self._repo.list()</code></pre>
+            </div>
+        </div>
+
+        <!-- Step 2 -->
+        <div class="mb-16">
+            <div class="flex items-center gap-3 mb-4">
+                <span class="flex items-center justify-center w-8 h-8 rounded-full bg-indigo-600 text-white text-sm font-bold">2</span>
+                <h3 class="text-xl font-semibold text-gray-900">Register it with to_tool_manager</h3>
+            </div>
+            <div class="bg-gray-900 rounded-xl overflow-hidden shadow-lg">
+                <div class="flex items-center gap-2 px-4 py-3 bg-gray-800 border-b border-gray-700">
+                    <span class="w-3 h-3 rounded-full bg-red-400"></span>
+                    <span class="w-3 h-3 rounded-full bg-yellow-400"></span>
+                    <span class="w-3 h-3 rounded-full bg-green-400"></span>
+                    <span class="ml-3 text-gray-400 text-xs font-mono">controller/__init__.py</span>
+                </div>
+                <pre class="p-6 text-sm font-mono text-gray-300 overflow-x-auto leading-relaxed"><code><span class="text-purple-400">from</span> <span class="text-green-400">to_tool_manager</span> <span class="text-purple-400">import</span> Service, ErrorMap
+
+<span class="text-purple-400">def</span> <span class="text-blue-300">build_user_service</span>(session) -> Service:
+    repo = UserRepository(session)
+    <span class="text-purple-400">return</span> Service(
+        name=<span class="text-green-300">"user_service"</span>,
+        service=UserService,
+        description=<span class="text-green-300">"Manages user accounts."</span>,
+        error_map=(
+            ErrorMap()
+            .map(NotFoundException, category=<span class="text-green-300">"not_found"</span>)
+            .map(AlreadyExistsException, category=<span class="text-green-300">"already_exists"</span>)
+        ),
+        args=(repo,),
+    )</code></pre>
+            </div>
+        </div>
+
+        <!-- Step 3 -->
+        <div class="mb-8">
+            <div class="flex items-center gap-3 mb-4">
+                <span class="flex items-center justify-center w-8 h-8 rounded-full bg-indigo-600 text-white text-sm font-bold">3</span>
+                <h3 class="text-xl font-semibold text-gray-900">The LLM calls your service as a tool</h3>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Tool call -->
+                <div class="bg-gray-900 rounded-xl overflow-hidden shadow-lg">
+                    <div class="flex items-center gap-2 px-4 py-3 bg-gray-800 border-b border-gray-700">
+                        <span class="w-3 h-3 rounded-full bg-red-400"></span>
+                        <span class="w-3 h-3 rounded-full bg-yellow-400"></span>
+                        <span class="w-3 h-3 rounded-full bg-green-400"></span>
+                        <span class="ml-3 text-gray-400 text-xs font-mono">LLM tool call</span>
+                    </div>
+                    <pre class="p-6 text-sm font-mono text-gray-300 overflow-x-auto leading-relaxed"><code>{
+  <span class="text-green-300">"tool"</span>: <span class="text-green-300">"user_service"</span>,
+  <span class="text-green-300">"operations"</span>: [
+    {
+      <span class="text-green-300">"method"</span>: <span class="text-green-300">"create_user"</span>,
+      <span class="text-green-300">"args"</span>: {
+        <span class="text-green-300">"user_name"</span>: <span class="text-green-300">"David"</span>,
+        <span class="text-green-300">"email"</span>: <span class="text-green-300">"david@example.com"</span>
+      }
+    }
+  ]
+}</code></pre>
+                </div>
+                <!-- Response -->
+                <div class="bg-gray-900 rounded-xl overflow-hidden shadow-lg">
+                    <div class="flex items-center gap-2 px-4 py-3 bg-gray-800 border-b border-gray-700">
+                        <span class="w-3 h-3 rounded-full bg-red-400"></span>
+                        <span class="w-3 h-3 rounded-full bg-yellow-400"></span>
+                        <span class="w-3 h-3 rounded-full bg-green-400"></span>
+                        <span class="ml-3 text-gray-400 text-xs font-mono">Response</span>
+                    </div>
+                    <pre class="p-6 text-sm font-mono text-gray-300 overflow-x-auto leading-relaxed"><code>{
+  <span class="text-green-300">"content"</span>: [
+    {
+      <span class="text-green-300">"method"</span>: <span class="text-green-300">"create_user"</span>,
+      <span class="text-green-300">"success"</span>: <span class="text-yellow-300">true</span>,
+      <span class="text-green-300">"result"</span>: {
+        <span class="text-green-300">"user_id"</span>: <span class="text-green-300">"a1b2c3..."</span>,
+        <span class="text-green-300">"user_name"</span>: <span class="text-green-300">"David"</span>,
+        <span class="text-green-300">"email"</span>: <span class="text-green-300">"david@example.com"</span>
+      }
+    }
+  ]
+}</code></pre>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Framework Support -->
+<section class="py-20 bg-white">
+    <div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+        <h2 class="text-3xl font-bold text-gray-900 mb-4">Works with your stack</h2>
+        <p class="text-gray-500 text-lg mb-10 max-w-xl mx-auto">Use the adapter that fits your agent framework. The core library has zero hard dependencies.</p>
+        <div class="flex justify-center gap-6 flex-wrap">
+            <div class="flex items-center gap-2 px-5 py-3 rounded-lg border border-gray-200 bg-gray-50">
+                <span class="text-sm font-semibold text-gray-700">pydantic-ai</span>
+            </div>
+            <div class="flex items-center gap-2 px-5 py-3 rounded-lg border border-gray-200 bg-gray-50">
+                <span class="text-sm font-semibold text-gray-700">FastMCP</span>
+            </div>
+            <div class="flex items-center gap-2 px-5 py-3 rounded-lg border border-gray-200 bg-gray-50">
+                <span class="text-sm font-semibold text-gray-700">OpenAI API</span>
+            </div>
+            <div class="flex items-center gap-2 px-5 py-3 rounded-lg border border-gray-200 bg-gray-50">
+                <span class="text-sm font-semibold text-gray-700">Anthropic API</span>
+            </div>
+            <div class="flex items-center gap-2 px-5 py-3 rounded-lg border border-gray-200 bg-gray-50">
+                <span class="text-sm font-semibold text-gray-700">Raw JSON</span>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- CTA -->
+<section class="py-20 bg-gradient-to-r from-indigo-600 to-purple-600">
+    <div class="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+        <h2 class="text-3xl font-bold text-white mb-4">Ready to get started?</h2>
+        <p class="text-indigo-100 text-lg mb-8">Install with pip and try the demo in minutes.</p>
+        <div class="inline-flex items-center bg-gray-900 rounded-lg px-6 py-3 mb-8 font-mono text-sm text-green-400">
+            <span class="text-gray-500 mr-2">$</span> pip install to_tool_manager
+        </div>
+        <br>
+        <a href="/login" class="inline-flex items-center px-8 py-3.5 text-base font-semibold rounded-lg text-indigo-600 bg-white hover:bg-indigo-50 shadow-lg transition-all hover:shadow-xl hover:-translate-y-0.5">
+            Try the Demo
+            <svg class="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+        </a>
+    </div>
+</section>
+{% endblock %}

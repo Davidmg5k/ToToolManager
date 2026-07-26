@@ -1,0 +1,18 @@
+{% extends 'layout/layout.html' %}
+
+{% block body %}
+<div class="min-h-full" x-data="{ sidebarOpen: false }">
+    {% include 'component/navbar.html' %}
+
+    <div class="flex">
+        {% include 'component/sidebar.html' %}
+
+        <main class="flex-1 py-6 px-4 sm:px-6 lg:px-8">
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+</div>
+
+<script src="/static/js/app.js"></script>
+{% block scripts %}{% endblock %}
+{% endblock %}

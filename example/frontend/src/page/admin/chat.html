@@ -1,0 +1,77 @@
+{% extends 'template/admin.html' %}
+
+{% block title %}AI Chat - Admin{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto">
+    <h1 class="text-2xl font-bold text-gray-900 mb-6">AI Chat</h1>
+
+    <div class="bg-white shadow-sm border border-gray-200 rounded-lg overflow-hidden flex flex-col" style="height: calc(100vh - 12rem);">
+        <div id="chat-messages" class="flex-1 overflow-y-auto p-6 space-y-4">
+            <div class="flex justify-start">
+                <div class="bg-gray-100 rounded-lg px-4 py-2 max-w-lg">
+                    <p class="text-sm text-gray-900">Hello! I can help you manage users, orders, inventory, payments, and notifications. What would you like to do?</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="border-t border-gray-200 p-4">
+            <form id="chat-form" hx-post="/api/chat" hx-target="#chat-messages" hx-swap="beforeend"
+                  hx-on::before-request="showUserMessage()"
+                  hx-on::after-request="document.getElementById('chat-input').value = ''">
+                <div class="flex gap-3">
+                    <input type="text" id="chat-input" name="message" placeholder="Type your message..." required
+                           class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
+                           autocomplete="off">
+                    <button type="submit"
+                            class="px-6 py-2 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-500">
+                        Send
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<style>
+    #chat-messages .ai-bubble p { margin: 0.4em 0; font-size: 0.875rem; color: #111827; }
+    #chat-messages .ai-bubble p:first-child { margin-top: 0; }
+    #chat-messages .ai-bubble p:last-child { margin-bottom: 0; }
+    #chat-messages .ai-bubble ul, #chat-messages .ai-bubble ol { margin: 0.4em 0; padding-left: 1.5em; font-size: 0.875rem; color: #111827; }
+    #chat-messages .ai-bubble table { border-collapse: collapse; width: 100%; margin: 0.5em 0; font-size: 0.75rem; }
+    #chat-messages .ai-bubble th, #chat-messages .ai-bubble td { border: 1px solid #d1d5db; padding: 0.35em 0.5em; text-align: left; }
+    #chat-messages .ai-bubble th { background: #f3f4f6; font-weight: 600; }
+    #chat-messages .ai-bubble code { background: #e5e7eb; padding: 0.1em 0.3em; border-radius: 0.25rem; font-size: 0.8em; }
+    #chat-messages .ai-bubble pre { background: #1f2937; color: #e5e7eb; padding: 0.75em; border-radius: 0.5rem; overflow-x: auto; margin: 0.5em 0; }
+    #chat-messages .ai-bubble pre code { background: none; padding: 0; color: inherit; }
+    #chat-messages .ai-bubble strong { font-weight: 600; }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function showUserMessage() {
+        var input = document.getElementById('chat-input');
+        var text = input.value.trim();
+        if (!text) return;
+        var messages = document.getElementById('chat-messages');
+        var div = document.createElement('div');
+        div.className = 'flex justify-end';
+        var bubble = document.createElement('div');
+        bubble.className = 'bg-indigo-600 text-white rounded-lg px-4 py-2 max-w-lg';
+        var p = document.createElement('p');
+        p.className = 'text-sm';
+        p.textContent = text;
+        bubble.appendChild(p);
+        div.appendChild(bubble);
+        messages.appendChild(div);
+        messages.scrollTop = messages.scrollHeight;
+    }
+
+    var chatMessages = document.getElementById('chat-messages');
+    var observer = new MutationObserver(function() {
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    });
+    observer.observe(chatMessages, { childList: true });
+</script>
+{% endblock %}

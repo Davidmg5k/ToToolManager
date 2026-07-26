@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 from inspect import Parameter, Signature
 from typing import Any
 
-from pydantic_ai import Agent
+from pydantic_ai import Agent, models
 
 from to_tool_manager.skills import build_skills_toolset
 
@@ -70,6 +70,13 @@ def _format_error(spec: ToolSpec, error) -> str:
 # ---------------------------------------------------------------------------
 
 def _serialize_content(content: Any) -> str:
+    if isinstance(content, list) and content and isinstance(content[0], dict):
+        headers = list(content[0].keys())
+        lines = ["| " + " | ".join(str(h) for h in headers) + " |"]
+        lines.append("| " + " | ".join(["---"] * len(headers)) + " |")
+        for row in content:
+            lines.append("| " + " | ".join(str(row.get(h, "")) for h in headers) + " |")
+        return "\n".join(lines)
     if isinstance(content, (list, dict)):
         return json.dumps(content, default=str)
     return str(content)
@@ -141,7 +148,7 @@ def to_function_toolset(specs: Sequence[ToolSpec], *, instructions: str | None =
 # ---------------------------------------------------------------------------
 
 def build_agent(
-    model: Any,
+    model: models.KnownModelName,
     manager: Any,
     *,
     output_type: Any = str,
