@@ -8,9 +8,11 @@ a clear error.
 """
 from __future__ import annotations
 
+import functools
 import json
 from collections.abc import AsyncGenerator, Sequence
 from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
 from inspect import Parameter, Signature
 from typing import Any
 
@@ -28,11 +30,19 @@ except ImportError as exc:  # pragma: no cover
         "The core `to_tool_manager` package does not depend on it."
     ) from exc
 
+try:
+    from subagents_pydantic_ai import SubAgentCapability, SubAgentConfig
+
+    _HAS_SUBAGENTS = True
+except ImportError:  # pragma: no cover
+    _HAS_SUBAGENTS = False
+
 from pydantic_ai.settings import ModelSettings
 
 # Re-export streaming types so consumers don't import pydantic-ai directly.
 from pydantic_ai.result import StreamedRunResult, StreamedRunResultSync  # noqa: F401
 
+from to_tool_manager.core.module import Module, _build_services_overview
 from to_tool_manager.core.types import ToolSpec
 
 
@@ -120,6 +130,174 @@ def _build_callable(spec: ToolSpec):
 
 
 # ---------------------------------------------------------------------------
+# Module -> real sub-agent (requires the optional subagents-pydantic-ai pkg)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class SubAgentDeps:
+    """Default `deps` used when a manager has one or more `Module`s and the
+    caller didn't provide their own `deps_type` to `build_agent`.
+
+    `subagents-pydantic-ai` requires `RunContext.deps` to satisfy
+    `SubAgentDepsProtocol` (a `subagents` dict + a `clone_for_subagent`
+    method) -- if `deps` is ever `None` at call time, its `task` tool
+    crashes with `AttributeError: 'NoneType' object has no attribute
+    'clone_for_subagent'`. This is exactly what happens with a bare
+    `Agent(...)` from pydantic-ai: EVERY entrypoint (`run`, `run_sync`,
+    `run_stream`, `iter`, `to_web`, `to_cli`, ...) defaults `deps=None`
+    unless the caller passes one explicitly.
+
+    Exported publicly so a caller with their OWN deps class can combine
+    the two shapes (add a `subagents: dict[str, Any]` field and a
+    `clone_for_subagent` method to their own dataclass) instead of using
+    this default -- in that case, pass `deps_type=YourDeps` to
+    `build_agent` and `to_tool_manager` won't touch it.
+    """
+
+    subagents: dict[str, Any] = field(default_factory=dict)
+
+    def clone_for_subagent(self, max_depth: int = 0) -> "SubAgentDeps":
+        return SubAgentDeps(subagents={} if max_depth <= 0 else self.subagents)
+
+
+# Every Agent method that accepts a `deps` kwarg, split by where `deps`
+# sits in the signature -- `run`/`run_sync`/`run_stream`/`iter`/`to_web`
+# declare it keyword-only, so it can never arrive positionally; `to_cli`/
+# `to_cli_sync` declare it as their very FIRST positional-or-keyword
+# parameter, so an explicit positional call must be respected too.
+_KEYWORD_ONLY_DEPS_METHODS = (
+    "run",
+    "run_sync",
+    "run_stream",
+    "run_stream_events",
+    "run_stream_sync",
+    "iter",
+    "to_web",
+)
+_LEADING_POSITIONAL_DEPS_METHODS = ("to_cli", "to_cli_sync")
+
+
+def _with_default_deps_keyword(method: Any) -> Any:
+    """Wraps a method whose `deps` parameter is keyword-only: inject the
+    instance's default deps only if the caller didn't pass `deps=...`
+    at all (it can't have been passed positionally for these methods).
+    """
+
+    @functools.wraps(method)
+    def wrapper(self: "_AutoDepsAgent", *args: Any, **kwargs: Any) -> Any:
+        if kwargs.get("deps") is None and self._to_tool_manager_default_deps is not None:
+            kwargs["deps"] = self._to_tool_manager_default_deps
+        return method(self, *args, **kwargs)
+
+    return wrapper
+
+
+def _with_default_deps_leading_positional(method: Any) -> Any:
+    """Wraps a method whose `deps` parameter is the first positional
+    argument (`to_cli`/`to_cli_sync`): only inject when the caller
+    supplied neither a positional `deps` nor `deps=...`.
+    """
+
+    @functools.wraps(method)
+    def wrapper(self: "_AutoDepsAgent", *args: Any, **kwargs: Any) -> Any:
+        if not args and kwargs.get("deps") is None and self._to_tool_manager_default_deps is not None:
+            kwargs["deps"] = self._to_tool_manager_default_deps
+        return method(self, *args, **kwargs)
+
+    return wrapper
+
+
+class _AutoDepsAgent(Agent):
+    """An `Agent` subclass that transparently supplies a default `deps`
+    instance to every deps-accepting entrypoint when the caller didn't
+    pass one -- so `agent.to_web()`, `agent.run(...)`, `agent.to_cli()`,
+    etc. all work out of the box the moment a `Module` is registered,
+    without the caller needing to know anything about
+    `subagents-pydantic-ai`'s deps protocol. Behaves as a completely
+    ordinary `Agent` in every other respect (same `__slots__`-free
+    subclassing pydantic-ai itself allows); `build_agent` only returns
+    this instead of a plain `Agent` when there's at least one `Module`
+    AND the caller didn't ask for a custom `deps_type`.
+    """
+
+    _to_tool_manager_default_deps: Any = None
+
+    for _name in _KEYWORD_ONLY_DEPS_METHODS:
+        locals()[_name] = _with_default_deps_keyword(getattr(Agent, _name))
+    for _name in _LEADING_POSITIONAL_DEPS_METHODS:
+        locals()[_name] = _with_default_deps_leading_positional(getattr(Agent, _name))
+    del _name
+
+
+def _default_module_instructions(module: Module) -> str:
+    """Builds a sensible default system prompt for a Module's sub-agent
+    when neither `system_prompt` nor `instructions` was set explicitly --
+    reuses the same services overview used for the legacy dispatch-tool
+    description, so the two code paths stay consistent with each other.
+    """
+    header = (
+        module.description.strip()
+        if module.description and module.description.strip()
+        else f"You are the '{module.name}' specialist agent."
+    )
+    return f"{header}\n\n{_build_services_overview(module.services)}"
+
+
+def _build_subagent_config(module: Module, *, default_model: Any) -> "SubAgentConfig":
+    """Turns a `Module` into a `SubAgentConfig`: its services become that
+    sub-agent's OWN toolset (via the same `to_function_toolset` used for
+    a plain Service toolset), completely isolated from the parent
+    agent's tools -- the parent only ever sees the sub-agent by name and
+    description, never its internal operations.
+    """
+    module_specs = module.sub_manager.tool_specs
+    toolset = to_function_toolset(module_specs)
+
+    config: dict[str, Any] = {
+        "name": module.name,
+        "description": module.description.strip() if module.description else (
+            f"Delegates to the '{module.name}' module "
+            f"({', '.join(s.name for s in module.services)})."
+        ),
+        "instructions": module.system_prompt or module.instructions or _default_module_instructions(module),
+        "toolsets": [toolset],
+    }
+    if module.model is not None:
+        config["model"] = module.model
+    return SubAgentConfig(**config)  # type: ignore[typeddict-item]
+
+
+def _build_subagent_capability(
+    manager: Any,
+    *,
+    default_model: Any,
+    include_general_purpose: bool,
+) -> "SubAgentCapability | None":
+    """Builds ONE `SubAgentCapability` covering every `Module` registered
+    on `manager`, or None if there are no Modules at all -- so `build_agent`
+    never adds an empty/no-op capability to the parent Agent.
+    """
+    modules = list(manager.modules.values())
+    if not modules:
+        return None
+    if not _HAS_SUBAGENTS:
+        names = ", ".join(m.name for m in modules)
+        raise ImportError(
+            f"This manager has Module(s) registered ({names}), which the "
+            "pydantic-ai adapter turns into real sub-agents -- this "
+            "requires the optional 'subagents-pydantic-ai' package. "
+            "Install it with:\n"
+            "    pip install subagents-pydantic-ai\n"
+        )
+    configs = [_build_subagent_config(m, default_model=default_model) for m in modules]
+    return SubAgentCapability(
+        subagents=configs,
+        default_model=default_model,
+        include_general_purpose=include_general_purpose,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Public helpers
 # ---------------------------------------------------------------------------
 
@@ -164,6 +342,7 @@ def build_agent(
     end_strategy: str | None = None,
     defer_model_check: bool = False,
     capabilities: list | None = None,
+    include_general_purpose_subagent: bool = False,
 ) -> Agent:
     """Create a pydantic-ai Agent wired to the manager's tools.
 
@@ -207,11 +386,27 @@ def build_agent(
     defer_model_check:
         Defer model evaluation until first run.
     capabilities:
-        Agent capabilities (e.g. ``SkillsCapability()``).
+        Agent capabilities (e.g. ``SkillsCapability()``). Any registered
+        ``Module`` is automatically turned into its own sub-agent and
+        appended here as part of a single ``SubAgentCapability`` -- no
+        manual wiring needed, this list is only for EXTRA capabilities.
+    include_general_purpose_subagent:
+        Passed straight through to ``SubAgentCapability``. If ``True``,
+        adds a generic fallback sub-agent alongside the ones derived
+        from registered Modules. Defaults to ``False`` because
+        to_tool_manager's model is explicit, named Modules -- not an
+        open-ended delegate.
     """
     from to_tool_manager.core.prompts import build_instructions, build_system_prompt
 
-    tools = to_pydantic_ai_tools(manager.tool_specs)
+    # Service -> plain tool on the parent agent. Module -> real sub-agent
+    # (built below into a SubAgentCapability), so its dispatch-style
+    # ToolSpec is deliberately excluded here -- including it too would
+    # expose the same Module both as a flat tool AND as a sub-agent in
+    # the same run.
+    all_specs = manager.tool_specs
+    service_specs = [s for s in all_specs if s.metadata.get("type") != "module"]
+    tools = to_pydantic_ai_tools(service_specs)
 
     default_settings: ModelSettings = ModelSettings(parallel_tool_calls=True)
     merged_settings: ModelSettings = {**default_settings, **(model_settings or {})}  # type: ignore[typeddict-item]
@@ -223,8 +418,6 @@ def build_agent(
         agent_kwargs["description"] = description
     if retries is not None:
         agent_kwargs["retries"] = retries
-    if deps_type is not None:
-        agent_kwargs["deps_type"] = deps_type
     if tool_timeout is not None:
         agent_kwargs["tool_timeout"] = tool_timeout
     if max_concurrency is not None:
@@ -233,13 +426,37 @@ def build_agent(
         agent_kwargs["end_strategy"] = end_strategy
     if defer_model_check:
         agent_kwargs["defer_model_check"] = defer_model_check
-    if capabilities is not None:
-        agent_kwargs["capabilities"] = capabilities
+
+    resolved_capabilities: list[Any] = list(capabilities or [])
+    subagent_capability = _build_subagent_capability(
+        manager,
+        default_model=model,
+        include_general_purpose=include_general_purpose_subagent,
+    )
+    if subagent_capability is not None:
+        resolved_capabilities.append(subagent_capability)
+
+    # If there's at least one Module and the caller didn't bring their own
+    # deps_type, subagents-pydantic-ai still requires RunContext.deps to
+    # satisfy SubAgentDepsProtocol at call time -- otherwise its `task`
+    # tool crashes with `AttributeError: 'NoneType' object has no
+    # attribute 'clone_for_subagent'` the moment it's invoked, on EVERY
+    # entrypoint that doesn't get an explicit `deps=...` (run, run_sync,
+    # to_web, to_cli, ...). We close that gap for the common case here:
+    # a default SubAgentDeps() is both declared as deps_type AND
+    # auto-injected at call time via _AutoDepsAgent, so it works the same
+    # everywhere without the caller needing to know this protocol exists.
+    agent_cls: type[Agent] = Agent
+    if deps_type is not None:
+        agent_kwargs["deps_type"] = deps_type
+    elif subagent_capability is not None:
+        agent_kwargs["deps_type"] = SubAgentDeps
+        agent_cls = _AutoDepsAgent
 
     all_services_and_modules = list(manager.services.values()) + list(manager.modules.values())
     skills_toolset = build_skills_toolset()
 
-    return Agent(
+    agent = agent_cls(
         model,
         system_prompt=system_prompt if system_prompt is not None else build_system_prompt(all_services_and_modules),
         instructions=instructions or build_instructions(),
@@ -247,8 +464,12 @@ def build_agent(
         output_type=output_type,
         model_settings=merged_settings,
         toolsets=[skills_toolset],
+        capabilities=resolved_capabilities or None,
         **agent_kwargs,
     )
+    if agent_cls is _AutoDepsAgent:
+        agent._to_tool_manager_default_deps = SubAgentDeps()
+    return agent
 
 
 # ---------------------------------------------------------------------------

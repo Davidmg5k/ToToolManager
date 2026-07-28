@@ -1,4 +1,4 @@
-from uuid import UUID
+﻿from uuid import UUID
 
 from app.exception import (
     NotificationDeliveryException,
@@ -79,3 +79,8 @@ class NotificationService:
 
     async def _send_push(self, recipient: str, notification) -> None:
         print(f"[PUSH] To: {recipient} | Body: {notification.body}")
+
+    async def delete_notification(self, data: GetNotification):
+        self.__repo.get_or_raise(data.notification_id, "Notification")
+        self.__repo.delete(data.notification_id)
+        return {"deleted": True}

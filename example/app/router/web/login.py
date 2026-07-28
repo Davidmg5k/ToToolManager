@@ -8,7 +8,7 @@ login_router = APIRouter(tags=["web"])
 
 @login_router.get("/login")
 async def login_page(request: Request):
-    from app.auth import get_current_user
+    from app.security.auth import get_current_user
     user = get_current_user(request)
     if user is not None:
         return RedirectResponse("/admin/dashboard", status_code=302)

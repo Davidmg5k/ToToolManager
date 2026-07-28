@@ -1,4 +1,4 @@
-from uuid import UUID
+﻿from uuid import UUID
 
 from app.exception import (
     ConflictException,
@@ -69,3 +69,8 @@ class PaymentService:
             raise PaymentFailedException(
                 f"Payment processing failed: {exc}", provider="mock_gateway"
             ) from exc
+
+    async def delete_payment(self, data: GetPayment):
+        self.__repo.get_or_raise(data.payment_id, "Payment")
+        self.__repo.delete(data.payment_id)
+        return {"deleted": True}

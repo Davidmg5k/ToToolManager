@@ -1,0 +1,33 @@
+<div x-data="crudResource('{{ resource_id }}')" x-cloak>
+
+    <!-- Header -->
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-900">{{ title }}</h1>
+            <p class="text-sm text-gray-500 mt-0.5" x-show="!loading">
+                <span x-text="filteredItems.length"></span>
+                <span x-text="filteredItems.length === 1 ? 'record' : 'records'"></span>
+                <template x-if="query"><span> matching “<span x-text="query"></span>”</span></template>
+            </p>
+            <p class="text-sm text-gray-400 mt-0.5" x-show="loading">Loading…</p>
+        </div>
+
+        <div class="flex items-center gap-3">
+            <div class="relative">
+                <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z"/>
+                </svg>
+                <input type="search" x-model="query" placeholder="Search {{ title|lower }}…"
+                       class="pl-9 pr-3 py-2 w-48 sm:w-64 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-shadow">
+            </div>
+            <button @click="openCreate()"
+                    class="inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 shadow-sm shadow-indigo-200 transition-all hover:-translate-y-0.5 whitespace-nowrap">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                New {{ singular }}
+            </button>
+        </div>
+    </div>
+
+    {% include 'component/crud-table.html' %}
+    {% include 'component/crud-modal.html' %}
+</div>

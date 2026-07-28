@@ -1,4 +1,4 @@
-from uuid import UUID
+﻿from uuid import UUID
 
 from app.service import OrderService, OrderRepository
 from app.types.order import CreateOrder, GetOrder, UpdateOrder
@@ -25,3 +25,6 @@ class OrderController:
 
     async def list_orders(self, user_id: UUID | None = None):
         return await self.__service.list_orders(user_id)
+
+    async def delete_order(self, order_id: UUID):
+        return await self.__service.delete_order(GetOrder(order_id=order_id))

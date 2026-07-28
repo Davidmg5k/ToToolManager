@@ -1,84 +1,60 @@
-﻿{% extends 'template/admin.html' %}
+{% extends 'template/admin.html' %}
 
 {% block title %}Orders — Admin{% endblock %}
 
-{% block content %}
-<div class="max-w-7xl mx-auto">
-    <div class="flex justify-between items-center mb-6">
-        <h1 class="text-2xl font-bold text-gray-900">Orders</h1>
-        <button onclick="document.getElementById('create-order-modal').classList.remove('hidden')"
-                class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700">
-            + New Order
-        </button>
-    </div>
-
-    <div class="bg-white shadow-sm border border-gray-200 rounded-lg overflow-hidden">
-        <table class="min-w-full divide-y divide-gray-200">
-            <thead class="bg-gray-50">
-                <tr>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Product</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Qty</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-                </tr>
-            </thead>
-            <tbody id="orders-table" class="bg-white divide-y divide-gray-200">
-                <tr><td colspan="6" class="px-6 py-8 text-center text-gray-500">Loading...</td></tr>
-            </tbody>
-        </table>
-    </div>
-
-    <div id="create-order-modal" class="hidden fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50">
-        <div class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
-            <h3 class="text-lg font-semibold text-gray-900 mb-4">Create Order</h3>
-            <form hx-post="/api/order/" hx-target="#orders-table" hx-swap="afterend"
-                  hx-on::after-request="document.getElementById('create-order-modal').classList.add('hidden')">
-                <div class="space-y-4">
-                    <input type="text" name="user_id" placeholder="User ID" required
-                           class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500">
-                    <input type="text" name="product_name" placeholder="Product Name" required
-                           class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500">
-                    <input type="number" name="quantity" placeholder="Quantity" min="1" required
-                           class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500">
-                    <input type="number" name="unit_price" placeholder="Unit Price" step="0.01" min="0" required
-                           class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500">
-                </div>
-                <div class="flex justify-end gap-3 mt-6">
-                    <button type="button" onclick="document.getElementById('create-order-modal').classList.add('hidden')"
-                            class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
-                        Cancel
-                    </button>
-                    <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700">
-                        Create
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
+{% block page_config %}
+<script>
+    window.CRUD_CONFIGS = window.CRUD_CONFIGS || {};
+    window.CRUD_CONFIGS['orders'] = {
+        label: 'Order',
+        endpoint: '/api/order/',
+        idField: 'order_id',
+        itemLabel: (item) => item.product_name,
+        columns: [
+            { key: 'product_name', label: 'Product', sortable: true },
+            { key: 'quantity', label: 'Qty', sortable: true },
+            { key: 'total', label: 'Total', type: 'currency', sortable: true, value: (item) => item.total ?? (item.quantity * item.unit_price) },
+            {
+                key: 'status', label: 'Status', type: 'badge', sortable: true,
+                badgeMap: {
+                    pending: 'bg-yellow-100 text-yellow-800',
+                    confirmed: 'bg-blue-100 text-blue-800',
+                    shipped: 'bg-purple-100 text-purple-800',
+                    delivered: 'bg-green-100 text-green-800',
+                    cancelled: 'bg-red-100 text-red-800',
+                },
+            },
+        ],
+        createFields: [
+            { name: 'user_id', label: 'User ID', type: 'text', required: true, placeholder: 'Paste the customer''s user ID' },
+            { name: 'product_name', label: 'Product name', type: 'text', required: true },
+            { name: 'quantity', label: 'Quantity', type: 'number', required: true, min: 1, default: 1 },
+            { name: 'unit_price', label: 'Unit price', type: 'number', required: true, step: '0.01', min: 0 },
+        ],
+        editFields: [
+            { name: 'product_name', label: 'Product name', type: 'text', required: true },
+            { name: 'quantity', label: 'Quantity', type: 'number', required: true, min: 1 },
+            { name: 'unit_price', label: 'Unit price', type: 'number', required: true, step: '0.01', min: 0 },
+            {
+                name: 'status', label: 'Status', type: 'select', required: true,
+                options: [
+                    { value: 'pending', label: 'Pending' },
+                    { value: 'confirmed', label: 'Confirmed' },
+                    { value: 'shipped', label: 'Shipped' },
+                    { value: 'delivered', label: 'Delivered' },
+                    { value: 'cancelled', label: 'Cancelled' },
+                ],
+            },
+        ],
+    };
+</script>
 {% endblock %}
 
-{% block scripts %}
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    function reloadOrders() {
-        loadTable('orders-table', '/api/order', function(order) {
-            return '<tr>'
-                + '<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">' + order.order_id + '</td>'
-                + '<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">' + order.product_name + '</td>'
-                + '<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">' + order.quantity + '</td>'
-                + '<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">$' + (order.total || (order.quantity * order.unit_price)).toFixed(2) + '</td>'
-                + '<td class="px-6 py-4 whitespace-nowrap text-sm"><span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full '
-                + (order.status === 'pending' ? 'bg-yellow-100 text-yellow-800' : order.status === 'confirmed' ? 'bg-blue-100 text-blue-800' : order.status === 'shipped' ? 'bg-purple-100 text-purple-800' : order.status === 'delivered' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800')
-                + '">' + order.status + '</span></td>'
-                + '<td class="px-6 py-4 whitespace-nowrap text-sm">'
-                + '<button onclick="confirmDelete(\'/api/order/' + order.order_id + '\', reloadOrders)" class="text-red-600 hover:text-red-900">Delete</button>'
-                + '</td></tr>';
-        });
-    }
-    reloadOrders();
-});
-</script>
+{% block content %}
+<div class="max-w-7xl mx-auto">
+    {% set resource_id = 'orders' %}
+    {% set title = 'Orders' %}
+    {% set singular = 'Order' %}
+    {% include 'component/crud-page.html' %}
+</div>
 {% endblock %}

@@ -3,9 +3,22 @@
 
 A Module is a self-contained unit of functionality: it has its own
 services, its own system prompt, and is isolated from other Modules.
-When registered in a ToToolManager, it produces ONE ToolSpec that
-wraps the entire sub-agent — the parent agent calls the Module as a
-single tool and the internal ToToolManager delegates to its services.
+
+What "sub-agent" means depends on the adapter:
+
+- **pydantic-ai adapter** (`adapters.pydantic_ai.build_agent`): a Module
+  becomes a REAL sub-agent -- a `SubAgentConfig` registered on a single
+  `SubAgentCapability`, with this Module's services as that sub-agent's
+  own toolset. The parent LLM delegates a task to it in natural
+  language; the sub-agent's own LLM run decides which of its services'
+  operations to call. This requires the optional `subagents-pydantic-ai`
+  package.
+- **Every other adapter** (raw, fastmcp, ag_ui): there's no framework
+  concept of an LLM sub-agent, so a Module instead produces ONE
+  ToolSpec that wraps its services behind a single batched-operations
+  dispatch call (`build_tool_spec`) -- the calling LLM picks the
+  `{"method": ..., "args": {...}}` operations directly, same as a
+  Service tool, just grouped under one name.
 """
 from __future__ import annotations
 
@@ -137,6 +150,13 @@ class Module:
 
     instructions: str | None = None
     """Dynamic instructions for this module."""
+
+    model: str | None = None
+    """Optional model override for this module when it's registered as a
+    real sub-agent by the pydantic-ai adapter (`adapters.pydantic_ai.
+    build_agent`). If None, the parent agent's model is used. Ignored by
+    every other adapter (raw, fastmcp, ag_ui), since only pydantic-ai has
+    a concept of a sub-agent running its own model."""
 
     middlewares: Sequence[Middleware] = field(default_factory=tuple)
     """Middlewares applied at the tool level for this module.

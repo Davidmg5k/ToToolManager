@@ -1,8 +1,7 @@
 from uuid import UUID
 
 from fastapi import Request, HTTPException
-from fastapi.responses import RedirectResponse
-from sqlmodel import Session, select
+from sqlmodel import Session
 
 from app import engine
 from app.model import User

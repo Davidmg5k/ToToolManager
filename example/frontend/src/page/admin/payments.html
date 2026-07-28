@@ -1,87 +1,63 @@
-﻿{% extends 'template/admin.html' %}
+{% extends 'template/admin.html' %}
 
 {% block title %}Payments — Admin{% endblock %}
 
-{% block content %}
-<div class="max-w-7xl mx-auto">
-    <div class="flex justify-between items-center mb-6">
-        <h1 class="text-2xl font-bold text-gray-900">Payments</h1>
-        <button onclick="document.getElementById('create-payment-modal').classList.remove('hidden')"
-                class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700">
-            + New Payment
-        </button>
-    </div>
-
-    <div class="bg-white shadow-sm border border-gray-200 rounded-lg overflow-hidden">
-        <table class="min-w-full divide-y divide-gray-200">
-            <thead class="bg-gray-50">
-                <tr>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Order</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Method</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-                </tr>
-            </thead>
-            <tbody id="payments-table" class="bg-white divide-y divide-gray-200">
-                <tr><td colspan="6" class="px-6 py-8 text-center text-gray-500">Loading...</td></tr>
-            </tbody>
-        </table>
-    </div>
-
-    <div id="create-payment-modal" class="hidden fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50">
-        <div class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
-            <h3 class="text-lg font-semibold text-gray-900 mb-4">Create Payment</h3>
-            <form hx-post="/api/payment/" hx-target="#payments-table" hx-swap="afterend"
-                  hx-on::after-request="document.getElementById('create-payment-modal').classList.add('hidden')">
-                <div class="space-y-4">
-                    <input type="text" name="order_id" placeholder="Order ID" required
-                           class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500">
-                    <input type="number" name="amount" placeholder="Amount" step="0.01" min="0.01" required
-                           class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500">
-                    <select name="method" required
-                            class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500">
-                        <option value="credit_card">Credit Card</option>
-                        <option value="debit_card">Debit Card</option>
-                        <option value="bank_transfer">Bank Transfer</option>
-                        <option value="cash">Cash</option>
-                    </select>
-                </div>
-                <div class="flex justify-end gap-3 mt-6">
-                    <button type="button" onclick="document.getElementById('create-payment-modal').classList.add('hidden')"
-                            class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
-                        Cancel
-                    </button>
-                    <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700">
-                        Create
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
+{% block page_config %}
+<script>
+    window.CRUD_CONFIGS = window.CRUD_CONFIGS || {};
+    window.CRUD_CONFIGS['payments'] = {
+        label: 'Payment',
+        endpoint: '/api/payment',
+        idField: 'payment_id',
+        itemLabel: (item) => item.order_id,
+        columns: [
+            { key: 'order_id', label: 'Order', sortable: true },
+            { key: 'amount', label: 'Amount', type: 'currency', sortable: true },
+            { key: 'method', label: 'Method', sortable: true },
+            {
+                key: 'status', label: 'Status', type: 'badge', sortable: true,
+                badgeMap: {
+                    completed: 'bg-green-100 text-green-800',
+                    pending: 'bg-yellow-100 text-yellow-800',
+                    refunded: 'bg-purple-100 text-purple-800',
+                    failed: 'bg-red-100 text-red-800',
+                },
+            },
+        ],
+        createFields: [
+            { name: 'order_id', label: 'Order ID', type: 'text', required: true },
+            { name: 'amount', label: 'Amount', type: 'number', required: true, step: '0.01', min: 0.01 },
+            {
+                name: 'method', label: 'Method', type: 'select', required: true,
+                options: [
+                    { value: 'credit_card', label: 'Credit Card' },
+                    { value: 'debit_card', label: 'Debit Card' },
+                    { value: 'bank_transfer', label: 'Bank Transfer' },
+                    { value: 'cash', label: 'Cash' },
+                ],
+            },
+        ],
+        editFields: [
+            { name: 'amount', label: 'Amount', type: 'number', required: true, step: '0.01', min: 0.01 },
+            {
+                name: 'status', label: 'Status', type: 'select', required: true,
+                options: [
+                    { value: 'pending', label: 'Pending' },
+                    { value: 'completed', label: 'Completed' },
+                    { value: 'failed', label: 'Failed' },
+                    { value: 'refunded', label: 'Refunded' },
+                ],
+            },
+        ],
+    };
+</script>
 {% endblock %}
 
-{% block scripts %}
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    function reloadPayments() {
-        loadTable('payments-table', '/api/payment', function(payment) {
-            return '<tr>'
-                + '<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">' + payment.payment_id + '</td>'
-                + '<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">' + payment.order_id + '</td>'
-                + '<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">$' + payment.amount.toFixed(2) + '</td>'
-                + '<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">' + payment.method + '</td>'
-                + '<td class="px-6 py-4 whitespace-nowrap text-sm"><span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full '
-                + (payment.status === 'completed' ? 'bg-green-100 text-green-800' : payment.status === 'pending' ? 'bg-yellow-100 text-yellow-800' : payment.status === 'refunded' ? 'bg-purple-100 text-purple-800' : 'bg-red-100 text-red-800')
-                + '">' + payment.status + '</span></td>'
-                + '<td class="px-6 py-4 whitespace-nowrap text-sm">'
-                + '<button onclick="confirmDelete(\'/api/payment/' + payment.payment_id + '\', reloadPayments)" class="text-red-600 hover:text-red-900">Delete</button>'
-                + '</td></tr>';
-        });
-    }
-    reloadPayments();
-});
-</script>
+{% block content %}
+<div class="max-w-7xl mx-auto">
+    {% set resource_id = 'payments' %}
+    {% set title = 'Payments' %}
+    {% set singular = 'Payment' %}
+    {% include 'component/crud-page.html' %}
+</div>
 {% endblock %}

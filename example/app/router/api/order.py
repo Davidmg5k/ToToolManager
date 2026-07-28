@@ -1,4 +1,4 @@
-from typing import Annotated
+﻿from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -61,3 +61,7 @@ async def cancel_order(
     controller: Annotated[OrderController, Depends(_get_controller)],
 ):
     return await controller.cancel_order(order_id)
+
+@order_router.delete("/{order_id}")
+async def delete_order(order_id: UUID, controller: Annotated[OrderController, Depends(_get_controller)]):
+    return await controller.delete_order(order_id)

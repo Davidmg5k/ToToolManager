@@ -1,4 +1,4 @@
-from typing import Any, Generic, Sequence, TypeVar
+﻿from typing import Any, Generic, Sequence, TypeVar
 from uuid import UUID
 
 from sqlmodel import Session, SQLModel, select
@@ -7,18 +7,12 @@ ModelT = TypeVar("ModelT", bound=SQLModel)
 
 
 class Repository(Generic[ModelT]):
-    """Generic SQLModel repository providing CRUD operations.
-
-    Subclass this for each entity to add domain-specific queries.
-    """
-
     def __init__(self, session: Session, model: type[ModelT]) -> None:
         self._session = session
         self._model = model
 
     @property
     def _pk_field(self) -> str:
-        """Auto-detect the primary key field name from the model."""
         for key in self._model.model_fields:
             field_info = self._model.model_fields[key]
             if getattr(field_info, "primary_key", False):
@@ -32,7 +26,6 @@ class Repository(Generic[ModelT]):
 
     def get_or_raise(self, id: UUID, entity: str | None = None) -> ModelT:
         from app.exception import NotFoundException
-
         obj = self.get(id)
         if obj is None:
             raise NotFoundException(entity or self._model.__name__, id)
@@ -81,11 +74,8 @@ class Repository(Generic[ModelT]):
 
 
 class UserRepository(Repository):
-    """Repository for User entities."""
-
     def __init__(self, session: Session) -> None:
         from app.model import User
-
         super().__init__(session, User)
 
     def find_by_email(self, email: str) -> Any | None:
@@ -93,11 +83,8 @@ class UserRepository(Repository):
 
 
 class OrderRepository(Repository):
-    """Repository for Order entities."""
-
     def __init__(self, session: Session) -> None:
         from app.model import Order
-
         super().__init__(session, Order)
 
     def list_by_user(self, user_id: UUID) -> Sequence:
@@ -108,11 +95,8 @@ class OrderRepository(Repository):
 
 
 class ProductRepository(Repository):
-    """Repository for Product entities."""
-
     def __init__(self, session: Session) -> None:
         from app.model import Product
-
         super().__init__(session, Product)
 
     def update_stock(self, id: UUID, stock: int):
@@ -124,11 +108,8 @@ class ProductRepository(Repository):
 
 
 class PaymentRepository(Repository):
-    """Repository for PaymentRecord entities."""
-
     def __init__(self, session: Session) -> None:
         from app.model import PaymentRecord
-
         super().__init__(session, PaymentRecord)
 
     def list_by_order(self, order_id: UUID) -> Sequence:
@@ -139,11 +120,8 @@ class PaymentRepository(Repository):
 
 
 class NotificationRepository(Repository):
-    """Repository for NotificationRecord entities."""
-
     def __init__(self, session: Session) -> None:
         from app.model import NotificationRecord
-
         super().__init__(session, NotificationRecord)
 
     def list_by_user(self, user_id: UUID) -> Sequence:
@@ -151,3 +129,35 @@ class NotificationRepository(Repository):
 
     def update_status(self, id: UUID, status):
         return self.update(id, {"status": status})
+
+
+class ChatSessionRepository(Repository):
+    def __init__(self, session: Session) -> None:
+        from app.model import ChatSession
+        super().__init__(session, ChatSession)
+
+    def list_ordered(self) -> Sequence:
+        statement = select(self._model).order_by(self._model.updated_at.desc())
+        return self._session.exec(statement).all()
+
+
+class ChatMessageRepository(Repository):
+    def __init__(self, session: Session) -> None:
+        from app.model import ChatMessage
+        super().__init__(session, ChatMessage)
+
+    def list_by_chat(self, chat_id: UUID) -> Sequence:
+        statement = select(self._model).where(
+            self._model.chat_id == chat_id
+        ).order_by(self._model.created_at)
+        return self._session.exec(statement).all()
+
+    def count_by_chat(self, chat_id: UUID) -> int:
+        statement = select(self._model).where(self._model.chat_id == chat_id)
+        return len(self._session.exec(statement).all())
+
+    def delete_by_chat(self, chat_id: UUID) -> None:
+        messages = self.list_by_chat(chat_id)
+        for msg in messages:
+            self._session.delete(msg)
+        self._session.commit()

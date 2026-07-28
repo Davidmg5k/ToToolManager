@@ -1,4 +1,4 @@
-﻿"""
+"""
 Ejemplo de integración con skills agnósticas.
 
 Este archivo demuestra cómo las skills influyen en el comportamiento

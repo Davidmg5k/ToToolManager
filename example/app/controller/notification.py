@@ -1,4 +1,4 @@
-from uuid import UUID
+﻿from uuid import UUID
 
 from app.service import NotificationService, NotificationRepository
 from app.types.notification import CreateNotification, GetNotification, UpdateNotification
@@ -29,3 +29,6 @@ class NotificationController:
 
     async def list_notifications(self, user_id: UUID | None = None):
         return await self.__service.list_notifications(user_id)
+
+    async def delete_notification(self, notification_id: UUID):
+        return await self.__service.delete_notification(GetNotification(notification_id=notification_id))

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Request, Depends
 
-from app.auth import require_admin
+from app.security.auth import require_admin
 from app.templates import templates
 
 inventory_router = APIRouter(tags=["web"])

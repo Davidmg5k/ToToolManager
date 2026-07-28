@@ -1,4 +1,4 @@
-from typing import Annotated
+﻿from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -60,3 +60,7 @@ async def refund_payment(
     controller: Annotated[PaymentController, Depends(_get_controller)],
 ):
     return await controller.refund_payment(payment_id)
+
+@payment_router.delete("/{payment_id}")
+async def delete_payment(payment_id: UUID, controller: Annotated[PaymentController, Depends(_get_controller)]):
+    return await controller.delete_payment(payment_id)

@@ -2,138 +2,37 @@
 
 {% block title %}Users — Admin{% endblock %}
 
-{% block content %}
-<div class="max-w-7xl mx-auto">
-    <div class="flex justify-between items-center mb-6">
-        <h1 class="text-2xl font-bold text-gray-900">Users</h1>
-        <button onclick="document.getElementById('create-user-modal').classList.remove('hidden')"
-                class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700">
-            + New User
-        </button>
-    </div>
-
-    <div class="bg-white shadow-sm border border-gray-200 rounded-lg overflow-hidden">
-        <table class="min-w-full divide-y divide-gray-200">
-            <thead class="bg-gray-50">
-                <tr>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-                </tr>
-            </thead>
-            <tbody id="users-table" class="bg-white divide-y divide-gray-200">
-                <tr><td colspan="3" class="px-6 py-8 text-center text-gray-500">Loading...</td></tr>
-            </tbody>
-        </table>
-    </div>
-
-    <div id="create-user-modal" class="hidden fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50">
-        <div class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
-            <h3 class="text-lg font-semibold text-gray-900 mb-4">Create User</h3>
-            <form hx-post="/api/user/" hx-target="#users-table" hx-swap="afterend"
-                  hx-on::after-request="document.getElementById('create-user-modal').classList.add('hidden')">
-                <div class="space-y-4">
-                    <input type="text" name="user_name" placeholder="Full Name" required
-                           class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500">
-                    <input type="email" name="email" placeholder="Email" required
-                           class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500">
-                    <input type="password" name="password" placeholder="Password" required
-                           class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500">
-                </div>
-                <div class="flex justify-end gap-3 mt-6">
-                    <button type="button" onclick="document.getElementById('create-user-modal').classList.add('hidden')"
-                            class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
-                        Cancel
-                    </button>
-                    <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700">
-                        Create
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <div id="edit-user-modal" class="hidden fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50">
-        <div class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
-            <h3 class="text-lg font-semibold text-gray-900 mb-4">Edit User</h3>
-            <form id="edit-user-form" onsubmit="submitEdit(event)">
-                <div class="space-y-4">
-                    <input type="hidden" id="edit-user-id">
-                    <input type="text" id="edit-user-name" placeholder="Full Name" required
-                           class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500">
-                    <input type="email" id="edit-user-email" placeholder="Email" required
-                           class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500">
-                    <input type="password" id="edit-user-password" placeholder="Leave empty to keep current"
-                           class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500">
-                </div>
-                <div class="flex justify-end gap-3 mt-6">
-                    <button type="button" onclick="document.getElementById('edit-user-modal').classList.add('hidden')"
-                            class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
-                        Cancel
-                    </button>
-                    <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700">
-                        Save
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
+{% block page_config %}
+<script>
+    window.CRUD_CONFIGS = window.CRUD_CONFIGS || {};
+    window.CRUD_CONFIGS['users'] = {
+        label: 'User',
+        endpoint: '/api/user',
+        idField: 'user_id',
+        itemLabel: (item) => item.user_name,
+        columns: [
+            { key: 'user_name', label: 'Name', sortable: true },
+            { key: 'email', label: 'Email', sortable: true },
+        ],
+        createFields: [
+            { name: 'user_name', label: 'Full name', type: 'text', required: true, placeholder: 'Jane Cooper' },
+            { name: 'email', label: 'Email', type: 'email', required: true, placeholder: 'jane@example.com' },
+            { name: 'password', label: 'Password', type: 'password', required: true, placeholder: 'At least 8 characters' },
+        ],
+        editFields: [
+            { name: 'user_name', label: 'Full name', type: 'text', required: true },
+            { name: 'email', label: 'Email', type: 'email', required: true },
+            { name: 'password', label: 'Password', type: 'password', optionalOnEdit: true, editPlaceholder: 'Leave empty to keep current' },
+        ],
+    };
+</script>
 {% endblock %}
 
-{% block scripts %}
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    function reloadUsers() {
-        loadTable('users-table', '/api/user', function(user) {
-            return '<tr>'
-                + '<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">' + user.user_name + '</td>'
-                + '<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">' + user.email + '</td>'
-                + '<td class="px-6 py-4 whitespace-nowrap text-sm space-x-2">'
-                + '<button data-user-id="' + user.user_id + '" data-user-name="' + user.user_name + '" data-user-email="' + user.email + '" onclick="openEditModal(this)" class="text-indigo-600 hover:text-indigo-900">Edit</button>'
-                + ' <button onclick="confirmDelete(\'/api/user/' + user.user_id + '\', reloadUsers)" class="text-red-600 hover:text-red-900">Delete</button>'
-                + '</td></tr>';
-        });
-    }
-    reloadUsers();
-
-    window.openEditModal = function(btn) {
-        document.getElementById('edit-user-id').value = btn.dataset.userId;
-        document.getElementById('edit-user-name').value = btn.dataset.userName;
-        document.getElementById('edit-user-email').value = btn.dataset.userEmail;
-        document.getElementById('edit-user-password').value = '';
-        document.getElementById('edit-user-modal').classList.remove('hidden');
-    };
-
-    window.submitEdit = async function(event) {
-        event.preventDefault();
-        const userId = document.getElementById('edit-user-id').value;
-        const data = {
-            user_name: document.getElementById('edit-user-name').value,
-            email: document.getElementById('edit-user-email').value,
-        };
-        const password = document.getElementById('edit-user-password').value;
-        if (password) {
-            data.password = password;
-        }
-        try {
-            const response = await fetch('/api/user/' + userId, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data),
-            });
-            if (response.ok) {
-                document.getElementById('edit-user-modal').classList.add('hidden');
-                reloadUsers();
-                showToast('User updated successfully');
-            } else {
-                const error = await response.json();
-                showErrorToast(error.detail || 'Failed to update user');
-            }
-        } catch (e) {
-            showErrorToast('Network error');
-        }
-    };
-});
-</script>
+{% block content %}
+<div class="max-w-7xl mx-auto">
+    {% set resource_id = 'users' %}
+    {% set title = 'Users' %}
+    {% set singular = 'User' %}
+    {% include 'component/crud-page.html' %}
+</div>
 {% endblock %}

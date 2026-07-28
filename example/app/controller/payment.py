@@ -1,4 +1,4 @@
-from uuid import UUID
+﻿from uuid import UUID
 
 from app.service import PaymentService, PaymentRepository, OrderRepository
 from app.types.payment import CreatePayment, GetPayment, UpdatePayment
@@ -25,3 +25,6 @@ class PaymentController:
 
     async def list_payments(self, order_id: UUID | None = None):
         return await self.__service.list_payments(order_id)
+
+    async def delete_payment(self, payment_id: UUID):
+        return await self.__service.delete_payment(GetPayment(payment_id=payment_id))

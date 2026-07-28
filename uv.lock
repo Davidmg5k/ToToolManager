@@ -2279,6 +2279,19 @@ wheels = [
 ]
 
 [[package]]
+name = "subagents-pydantic-ai"
+version = "0.2.10"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "pydantic-ai-slim" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/6b/08/05ea44484267d9fb150bcb475251413ed81f9845207d090ea08b0f786151/subagents_pydantic_ai-0.2.10.tar.gz", hash = "sha256:f47037670b48c8067fdbc2805129781d2d26d373a2d32b94d1242cdd3a1b6526", size = 548580, upload-time = "2026-07-24T19:58:21.421Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1b/ff/141f0af84a4a4d922a2781affc6f6a65e2214b069f681da6440be36f8923/subagents_pydantic_ai-0.2.10-py3-none-any.whl", hash = "sha256:20f4b5c5ced464867735f7cf55ff35a4eb1d29e38a725fab802d5c1bd4cf7a21", size = 51503, upload-time = "2026-07-24T19:58:19.946Z" },
+]
+
+[[package]]
 name = "tenacity"
 version = "9.1.4"
 source = { registry = "https://pypi.org/simple" }
@@ -2344,12 +2357,13 @@ dependencies = [
     { name = "pydantic-ai" },
     { name = "pydantic-ai-harness" },
     { name = "pydantic-ai-skills" },
-    { name = "pydantic-ai-slim", extra = ["groq"] },
+    { name = "subagents-pydantic-ai" },
 ]
 
 [package.dev-dependencies]
 dev = [
     { name = "fastapi", extra = ["standard"] },
+    { name = "pydantic-ai-slim", extra = ["groq"] },
     { name = "sqlmodel" },
 ]
 
@@ -2360,12 +2374,13 @@ requires-dist = [
     { name = "pydantic-ai", specifier = ">=2.10.0" },
     { name = "pydantic-ai-harness", specifier = ">=0.7.0" },
     { name = "pydantic-ai-skills", specifier = ">=1.2.0" },
-    { name = "pydantic-ai-slim", extras = ["groq"], specifier = ">=2.10.0" },
+    { name = "subagents-pydantic-ai", specifier = ">=0.2.10" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "fastapi", extras = ["standard"], specifier = ">=0.139.2" },
+    { name = "pydantic-ai-slim", extras = ["groq"], specifier = ">=2.10.0" },
     { name = "sqlmodel", specifier = ">=0.0.39" },
 ]
 

@@ -1,4 +1,4 @@
-from typing import Annotated
+﻿from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -62,3 +62,7 @@ async def resend_notification(
     controller: Annotated[NotificationController, Depends(_get_controller)],
 ):
     return await controller.resend_notification(notification_id)
+
+@notification_router.delete("/{notification_id}")
+async def delete_notification(notification_id: UUID, controller: Annotated[NotificationController, Depends(_get_controller)]):
+    return await controller.delete_notification(notification_id)

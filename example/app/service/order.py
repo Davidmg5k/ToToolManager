@@ -1,4 +1,4 @@
-from uuid import UUID
+﻿from uuid import UUID
 
 from app.exception import (
     ConflictException,
@@ -23,10 +23,7 @@ class OrderService:
     async def create_order(self, data: CreateOrder):
         if data.quantity < 1:
             raise ValidationException("Quantity must be at least 1", field="quantity")
-        total = data.quantity * data.unit_price
-        order = self.__repo.create(data)
-        order.total = total
-        return order
+        return self.__repo.create(data)
 
     async def update_order(self, data: UpdateOrder):
         order = self.__repo.get(data.order_id)
@@ -52,3 +49,8 @@ class OrderService:
         if user_id:
             return self.__repo.list_by_user(user_id)
         return self.__repo.list_all()
+
+    async def delete_order(self, data: GetOrder):
+        self.__repo.get_or_raise(data.order_id, "Order")
+        self.__repo.delete(data.order_id)
+        return {"deleted": True}

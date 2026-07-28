@@ -1,0 +1,148 @@
+{% extends 'template/admin.html' %}
+
+{% block main_classes %}{% endblock %}
+
+{% block content %}
+<div class="flex h-full" x-data="chatApp()" x-init="init()"
+     @chat-select.window="currentChatId = $event.detail.chat_id; currentTitle = $event.detail.title || ''; messageCount = $event.detail.count || 0; showJumpToLatest = false"
+     @chat-streaming.window="streaming = $event.detail.active"
+     @chat-stream-done.window="messageCount++"
+     @chat-new-content.window="showJumpToLatest = $event.detail.hidden">
+    <!-- Main Chat Area -->
+    <div class="flex-1 flex flex-col min-w-0">
+        {% block chat_header %}
+        <div class="flex items-center justify-between px-6 py-3 border-b border-gray-200 bg-white">
+            <div class="flex items-center gap-3">
+                <h2 class="text-lg font-semibold text-gray-900" x-text="currentTitle || 'AI Chat'"></h2>
+                <span class="text-xs text-gray-400" x-show="currentChatId" x-text="messageCount + ' messages'"></span>
+                <span x-show="streaming" x-cloak class="inline-flex items-center gap-1 text-xs text-indigo-600">
+                    <svg class="animate-spin h-3 w-3" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                    </svg>
+                    Processing in background...
+                </span>
+            </div>
+            <div class="flex items-center gap-2">
+                <a :href="currentChatId ? '/admin/chat/' + currentChatId : '#'" @click.prevent
+                   class="hidden sm:inline text-xs text-gray-400 font-mono truncate max-w-[10rem]" x-show="currentChatId" x-text="currentChatId" title="Chat ID — shareable URL updates as you switch chats"></a>
+                <button @click="chatSidebarOpen = !chatSidebarOpen"
+                        class="p-2 rounded-lg text-gray-500 hover:bg-gray-100" title="Toggle chat list" aria-label="Toggle chat list">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        {% endblock %}
+
+        <!-- Messages -->
+        <div class="relative flex-1 min-h-0">
+            <div id="chat-messages" class="h-full overflow-y-auto p-6 space-y-4" role="log" aria-live="polite" aria-label="Conversation" @scroll.passive="onScroll()">
+                {% block chat_messages %}
+                <div class="flex justify-start gap-2.5">
+                    <div class="chat-avatar chat-avatar-ai">AI</div>
+                    <div class="bg-gray-100 rounded-2xl rounded-bl-sm px-4 py-2 max-w-[85%] sm:max-w-lg">
+                        <p class="text-sm text-gray-900">Hello! I can help you manage users, orders, inventory, payments, and notifications. What would you like to do?</p>
+                    </div>
+                </div>
+                {% endblock %}
+            </div>
+
+            <!-- Jump-to-latest, shown when the user has scrolled up while new content arrives -->
+            <button type="button" @click="jumpToLatest()" x-show="showJumpToLatest" x-cloak x-transition.opacity
+                    class="absolute bottom-4 right-4 inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 text-white text-xs font-medium rounded-full shadow-lg hover:bg-gray-800 transition-colors">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"/></svg>
+                New messages
+            </button>
+        </div>
+
+        <!-- Input -->
+        <div class="border-t border-gray-200 p-4 bg-white">
+            {% block chat_input %}
+            <form id="chat-form" onsubmit="sendMessage(event)" class="flex gap-3">
+                <input type="text" id="chat-input" name="message" placeholder="Type your message…" required
+                       class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                       autocomplete="off" :disabled="streaming">
+                <button type="submit"
+                        class="px-6 py-2 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 transition-colors"
+                        :disabled="streaming">
+                    <span x-show="!streaming">Send</span>
+                    <span x-show="streaming" x-cloak class="flex items-center gap-2">
+                        <svg class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                        </svg>
+                        Thinking...
+                    </span>
+                </button>
+            </form>
+            {% endblock %}
+        </div>
+    </div>
+
+    <!-- Right Sidebar: Chat List -->
+    <div class="w-72 border-l border-gray-200 bg-gray-50 flex flex-col shrink-0"
+         x-show="chatSidebarOpen"
+         x-cloak
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0 translate-x-4"
+         x-transition:enter-end="opacity-100 translate-x-0"
+         x-transition:leave="transition ease-in duration-150"
+         x-transition:leave-start="opacity-100 translate-x-0"
+         x-transition:leave-end="opacity-0 translate-x-4">
+        <div class="p-3 border-b border-gray-200">
+            <button @click="createNewChat()"
+                    class="w-full flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors shadow-sm">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                </svg>
+                New Chat
+            </button>
+        </div>
+        <div id="chat-sessions-list" class="flex-1 overflow-y-auto p-2 space-y-1">
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block head %}
+{{ super() }}
+<style>
+    #chat-messages .ai-bubble p { margin: 0.4em 0; font-size: 0.875rem; color: #111827; }
+    #chat-messages .ai-bubble p:first-child { margin-top: 0; }
+    #chat-messages .ai-bubble p:last-child { margin-bottom: 0; }
+    #chat-messages .ai-bubble ul, #chat-messages .ai-bubble ol { margin: 0.4em 0; padding-left: 1.5em; font-size: 0.875rem; color: #111827; }
+    #chat-messages .ai-bubble table { border-collapse: collapse; width: 100%; margin: 0.5em 0; font-size: 0.75rem; }
+    #chat-messages .ai-bubble th, #chat-messages .ai-bubble td { border: 1px solid #d1d5db; padding: 0.35em 0.5em; text-align: left; }
+    #chat-messages .ai-bubble th { background: #f3f4f6; font-weight: 600; }
+    #chat-messages .ai-bubble code { background: #e5e7eb; padding: 0.1em 0.3em; border-radius: 0.25rem; font-size: 0.8em; }
+    #chat-messages .ai-bubble pre { background: #1f2937; color: #e5e7eb; padding: 0.75em; border-radius: 0.5rem; overflow-x: auto; margin: 0.5em 0; }
+    #chat-messages .ai-bubble pre code { background: none; padding: 0; color: inherit; }
+    #chat-messages .ai-bubble strong { font-weight: 600; }
+
+    .chat-processing {
+        background: linear-gradient(90deg, transparent 0%, rgba(99, 102, 241, 0.05) 50%, transparent 100%);
+        background-size: 200% 100%;
+        animation: processing-shimmer 2s ease-in-out infinite;
+    }
+    @keyframes processing-shimmer {
+        0% { background-position: 200% 0; }
+        100% { background-position: -200% 0; }
+    }
+
+    .chat-avatar {
+        display: flex; align-items: center; justify-content: center;
+        width: 1.75rem; height: 1.75rem; border-radius: 9999px;
+        font-size: 0.625rem; font-weight: 600; flex-shrink: 0; margin-top: 0.125rem;
+    }
+    .chat-avatar-ai { background: #eef2ff; color: #4338ca; }
+    .chat-avatar-user { background: #111827; color: #fff; }
+    .chat-timestamp { font-size: 0.6875rem; color: #9ca3af; margin-top: 0.25rem; }
+</style>
+{% endblock %}
+
+{% block admin_scripts %}
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="/static/js/chat.js"></script>
+{% endblock %}

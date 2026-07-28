@@ -1,6 +1,6 @@
 """
 Turns a bound method into a safe async callable that always returns a
-ToolResponse instead of raising — so an agent loop (of any framework)
+ToolResponse instead of raising â€” so an agent loop (of any framework)
 never crashes on a domain error.
 
 Error classification is explicit and configurable via `ErrorMap`
@@ -16,13 +16,14 @@ Error classification is explicit and configurable via `ErrorMap`
 
 The core does NOT define domain-specific categories. If the caller
 doesn't map an exception, it falls through to ``"unclassified"`` with
-``handled=False`` — the LLM must report but NOT act.
+``handled=False`` â€” the LLM must report but NOT act.
 """
 from __future__ import annotations
 
 import inspect
 from typing import Any, Callable, Mapping, Sequence
 
+from to_tool_manager.core.coercion import CoercionError, coerce_kwargs
 from to_tool_manager.core.types import (
     ErrorClassification,
     ErrorEntry,
@@ -66,7 +67,7 @@ def _classify(
     Classify an exception into (category, retryable, handled).
 
     Resolution order:
-    1. `error_rules` predicates (custom logic) — first non-None wins.
+    1. `error_rules` predicates (custom logic) â€” first non-None wins.
     2. `ErrorMap` type-based + predicate rules (via MRO walk).
     3. Fallback: ``"unclassified"``, non-retryable, ``handled=False``.
 
@@ -86,7 +87,7 @@ def _classify(
     if result is not None:
         return result
 
-    # 3. Fallback — unanticipated error
+    # 3. Fallback â€” unanticipated error
     return frozenset({FALLBACK_CATEGORY}), False, False
 
 
@@ -104,7 +105,7 @@ def make_safe_caller(
     Programming errors that indicate a bug in the tool wiring itself
     (e.g. TypeError from a wrong argument name mismatch at the Python
     call boundary) are still caught and reported as unclassified rather
-    than propagating, per the "AI should never get stuck" requirement —
+    than propagating, per the "AI should never get stuck" requirement --
     but they are NOT retried automatically since a bad call rarely fixes
     itself without different arguments (retryable flag reflects this).
     """
@@ -112,6 +113,23 @@ def make_safe_caller(
     is_coroutine = inspect.iscoroutinefunction(func)
 
     async def caller(**kwargs) -> ToolResponse:
+        try:
+            kwargs = coerce_kwargs(func, kwargs)
+        except CoercionError as exc:
+            # Structurally unrecoverable coercion failure (e.g. a nested
+            # object is missing a required field) -- reported as a
+            # retryable validation error rather than falling through to
+            # the generic/unclassified path below, so the LLM gets a
+            # specific, actionable message about which argument is wrong.
+            return ToolResponse(
+                error=ToolError(
+                    category=frozenset({"validation_error"}),
+                    message=str(exc),
+                    exception_type="CoercionError",
+                    retryable=True,
+                    handled=True,
+                )
+            )
         try:
             result = await func(**kwargs) if is_coroutine else func(**kwargs)
             return ToolResponse(content=result)
@@ -121,7 +139,7 @@ def make_safe_caller(
                 error=ToolError.from_exception(
                     exc,
                     category=category,
-                    retryable=False,  # unclassified is never retryable
+                    retryable=retryable,
                     handled=handled,
                 )
             )

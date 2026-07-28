@@ -1,90 +1,66 @@
-﻿{% extends 'template/admin.html' %}
+{% extends 'template/admin.html' %}
 
 {% block title %}Notifications — Admin{% endblock %}
 
-{% block content %}
-<div class="max-w-7xl mx-auto">
-    <div class="flex justify-between items-center mb-6">
-        <h1 class="text-2xl font-bold text-gray-900">Notifications</h1>
-        <button onclick="document.getElementById('create-notification-modal').classList.remove('hidden')"
-                class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700">
-            + New Notification
-        </button>
-    </div>
-
-    <div class="bg-white shadow-sm border border-gray-200 rounded-lg overflow-hidden">
-        <table class="min-w-full divide-y divide-gray-200">
-            <thead class="bg-gray-50">
-                <tr>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Channel</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Recipient</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Subject</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-                </tr>
-            </thead>
-            <tbody id="notifications-table" class="bg-white divide-y divide-gray-200">
-                <tr><td colspan="6" class="px-6 py-8 text-center text-gray-500">Loading...</td></tr>
-            </tbody>
-        </table>
-    </div>
-
-    <div id="create-notification-modal" class="hidden fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50">
-        <div class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
-            <h3 class="text-lg font-semibold text-gray-900 mb-4">Send Notification</h3>
-            <form hx-post="/api/notification/" hx-target="#notifications-table" hx-swap="afterend"
-                  hx-on::after-request="document.getElementById('create-notification-modal').classList.add('hidden')">
-                <div class="space-y-4">
-                    <input type="text" name="user_id" placeholder="User ID" required
-                           class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500">
-                    <select name="channel" required
-                            class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500">
-                        <option value="email">Email</option>
-                        <option value="sms">SMS</option>
-                        <option value="push">Push</option>
-                    </select>
-                    <input type="text" name="recipient" placeholder="Recipient (email/phone)" required
-                           class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500">
-                    <input type="text" name="subject" placeholder="Subject" required
-                           class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500">
-                    <textarea name="body" placeholder="Message body" rows="3" required
-                              class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"></textarea>
-                </div>
-                <div class="flex justify-end gap-3 mt-6">
-                    <button type="button" onclick="document.getElementById('create-notification-modal').classList.add('hidden')"
-                            class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
-                        Cancel
-                    </button>
-                    <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700">
-                        Send
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
+{% block page_config %}
+<script>
+    window.CRUD_CONFIGS = window.CRUD_CONFIGS || {};
+    window.CRUD_CONFIGS['notifications'] = {
+        label: 'Notification',
+        endpoint: '/api/notification',
+        idField: 'notification_id',
+        itemLabel: (item) => item.subject,
+        submitLabel: 'Send',
+        columns: [
+            { key: 'channel', label: 'Channel', sortable: true },
+            { key: 'recipient', label: 'Recipient', sortable: true },
+            { key: 'subject', label: 'Subject', sortable: true },
+            {
+                key: 'status', label: 'Status', type: 'badge', sortable: true,
+                badgeMap: {
+                    sent: 'bg-green-100 text-green-800',
+                    delivered: 'bg-blue-100 text-blue-800',
+                    pending: 'bg-yellow-100 text-yellow-800',
+                    failed: 'bg-red-100 text-red-800',
+                },
+            },
+        ],
+        createFields: [
+            { name: 'user_id', label: 'User ID', type: 'text', required: true },
+            {
+                name: 'channel', label: 'Channel', type: 'select', required: true,
+                options: [
+                    { value: 'email', label: 'Email' },
+                    { value: 'sms', label: 'SMS' },
+                    { value: 'push', label: 'Push' },
+                ],
+            },
+            { name: 'recipient', label: 'Recipient', type: 'text', required: true, placeholder: 'Email or phone number' },
+            { name: 'subject', label: 'Subject', type: 'text', required: true },
+            { name: 'body', label: 'Message', type: 'textarea', required: true },
+        ],
+        editFields: [
+            { name: 'subject', label: 'Subject', type: 'text', required: true },
+            { name: 'body', label: 'Message', type: 'textarea', required: true },
+            {
+                name: 'status', label: 'Status', type: 'select', required: true,
+                options: [
+                    { value: 'pending', label: 'Pending' },
+                    { value: 'sent', label: 'Sent' },
+                    { value: 'delivered', label: 'Delivered' },
+                    { value: 'failed', label: 'Failed' },
+                ],
+            },
+        ],
+    };
+</script>
 {% endblock %}
 
-{% block scripts %}
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    function reloadNotifications() {
-        loadTable('notifications-table', '/api/notification', function(notification) {
-            return '<tr>'
-                + '<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">' + notification.notification_id + '</td>'
-                + '<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">' + notification.channel + '</td>'
-                + '<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">' + notification.recipient + '</td>'
-                + '<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">' + notification.subject + '</td>'
-                + '<td class="px-6 py-4 whitespace-nowrap text-sm"><span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full '
-                + (notification.status === 'sent' ? 'bg-green-100 text-green-800' : notification.status === 'delivered' ? 'bg-blue-100 text-blue-800' : notification.status === 'pending' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800')
-                + '">' + notification.status + '</span></td>'
-                + '<td class="px-6 py-4 whitespace-nowrap text-sm">'
-                + '<button onclick="confirmDelete(\'/api/notification/' + notification.notification_id + '\', reloadNotifications)" class="text-red-600 hover:text-red-900">Delete</button>'
-                + '</td></tr>';
-        });
-    }
-    reloadNotifications();
-});
-</script>
+{% block content %}
+<div class="max-w-7xl mx-auto">
+    {% set resource_id = 'notifications' %}
+    {% set title = 'Notifications' %}
+    {% set singular = 'Notification' %}
+    {% include 'component/crud-page.html' %}
+</div>
 {% endblock %}

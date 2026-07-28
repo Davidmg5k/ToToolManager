@@ -4,33 +4,78 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}ToToolManager{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script>
+        tailwind = { config: {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+                        mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
+                    },
+                    boxShadow: {
+                        'brand': '0 8px 24px -8px rgba(79, 70, 229, 0.35)',
+                    },
+                }
+            }
+        } };
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/htmx.org@1.9.12"></script>
     <script src="https://unpkg.com/htmx.org@1.9.12/dist/client-ext/sse.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <style>
+        [x-cloak] { display: none !important; }
+        html { font-family: 'Inter', ui-sans-serif, system-ui, sans-serif; }
+        ::selection { background-color: #c7d2fe; color: #1e1b4b; }
+        a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible,
+        textarea:focus-visible, [tabindex]:focus-visible {
+            outline: 2px solid #6366f1;
+            outline-offset: 2px;
+            border-radius: 4px;
+        }
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+        }
+        /* Navbar link states */
+        .nav-link { color: #4b5563; }
+        .nav-link:hover { color: #111827; background-color: #f9fafb; }
+        .nav-link.nav-link-active { color: #111827; background-color: #f3f4f6; }
+        /* Sidebar link states */
+        .sidebar-link { color: #374151; }
+        .sidebar-link:hover { background-color: #f3f4f6; color: #111827; }
+        .sidebar-link svg { color: #9ca3af; }
+        .sidebar-link.nav-link-active { background-color: #eef2ff; color: #4338ca; }
+        .sidebar-link.nav-link-active svg { color: #6366f1; }
+    </style>
     {% block head %}{% endblock %}
 </head>
-<body class="h-full">
+<body class="h-full bg-gray-50 text-gray-900 antialiased{% if admin is defined and admin(request) %} overflow-hidden{% endif %}">
     {% block body %}
-    <div class="min-h-full" x-data="{ sidebarOpen: false }">
+    <div class="{% if admin is defined and admin(request) %}h-screen{% else %}min-h-full{% endif %} flex flex-col overflow-hidden" x-data="{ sidebarOpen: false }">
         {% include 'component/navbar.html' %}
 
-        <div class="flex">
-            {% if admin is defined and admin %}
+        <div class="flex flex-1 min-h-0">
+            {% if admin is defined and admin(request) %}
                 {% include 'component/sidebar.html' %}
             {% endif %}
 
-            <main class="flex-1 py-6 px-4 sm:px-6 lg:px-8">
+            <main class="flex-1 min-w-0 {% block main_classes %}py-6 px-4 sm:px-6 lg:px-8{% endblock %}{% if admin is defined and admin(request) %} overflow-y-auto{% endif %}">
                 {% block content %}{% endblock %}
             </main>
         </div>
 
-        {% include 'component/footer.html' %}
+        {% if not (admin is defined and admin(request)) %}
+            {% include 'component/footer.html' %}
+        {% endif %}
     </div>
     {% endblock %}
 
-    <!-- Error Toast Container -->
-    <div id="error-toast-container" class="fixed bottom-4 left-4 z-50 space-y-2"></div>
+    <!-- Toast containers: errors bottom-left, confirmations bottom-right -->
+    <div id="error-toast-container" class="fixed bottom-4 left-4 z-[60] space-y-2 pointer-events-none"></div>
+    <div id="toast-container" class="fixed bottom-4 right-4 z-[60] space-y-2 pointer-events-none"></div>
 
     <script src="/static/js/app.js"></script>
     {% block scripts %}{% endblock %}

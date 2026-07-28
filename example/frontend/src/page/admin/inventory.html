@@ -1,84 +1,44 @@
-﻿{% extends 'template/admin.html' %}
+{% extends 'template/admin.html' %}
 
 {% block title %}Inventory — Admin{% endblock %}
 
-{% block content %}
-<div class="max-w-7xl mx-auto">
-    <div class="flex justify-between items-center mb-6">
-        <h1 class="text-2xl font-bold text-gray-900">Inventory</h1>
-        <button onclick="document.getElementById('create-product-modal').classList.remove('hidden')"
-                class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700">
-            + New Product
-        </button>
-    </div>
-
-    <div class="bg-white shadow-sm border border-gray-200 rounded-lg overflow-hidden">
-        <table class="min-w-full divide-y divide-gray-200">
-            <thead class="bg-gray-50">
-                <tr>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">SKU</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Price</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Stock</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-                </tr>
-            </thead>
-            <tbody id="products-table" class="bg-white divide-y divide-gray-200">
-                <tr><td colspan="6" class="px-6 py-8 text-center text-gray-500">Loading...</td></tr>
-            </tbody>
-        </table>
-    </div>
-
-    <div id="create-product-modal" class="hidden fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50">
-        <div class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
-            <h3 class="text-lg font-semibold text-gray-900 mb-4">Create Product</h3>
-            <form hx-post="/api/inventory/" hx-target="#products-table" hx-swap="afterend"
-                  hx-on::after-request="document.getElementById('create-product-modal').classList.add('hidden')">
-                <div class="space-y-4">
-                    <input type="text" name="name" placeholder="Product Name" required
-                           class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500">
-                    <input type="text" name="sku" placeholder="SKU" required
-                           class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500">
-                    <input type="number" name="price" placeholder="Price" step="0.01" min="0" required
-                           class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500">
-                    <input type="number" name="stock" placeholder="Initial Stock" min="0" required
-                           class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500">
-                    <textarea name="description" placeholder="Description (optional)" rows="3"
-                              class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"></textarea>
-                </div>
-                <div class="flex justify-end gap-3 mt-6">
-                    <button type="button" onclick="document.getElementById('create-product-modal').classList.add('hidden')"
-                            class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
-                        Cancel
-                    </button>
-                    <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700">
-                        Create
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
+{% block page_config %}
+<script>
+    window.CRUD_CONFIGS = window.CRUD_CONFIGS || {};
+    window.CRUD_CONFIGS['inventory'] = {
+        label: 'Product',
+        endpoint: '/api/inventory',
+        idField: 'product_id',
+        itemLabel: (item) => item.name,
+        columns: [
+            { key: 'name', label: 'Name', sortable: true },
+            { key: 'sku', label: 'SKU', sortable: true },
+            { key: 'price', label: 'Price', type: 'currency', sortable: true },
+            { key: 'stock', label: 'Stock', sortable: true },
+        ],
+        createFields: [
+            { name: 'name', label: 'Product name', type: 'text', required: true },
+            { name: 'sku', label: 'SKU', type: 'text', required: true },
+            { name: 'price', label: 'Price', type: 'number', required: true, step: '0.01', min: 0 },
+            { name: 'stock', label: 'Initial stock', type: 'number', required: true, min: 0, default: 0 },
+            { name: 'description', label: 'Description', type: 'textarea', placeholder: 'Optional' },
+        ],
+        editFields: [
+            { name: 'name', label: 'Product name', type: 'text', required: true },
+            { name: 'sku', label: 'SKU', type: 'text', required: true },
+            { name: 'price', label: 'Price', type: 'number', required: true, step: '0.01', min: 0 },
+            { name: 'stock', label: 'Stock', type: 'number', required: true, min: 0 },
+            { name: 'description', label: 'Description', type: 'textarea', placeholder: 'Optional' },
+        ],
+    };
+</script>
 {% endblock %}
 
-{% block scripts %}
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    function reloadProducts() {
-        loadTable('products-table', '/api/inventory', function(product) {
-            return '<tr>'
-                + '<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">' + product.product_id + '</td>'
-                + '<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">' + product.name + '</td>'
-                + '<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">' + product.sku + '</td>'
-                + '<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">$' + product.price.toFixed(2) + '</td>'
-                + '<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">' + product.stock + '</td>'
-                + '<td class="px-6 py-4 whitespace-nowrap text-sm">'
-                + '<button onclick="confirmDelete(\'/api/inventory/' + product.product_id + '\', reloadProducts)" class="text-red-600 hover:text-red-900">Delete</button>'
-                + '</td></tr>';
-        });
-    }
-    reloadProducts();
-});
-</script>
+{% block content %}
+<div class="max-w-7xl mx-auto">
+    {% set resource_id = 'inventory' %}
+    {% set title = 'Inventory' %}
+    {% set singular = 'Product' %}
+    {% include 'component/crud-page.html' %}
+</div>
 {% endblock %}
