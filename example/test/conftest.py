@@ -60,8 +60,7 @@ def client_fixture(engine):
          patch("app.router.api.notification.engine", engine), \
          patch("app.router.api.chat.engine", engine), \
          patch("app.router.api.dashboard.engine", engine), \
-         patch("main.seed_admin"), \
-         patch("main.seed_chat"):
+         patch("main.seed"):
         with TestClient(app, raise_server_exceptions=False) as c:
             yield c
 

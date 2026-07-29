@@ -1,13 +1,14 @@
-from datetime import datetime
+﻿from datetime import datetime
 from uuid import UUID, uuid4
 
+from sqlalchemy import Enum as SAEnum
 from sqlmodel import Field, SQLModel
 
 from app.types.user import CreateUser
-from app.types.order import CreateOrder
+from app.types.order import CreateOrder, OrderStatus
 from app.types.inventory import CreateProduct
-from app.types.payment import CreatePayment, PaymentStatus
-from app.types.notification import CreateNotification, NotificationStatus
+from app.types.payment import CreatePayment, PaymentMethod, PaymentStatus
+from app.types.notification import CreateNotification, NotificationChannel, NotificationStatus
 from app.types.chat import CreateChatSession, CreateChatMessage
 
 
@@ -17,6 +18,10 @@ class User(CreateUser, table=True):
 
 class Order(CreateOrder, table=True):
     order_id: UUID = Field(default_factory=uuid4, primary_key=True)
+    status: OrderStatus = Field(
+        default=OrderStatus.PENDING,
+        sa_type=SAEnum(OrderStatus, values_by_token=False),
+    )
 
 
 class Product(CreateProduct, table=True):
@@ -25,12 +30,24 @@ class Product(CreateProduct, table=True):
 
 class PaymentRecord(CreatePayment, table=True):
     payment_id: UUID = Field(default_factory=uuid4, primary_key=True)
-    status: PaymentStatus = Field(default=PaymentStatus.PENDING)
+    method: PaymentMethod = Field(
+        sa_type=SAEnum(PaymentMethod, values_by_token=False),
+    )
+    status: PaymentStatus = Field(
+        default=PaymentStatus.PENDING,
+        sa_type=SAEnum(PaymentStatus, values_by_token=False),
+    )
 
 
 class NotificationRecord(CreateNotification, table=True):
     notification_id: UUID = Field(default_factory=uuid4, primary_key=True)
-    status: NotificationStatus = Field(default=NotificationStatus.PENDING)
+    channel: NotificationChannel = Field(
+        sa_type=SAEnum(NotificationChannel, values_by_token=False),
+    )
+    status: NotificationStatus = Field(
+        default=NotificationStatus.PENDING,
+        sa_type=SAEnum(NotificationStatus, values_by_token=False),
+    )
 
 
 class ChatSession(CreateChatSession, table=True):
