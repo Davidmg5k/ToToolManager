@@ -1,4 +1,4 @@
-{% extends 'template/admin.html' %}
+﻿{% extends 'template/admin.html' %}
 
 {% block main_classes %}{% endblock %}
 
@@ -39,14 +39,7 @@
         <!-- Messages -->
         <div class="relative flex-1 min-h-0">
             <div id="chat-messages" class="h-full overflow-y-auto p-6 space-y-4" role="log" aria-live="polite" aria-label="Conversation" @scroll.passive="onScroll()">
-                {% block chat_messages %}
-                <div class="flex justify-start gap-2.5">
-                    <div class="chat-avatar chat-avatar-ai">AI</div>
-                    <div class="bg-paper-200 border border-paper-300 rounded-2xl rounded-bl-sm px-4 py-2 max-w-[85%] sm:max-w-lg">
-                        <p class="text-sm text-ink-900">Hello! I can help you manage users, orders, inventory, payments, and notifications. What would you like to do?</p>
-                    </div>
-                </div>
-                {% endblock %}
+                {% block chat_messages %}{% endblock %}
             </div>
 
             <!-- Jump-to-latest, shown when the user has scrolled up while new content arrives -->

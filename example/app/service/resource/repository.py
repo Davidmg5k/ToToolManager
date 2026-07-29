@@ -1,4 +1,4 @@
-﻿from typing import Any, Generic, Sequence, TypeVar
+from typing import Any, Generic, Sequence, TypeVar
 from uuid import UUID
 
 from sqlmodel import Session, SQLModel, select
@@ -15,7 +15,8 @@ class Repository(Generic[ModelT]):
     def _pk_field(self) -> str:
         for key in self._model.model_fields:
             field_info = self._model.model_fields[key]
-            if getattr(field_info, "primary_key", False):
+            pk_val = getattr(field_info, "primary_key", False)
+            if pk_val is True:
                 return key
         raise ValueError(f"No primary key found in {self._model.__name__}")
 

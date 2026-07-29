@@ -1,4 +1,4 @@
-﻿// ToToolManager - Generic CRUD resource controller
+// ToToolManager - Generic CRUD resource controller
 //
 // Every admin list page (Users, Orders, Inventory, Payments, Notifications)
 // shares the exact same shape: a searchable/sortable table, a create form,
@@ -43,6 +43,10 @@ document.addEventListener('alpine:init', function () {
             editingId: null,
             submitting: false,
 
+            // -- dynamic select options (fetched from endpoints) ---------------
+            fieldOptions: {},
+            loadingOptions: false,
+
             // -- lifecycle -------------------------------------------------------
             init() {
                 this.load();
@@ -64,6 +68,33 @@ document.addEventListener('alpine:init', function () {
                 } finally {
                     this.loading = false;
                 }
+            },
+
+            // -- dynamic select options loading ---------------------------------
+            async loadFieldOptions() {
+                var fields = this.config.createFields || [];
+                var toLoad = fields.filter(function (f) { return f.optionsEndpoint; });
+                if (toLoad.length === 0) return;
+
+                this.loadingOptions = true;
+                var self = this;
+                await Promise.all(toLoad.map(async function (f) {
+                    try {
+                        var res = await API.get(f.optionsEndpoint);
+                        if (res.success && Array.isArray(res.data)) {
+                            self.fieldOptions[f.name] = res.data.map(function (item) {
+                                return {
+                                    value: item[f.optionValue] || item.id || item,
+                                    label: item[f.optionLabel] || item.name || item,
+                                };
+                            });
+                        }
+                    } catch (e) {
+                        console.error('Failed to load options for ' + f.name, e);
+                        self.fieldOptions[f.name] = [];
+                    }
+                }));
+                this.loadingOptions = false;
             },
 
             // -- derived state -----------------------------------------------
@@ -120,15 +151,23 @@ document.addEventListener('alpine:init', function () {
 
             // -- modal: create / edit -------------------------------------------
             get activeFields() {
-                return this.modalMode === 'create' ? this.config.createFields : this.config.editFields;
+                var fields = this.modalMode === 'create' ? this.config.createFields : this.config.editFields;
+                var self = this;
+                return fields.map(function (f) {
+                    if (f.optionsEndpoint && self.fieldOptions[f.name]) {
+                        return Object.assign({}, f, { options: self.fieldOptions[f.name] });
+                    }
+                    return f;
+                });
             },
 
-            openCreate() {
+            async openCreate() {
                 this.modalMode = 'create';
                 this.editingId = null;
                 const form = {};
                 this.config.createFields.forEach((f) => { form[f.name] = f.default ?? ''; });
                 this.form = form;
+                await this.loadFieldOptions();
                 this.modalOpen = true;
                 this.$nextTick(() => this.focusFirstField());
             },

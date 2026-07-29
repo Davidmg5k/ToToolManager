@@ -49,12 +49,12 @@ function chatApp() {
         jumpToLatest() { scrollToBottom(true); this.showJumpToLatest = false; },
         async _bootstrap() {
             try {
-                await loadSessions();
                 var urlChatId = parseChatIdFromPath();
                 var res = await API.get('/api/chat/sessions');
                 var sessions = res.success ? res.data : [];
 
                 if (urlChatId && sessions.some(function (s) { return s.chat_id === urlChatId; })) {
+                    await loadSessions();
                     await selectChat(urlChatId, { pushUrl: false });
                     return;
                 }
@@ -62,15 +62,16 @@ function chatApp() {
                     var f = new FormData();
                     f.append('title', 'New Chat');
                     await API.postForm('/api/chat/sessions', f);
-                    await loadSessions();
-                    var listRes = await API.get('/api/chat/sessions');
-                    var list = listRes.success ? listRes.data : [];
-                    if (list.length > 0) await selectChat(list[0].chat_id, { pushUrl: false });
-                } else {
-                    await selectChat(sessions[0].chat_id, { pushUrl: false });
+                    res = await API.get('/api/chat/sessions');
+                    sessions = res.success ? res.data : [];
                 }
+                await loadSessions();
+                if (sessions.length > 0) await selectChat(sessions[0].chat_id, { pushUrl: false });
             } catch (e) {
-                // ignore - sidebar will show its own error state
+                console.error('Chat bootstrap failed:', e);
+                if (typeof showErrorToast === 'function') {
+                    showErrorToast('Could not load chats. Please refresh the page.');
+                }
             }
         },
     };
@@ -152,14 +153,8 @@ async function loadSessions() {
         var res = await API.get('/api/chat/sessions', { silent: true });
         var sessions = res.success ? res.data : [];
         list.innerHTML = '';
-        if (sessions.length === 0) {
-            list.innerHTML = '<div class="text-xs text-ink-500 p-3 text-center">No chats yet \u2014 start one below.</div>';
-            return;
-        }
         sessions.forEach(function (s) {
             list.appendChild(renderSessionItem(s));
-            // Rediscover and reconnect to anything still running, e.g. after a
-            // full page reload or after leaving and coming back to /admin/chat.
             if (s.is_processing && !threads.has(s.chat_id)) {
                 watchThread(s.chat_id);
             }
@@ -173,19 +168,17 @@ window.addEventListener('chatSessionCreated', loadSessions);
 window.addEventListener('chatSessionUpdated', loadSessions);
 window.addEventListener('chatSessionDeleted', loadSessions);
 
-// Light polling keeps sidebar state (message counts, is_processing) fresh
-// even for chats nobody has an open connection to yet.
 setInterval(loadSessions, 8000);
 
 async function createNewChat() {
     var formData = new FormData();
     formData.append('title', 'New Chat');
     try {
-        await API.postForm('/api/chat/sessions', formData);
+        var res = await API.postForm('/api/chat/sessions', formData);
         await loadSessions();
-        var res = await API.get('/api/chat/sessions');
-        var sessions = res.success ? res.data : [];
-        if (sessions.length > 0) await selectChat(sessions[0].chat_id);
+        if (res.success && res.data && res.data.chat_id) {
+            await selectChat(res.data.chat_id);
+        }
     } catch (e) {
         showErrorToast('Could not start a new chat.');
     }
@@ -247,8 +240,7 @@ function renderMessages(messages) {
 }
 
 // ---------------------------------------------------------------------
-// Scroll behavior: never yank a user who scrolled up to read history;
-// surface a "New messages" pill instead, like production chat UIs do.
+// Scroll behavior
 // ---------------------------------------------------------------------
 function scrollToBottom(force) {
     const el = document.getElementById('chat-messages');
@@ -276,9 +268,7 @@ function notifyNewContent() {
 }
 
 // ---------------------------------------------------------------------
-// Selecting a chat: loads history, re-attaches to a running stream for
-// THIS chat if one exists, and updates the URL without touching any
-// other chat's connection.
+// Selecting a chat
 // ---------------------------------------------------------------------
 async function selectChat(chatId, opts) {
     opts = opts || {};
@@ -313,7 +303,6 @@ async function selectChat(chatId, opts) {
         window.dispatchEvent(new CustomEvent('chat-streaming', { detail: { active: isStreaming } }));
 
         if (thread) {
-            // Re-attach: show whatever has streamed in so far for this chat.
             const bubble = renderThinkingBubble();
             messagesDiv.appendChild(bubble);
             if (thread.buffer) {
@@ -324,7 +313,7 @@ async function selectChat(chatId, opts) {
             }
             scrollToBottom(true);
         } else {
-            watchThread(chatId); // no-op if it isn't actually running server-side
+            watchThread(chatId);
         }
     } catch (e) {
         showErrorToast('Could not load that conversation.');
@@ -332,8 +321,7 @@ async function selectChat(chatId, opts) {
 }
 
 // ---------------------------------------------------------------------
-// Per-chat streaming connection. Multiple of these can be open at once —
-// nothing here closes a connection that belongs to a different chat_id.
+// Per-chat streaming connection
 // ---------------------------------------------------------------------
 function watchThread(chatId) {
     if (threads.has(chatId)) return;
@@ -345,7 +333,7 @@ function watchThread(chatId) {
                 connectThread(chatId);
             }
         })
-        .catch(function () { /* ignore - will retry on next poll */ });
+        .catch(function () { });
 }
 
 function connectThread(chatId) {
@@ -383,20 +371,19 @@ function connectThread(chatId) {
                 const item = document.querySelector('.chat-session-item[data-chat-id="' + chatId + '"]');
                 if (item) item.dataset.processing = (parsed.status === 'running' || parsed.status === 'pending') ? '1' : '0';
             }
-        } catch (e) { /* ignore malformed SSE chunk */ }
+        } catch (e) { }
     };
 
     es.onerror = function () {
         es.close();
         var stillTracked = threads.has(chatId);
         threads.delete(chatId);
-        if (!stillTracked) return; // already wrapped up cleanly via [DONE]
+        if (!stillTracked) return;
 
         if (window._currentChatId === chatId && !thread.buffer) {
             const el = document.getElementById('thinking-bubble');
             if (el) el.remove();
         }
-        // Fall back to polling so a dropped connection doesn't strand the UI.
         pollUntilDone(chatId);
     };
 }
@@ -429,13 +416,11 @@ function finishThread(chatId) {
         window.dispatchEvent(new CustomEvent('chat-stream-done'));
         const liveBubble = document.getElementById('live-ai-bubble');
         if (liveBubble) liveBubble.removeAttribute('id');
-        // Re-fetch so the final, canonical message (with its real timestamp
-        // and id) replaces the locally-streamed approximation.
         API.get('/api/chat/sessions/' + chatId + '/messages', { silent: true })
             .then(function (res) {
                 if (res.success && window._currentChatId === chatId) renderMessages(res.data);
             })
-            .catch(function () { /* keep what's on screen */ });
+            .catch(function () { });
     } else {
         showToast('A chat finished responding.');
     }
@@ -443,7 +428,7 @@ function finishThread(chatId) {
 
 function pollUntilDone(chatId, attempt) {
     attempt = attempt || 0;
-    if (attempt > 120) return; // ~6 minutes at 3s intervals, then give up quietly
+    if (attempt > 120) return;
 
     API.get('/api/chat/sessions/' + chatId + '/status', { silent: true })
         .then(function (res) {
@@ -524,7 +509,13 @@ function deleteChat(chatId) {
             if (sessions.length > 0) {
                 await selectChat(sessions[0].chat_id);
             } else {
-                window.history.pushState({}, '', '/admin/chat');
+                var f = new FormData();
+                f.append('title', 'New Chat');
+                await API.postForm('/api/chat/sessions', f);
+                await loadSessions();
+                var listRes = await API.get('/api/chat/sessions');
+                var list = listRes.success ? listRes.data : [];
+                if (list.length > 0) await selectChat(list[0].chat_id);
             }
         }
     });

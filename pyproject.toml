@@ -28,4 +28,6 @@ dev = [
     "fastapi[standard]>=0.139.2",
     "sqlmodel>=0.0.39",
     "pydantic-ai-slim[groq]>=2.10.0",
+    "pytest>=9.1.1",
+    "httpx>=0.28.1",
 ]

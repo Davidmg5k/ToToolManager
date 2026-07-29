@@ -1,4 +1,4 @@
-﻿from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from app import init_db, seed_admin
+from app import init_db, seed_admin, seed_chat
 from app.exception import AppException
 from app.router.api import api_routers
 from app.router.web import web_routers
@@ -16,6 +16,7 @@ from app.router.web import web_routers
 async def lifespan(app: FastAPI):
     init_db()
     seed_admin()
+    seed_chat()
     yield
 
 

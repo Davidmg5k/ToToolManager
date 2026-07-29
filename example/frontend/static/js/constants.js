@@ -94,7 +94,7 @@ window.CRUD_CONFIGS = {
             },
         ],
         createFields: [
-            { name: 'user_id', label: 'User ID', type: 'text', required: true, placeholder: 'Paste the customer\'s user ID' },
+            { name: 'user_id', label: 'User', type: 'select', required: true, optionsEndpoint: '/api/user', optionValue: 'user_id', optionLabel: 'user_name' },
             { name: 'product_name', label: 'Product name', type: 'text', required: true },
             { name: 'quantity', label: 'Quantity', type: 'number', required: true, min: 1, default: 1 },
             { name: 'unit_price', label: 'Unit price', type: 'number', required: true, step: '0.01', min: 0 },

@@ -1,4 +1,4 @@
-﻿from pathlib import Path
+from pathlib import Path
 from functools import lru_cache
 from typing import Any, Generator
 from uuid import uuid4
@@ -22,6 +22,7 @@ with engine.connect() as conn:
 
 
 def init_db() -> None:
+    import app.model  # noqa: F401 — ensure all models are registered
     _DB_DIR.mkdir(parents=True, exist_ok=True)
     SQLModel.metadata.create_all(engine)
 
@@ -39,6 +40,17 @@ def seed_admin() -> None:
                 password="admin",
             )
             session.add(admin)
+            session.commit()
+
+
+def seed_chat() -> None:
+    from app.model import ChatSession
+
+    with Session(engine) as session:
+        existing = session.exec(select(ChatSession)).first()
+        if existing is None:
+            chat = ChatSession(title="Welcome")
+            session.add(chat)
             session.commit()
 
 

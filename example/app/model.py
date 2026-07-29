@@ -1,4 +1,4 @@
-﻿from datetime import datetime
+from datetime import datetime
 from uuid import UUID, uuid4
 
 from sqlmodel import Field, SQLModel
@@ -6,8 +6,8 @@ from sqlmodel import Field, SQLModel
 from app.types.user import CreateUser
 from app.types.order import CreateOrder
 from app.types.inventory import CreateProduct
-from app.types.payment import CreatePayment
-from app.types.notification import CreateNotification
+from app.types.payment import CreatePayment, PaymentStatus
+from app.types.notification import CreateNotification, NotificationStatus
 from app.types.chat import CreateChatSession, CreateChatMessage
 
 
@@ -25,10 +25,12 @@ class Product(CreateProduct, table=True):
 
 class PaymentRecord(CreatePayment, table=True):
     payment_id: UUID = Field(default_factory=uuid4, primary_key=True)
+    status: PaymentStatus = Field(default=PaymentStatus.PENDING)
 
 
 class NotificationRecord(CreateNotification, table=True):
     notification_id: UUID = Field(default_factory=uuid4, primary_key=True)
+    status: NotificationStatus = Field(default=NotificationStatus.PENDING)
 
 
 class ChatSession(CreateChatSession, table=True):
