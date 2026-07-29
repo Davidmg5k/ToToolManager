@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 import logging
 from datetime import datetime
 from typing import Any
@@ -145,7 +145,7 @@ class ChatTaskManager:
 
             stream = agent.run_stream(message, deps=deps)
             async with stream as result:
-                async for token in result.stream_text():
+                async for token in result.stream_text(delta=True):
                     full_response_tokens.append(token)
                     await self._broadcast_token(task, token)
 

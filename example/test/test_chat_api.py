@@ -1,5 +1,4 @@
 ﻿from unittest.mock import patch, AsyncMock
-from uuid import uuid4
 
 
 class TestChatSessionCRUD:
