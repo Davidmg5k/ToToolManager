@@ -1,4 +1,4 @@
-// ToToolManager - Generic CRUD resource controller
+﻿// ToToolManager - Generic CRUD resource controller
 //
 // Every admin list page (Users, Orders, Inventory, Payments, Notifications)
 // shares the exact same shape: a searchable/sortable table, a create form,
@@ -52,10 +52,12 @@ document.addEventListener('alpine:init', function () {
                 this.loading = true;
                 this.loadError = false;
                 try {
-                    const res = await fetch(this.config.endpoint);
-                    if (!res.ok) throw new Error('bad status');
-                    const data = await res.json();
-                    this.items = Array.isArray(data) ? data : [];
+                    var res = await API.get(this.config.endpoint);
+                    if (res.success) {
+                        this.items = Array.isArray(res.data) ? res.data : [];
+                    } else {
+                        throw new Error(res.error || 'bad status');
+                    }
                 } catch (e) {
                     this.loadError = true;
                     this.items = [];
@@ -110,10 +112,10 @@ document.addEventListener('alpine:init', function () {
                     return '$' + (isNaN(n) ? '0.00' : n.toFixed(2));
                 }
                 if (col.type === 'badge') {
-                    const cls = (col.badgeMap && col.badgeMap[raw]) || 'bg-gray-100 text-gray-700';
-                    return '<span class="inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ' + cls + '">' + escapeHtml(raw ?? '—') + '</span>';
+                    const cls = (col.badgeMap && col.badgeMap[raw]) || 'bg-paper-200 text-ink-600 border border-paper-400';
+                    return '<span class="inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ' + cls + '">' + escapeHtml(raw ?? '\u2014') + '</span>';
                 }
-                return escapeHtml(raw == null || raw === '' ? '—' : raw);
+                return escapeHtml(raw == null || raw === '' ? '\u2014' : raw);
             },
 
             // -- modal: create / edit -------------------------------------------
@@ -165,30 +167,21 @@ document.addEventListener('alpine:init', function () {
                 });
 
                 try {
-                    let res;
+                    var res;
                     if (this.modalMode === 'create') {
-                        const body = new URLSearchParams();
+                        var body = new URLSearchParams();
                         Object.entries(payload).forEach(([k, v]) => body.append(k, v ?? ''));
-                        res = await fetch(this.config.endpoint, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                            body,
-                        });
+                        res = await API.postForm(this.config.endpoint, body);
                     } else {
-                        res = await fetch(this.config.endpoint + '/' + this.editingId, {
-                            method: 'PATCH',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(payload),
-                        });
+                        res = await API.patch(this.config.endpoint + '/' + this.editingId, payload);
                     }
 
-                    if (res.ok) {
+                    if (res.success) {
                         showToast(this.config.label + (this.modalMode === 'create' ? ' created' : ' updated'));
                         this.closeModal();
                         await this.load();
                     } else {
-                        const err = await res.json().catch(() => ({}));
-                        showErrorToast(err.detail || err.error || 'Could not save ' + this.config.label.toLowerCase() + '.');
+                        showErrorToast(res.detail?.detail || res.error || 'Could not save ' + this.config.label.toLowerCase() + '.');
                     }
                 } catch (e) {
                     showErrorToast('Network error. Nothing was saved.');
@@ -198,7 +191,7 @@ document.addEventListener('alpine:init', function () {
             },
 
             remove(item) {
-                const label = this.config.label + (config.itemLabel ? ' “' + config.itemLabel(item) + '”' : '');
+                const label = this.config.label + (config.itemLabel ? ' \u201c' + config.itemLabel(item) + '\u201d' : '');
                 showDeleteModal(this.config.endpoint + '/' + item[this.config.idField], label, () => this.load());
             },
         };

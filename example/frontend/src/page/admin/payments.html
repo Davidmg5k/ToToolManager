@@ -1,57 +1,6 @@
-{% extends 'template/admin.html' %}
+﻿{% extends 'template/admin.html' %}
 
 {% block title %}Payments — Admin{% endblock %}
-
-{% block page_config %}
-<script>
-    window.CRUD_CONFIGS = window.CRUD_CONFIGS || {};
-    window.CRUD_CONFIGS['payments'] = {
-        label: 'Payment',
-        endpoint: '/api/payment',
-        idField: 'payment_id',
-        itemLabel: (item) => item.order_id,
-        columns: [
-            { key: 'order_id', label: 'Order', sortable: true },
-            { key: 'amount', label: 'Amount', type: 'currency', sortable: true },
-            { key: 'method', label: 'Method', sortable: true },
-            {
-                key: 'status', label: 'Status', type: 'badge', sortable: true,
-                badgeMap: {
-                    completed: 'bg-green-100 text-green-800',
-                    pending: 'bg-yellow-100 text-yellow-800',
-                    refunded: 'bg-purple-100 text-purple-800',
-                    failed: 'bg-red-100 text-red-800',
-                },
-            },
-        ],
-        createFields: [
-            { name: 'order_id', label: 'Order ID', type: 'text', required: true },
-            { name: 'amount', label: 'Amount', type: 'number', required: true, step: '0.01', min: 0.01 },
-            {
-                name: 'method', label: 'Method', type: 'select', required: true,
-                options: [
-                    { value: 'credit_card', label: 'Credit Card' },
-                    { value: 'debit_card', label: 'Debit Card' },
-                    { value: 'bank_transfer', label: 'Bank Transfer' },
-                    { value: 'cash', label: 'Cash' },
-                ],
-            },
-        ],
-        editFields: [
-            { name: 'amount', label: 'Amount', type: 'number', required: true, step: '0.01', min: 0.01 },
-            {
-                name: 'status', label: 'Status', type: 'select', required: true,
-                options: [
-                    { value: 'pending', label: 'Pending' },
-                    { value: 'completed', label: 'Completed' },
-                    { value: 'failed', label: 'Failed' },
-                    { value: 'refunded', label: 'Refunded' },
-                ],
-            },
-        ],
-    };
-</script>
-{% endblock %}
 
 {% block content %}
 <div class="max-w-7xl mx-auto">

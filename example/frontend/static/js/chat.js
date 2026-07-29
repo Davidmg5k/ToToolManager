@@ -1,4 +1,4 @@
-// ToToolManager - AI Chat page
+﻿// ToToolManager - AI Chat page
 //
 // Threading model
 // ----------------
@@ -50,20 +50,21 @@ function chatApp() {
         async _bootstrap() {
             try {
                 await loadSessions();
-                const urlChatId = parseChatIdFromPath();
-                const resp = await fetch('/api/chat/sessions');
-                const sessions = await resp.json();
+                var urlChatId = parseChatIdFromPath();
+                var res = await API.get('/api/chat/sessions');
+                var sessions = res.success ? res.data : [];
 
                 if (urlChatId && sessions.some(function (s) { return s.chat_id === urlChatId; })) {
                     await selectChat(urlChatId, { pushUrl: false });
                     return;
                 }
                 if (sessions.length === 0) {
-                    const f = new FormData();
+                    var f = new FormData();
                     f.append('title', 'New Chat');
-                    await fetch('/api/chat/sessions', { method: 'POST', body: f });
+                    await API.postForm('/api/chat/sessions', f);
                     await loadSessions();
-                    const list = await (await fetch('/api/chat/sessions')).json();
+                    var listRes = await API.get('/api/chat/sessions');
+                    var list = listRes.success ? listRes.data : [];
                     if (list.length > 0) await selectChat(list[0].chat_id, { pushUrl: false });
                 } else {
                     await selectChat(sessions[0].chat_id, { pushUrl: false });
@@ -107,17 +108,17 @@ function renderSessionItem(session) {
 
     const div = document.createElement('div');
     div.className = 'chat-session-item group flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-colors ' +
-        (isActive ? 'bg-indigo-50 text-indigo-700' : 'hover:bg-gray-100') +
+        (isActive ? 'bg-brand-50 text-brand-700' : 'hover:bg-paper-200') +
         (isProcessing ? ' chat-processing' : '');
     div.dataset.chatId = session.chat_id;
     div.dataset.processing = isProcessing ? '1' : '0';
     div.onclick = function () { selectChat(session.chat_id); };
 
     var icon = isProcessing
-        ? '<svg class="w-3.5 h-3.5 text-indigo-500 animate-spin shrink-0" fill="none" viewBox="0 0 24 24">' +
+        ? '<svg class="w-3.5 h-3.5 text-brand-600 animate-spin shrink-0" fill="none" viewBox="0 0 24 24">' +
           '<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>' +
           '<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>'
-        : '<svg class="w-3.5 h-3.5 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">' +
+        : '<svg class="w-3.5 h-3.5 text-ink-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">' +
           '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" ' +
           'd="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>';
 
@@ -125,19 +126,19 @@ function renderSessionItem(session) {
         icon +
         '<div class="flex-1 min-w-0">' +
         '  <span class="chat-title block text-sm truncate">' + escapeHtml(session.title) + '</span>' +
-        '  <span class="block text-[11px] ' + (isProcessing ? 'text-indigo-500 font-medium' : 'text-gray-400') + '">' +
-        (isProcessing ? 'Responding…' : (session.updated_at ? relativeTime(session.updated_at) : (session.message_count + ' msgs'))) +
+        '  <span class="block text-[11px] ' + (isProcessing ? 'text-brand-700 font-medium' : 'text-ink-500') + '">' +
+        (isProcessing ? 'Responding\u2026' : (session.updated_at ? relativeTime(session.updated_at) : (session.message_count + ' msgs'))) +
         '  </span>' +
         '</div>' +
         '<button type="button" onclick="event.stopPropagation(); startEditTitle(\'' + session.chat_id + '\', this)" ' +
-        'class="hidden group-hover:inline-flex items-center p-1 rounded hover:bg-gray-200 shrink-0" title="Rename" aria-label="Rename chat">' +
-        '<svg class="w-3 h-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">' +
+        'class="hidden group-hover:inline-flex items-center p-1 rounded hover:bg-paper-300 shrink-0" title="Rename" aria-label="Rename chat">' +
+        '<svg class="w-3 h-3 text-ink-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">' +
         '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" ' +
         'd="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>' +
         '</button>' +
         '<button type="button" onclick="event.stopPropagation(); deleteChat(\'' + session.chat_id + '\')" ' +
-        'class="hidden group-hover:inline-flex items-center p-1 rounded hover:bg-red-100 shrink-0" title="Delete" aria-label="Delete chat">' +
-        '<svg class="w-3 h-3 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">' +
+        'class="hidden group-hover:inline-flex items-center p-1 rounded hover:bg-danger-500/10 shrink-0" title="Delete" aria-label="Delete chat">' +
+        '<svg class="w-3 h-3 text-danger-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">' +
         '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" ' +
         'd="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>' +
         '</button>';
@@ -148,11 +149,11 @@ async function loadSessions() {
     const list = document.getElementById('chat-sessions-list');
     if (!list) return;
     try {
-        const resp = await fetch('/api/chat/sessions');
-        const sessions = await resp.json();
+        var res = await API.get('/api/chat/sessions', { silent: true });
+        var sessions = res.success ? res.data : [];
         list.innerHTML = '';
         if (sessions.length === 0) {
-            list.innerHTML = '<div class="text-xs text-gray-400 p-3 text-center">No chats yet — start one below.</div>';
+            list.innerHTML = '<div class="text-xs text-ink-500 p-3 text-center">No chats yet \u2014 start one below.</div>';
             return;
         }
         sessions.forEach(function (s) {
@@ -164,7 +165,7 @@ async function loadSessions() {
             }
         });
     } catch (e) {
-        list.innerHTML = '<div class="text-xs text-red-500 p-3 text-center">Couldn\'t load chats.</div>';
+        list.innerHTML = '<div class="text-xs text-danger-600 p-3 text-center">Couldn\'t load chats.</div>';
     }
 }
 
@@ -177,12 +178,13 @@ window.addEventListener('chatSessionDeleted', loadSessions);
 setInterval(loadSessions, 8000);
 
 async function createNewChat() {
-    const formData = new FormData();
+    var formData = new FormData();
     formData.append('title', 'New Chat');
     try {
-        await fetch('/api/chat/sessions', { method: 'POST', body: formData });
+        await API.postForm('/api/chat/sessions', formData);
         await loadSessions();
-        const sessions = await (await fetch('/api/chat/sessions')).json();
+        var res = await API.get('/api/chat/sessions');
+        var sessions = res.success ? res.data : [];
         if (sessions.length > 0) await selectChat(sessions[0].chat_id);
     } catch (e) {
         showErrorToast('Could not start a new chat.');
@@ -197,7 +199,7 @@ function renderUserBubble(text, timestamp) {
     div.className = 'flex justify-end gap-2.5';
     div.innerHTML =
         '<div class="flex flex-col items-end">' +
-        '  <div class="bg-indigo-600 text-white rounded-2xl rounded-br-sm px-4 py-2 max-w-[85%] sm:max-w-lg shadow-sm"><p class="text-sm whitespace-pre-wrap break-words">' + escapeHtml(text) + '</p></div>' +
+        '  <div class="bg-brand-400 text-ink-950 rounded-2xl rounded-br-sm px-4 py-2 max-w-[85%] sm:max-w-lg shadow-brand"><p class="text-sm whitespace-pre-wrap break-words">' + escapeHtml(text) + '</p></div>' +
         (timestamp ? '  <span class="chat-timestamp">' + formatTimestamp(timestamp) + '</span>' : '') +
         '</div>' +
         '<div class="chat-avatar chat-avatar-user">You</div>';
@@ -210,7 +212,7 @@ function renderAiBubble(text, timestamp) {
     div.innerHTML =
         '<div class="chat-avatar chat-avatar-ai">AI</div>' +
         '<div class="flex flex-col items-start min-w-0">' +
-        '  <div class="bg-gray-100 rounded-2xl rounded-bl-sm px-4 py-2 max-w-[85%] sm:max-w-lg ai-bubble">' + marked.parse(text) + '</div>' +
+        '  <div class="bg-paper-200 border border-paper-300 rounded-2xl rounded-bl-sm px-4 py-2 max-w-[85%] sm:max-w-lg ai-bubble">' + marked.parse(text) + '</div>' +
         (timestamp ? '  <span class="chat-timestamp">' + formatTimestamp(timestamp) + '</span>' : '') +
         '</div>';
     return div;
@@ -222,11 +224,11 @@ function renderThinkingBubble() {
     div.id = 'thinking-bubble';
     div.innerHTML =
         '<div class="chat-avatar chat-avatar-ai">AI</div>' +
-        '<div class="bg-gray-100 rounded-2xl rounded-bl-sm px-4 py-2 max-w-[85%] sm:max-w-lg ai-bubble">' +
-        '<span class="inline-flex gap-1 items-center text-gray-400 text-sm">' +
-        '<span class="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce" style="animation-delay:0ms"></span>' +
-        '<span class="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce" style="animation-delay:150ms"></span>' +
-        '<span class="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce" style="animation-delay:300ms"></span>' +
+        '<div class="bg-paper-200 border border-paper-300 rounded-2xl rounded-bl-sm px-4 py-2 max-w-[85%] sm:max-w-lg ai-bubble">' +
+        '<span class="inline-flex gap-1 items-center text-ink-500 text-sm">' +
+        '<span class="w-1.5 h-1.5 rounded-full bg-ink-300 animate-bounce" style="animation-delay:0ms"></span>' +
+        '<span class="w-1.5 h-1.5 rounded-full bg-ink-300 animate-bounce" style="animation-delay:150ms"></span>' +
+        '<span class="w-1.5 h-1.5 rounded-full bg-ink-300 animate-bounce" style="animation-delay:300ms"></span>' +
         '</span></div>';
     return div;
 }
@@ -281,11 +283,11 @@ function notifyNewContent() {
 async function selectChat(chatId, opts) {
     opts = opts || {};
     const messagesDiv = document.getElementById('chat-messages');
-    messagesDiv.innerHTML = '<div class="flex justify-center pt-8"><div class="animate-pulse text-gray-400 text-sm">Loading messages…</div></div>';
+    messagesDiv.innerHTML = '<div class="flex justify-center pt-8"><div class="animate-pulse text-ink-500 text-sm">Loading messages\u2026</div></div>';
 
     try {
-        const resp = await fetch('/api/chat/sessions/' + chatId + '/messages');
-        const messages = await resp.json();
+        var res = await API.get('/api/chat/sessions/' + chatId + '/messages', { silent: true });
+        var messages = res.success ? res.data : [];
 
         window._currentChatId = chatId;
         renderMessages(messages);
@@ -294,8 +296,8 @@ async function selectChat(chatId, opts) {
         const title = sessionItem ? (sessionItem.querySelector('.chat-title')?.textContent || 'Chat') : 'Chat';
 
         document.querySelectorAll('.chat-session-item').forEach(function (el) {
-            el.classList.toggle('bg-indigo-50', el.dataset.chatId === chatId);
-            el.classList.toggle('text-indigo-700', el.dataset.chatId === chatId);
+            el.classList.toggle('bg-brand-50', el.dataset.chatId === chatId);
+            el.classList.toggle('text-brand-700', el.dataset.chatId === chatId);
         });
 
         if (opts.pushUrl !== false) {
@@ -336,9 +338,9 @@ async function selectChat(chatId, opts) {
 function watchThread(chatId) {
     if (threads.has(chatId)) return;
 
-    fetch('/api/chat/sessions/' + chatId + '/status')
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
+    API.get('/api/chat/sessions/' + chatId + '/status', { silent: true })
+        .then(function (res) {
+            var data = res.success ? res.data : {};
             if (data.status === 'running' || data.status === 'pending') {
                 connectThread(chatId);
             }
@@ -361,7 +363,7 @@ function connectThread(chatId) {
         }
     }
 
-    const es = new EventSource('/api/chat/sessions/' + chatId + '/events');
+    var es = new EventSource('/api/chat/sessions/' + chatId + '/events');
     thread.eventSource = es;
 
     es.onmessage = function (event) {
@@ -429,9 +431,10 @@ function finishThread(chatId) {
         if (liveBubble) liveBubble.removeAttribute('id');
         // Re-fetch so the final, canonical message (with its real timestamp
         // and id) replaces the locally-streamed approximation.
-        fetch('/api/chat/sessions/' + chatId + '/messages')
-            .then(function (r) { return r.json(); })
-            .then(function (messages) { if (window._currentChatId === chatId) renderMessages(messages); })
+        API.get('/api/chat/sessions/' + chatId + '/messages', { silent: true })
+            .then(function (res) {
+                if (res.success && window._currentChatId === chatId) renderMessages(res.data);
+            })
             .catch(function () { /* keep what's on screen */ });
     } else {
         showToast('A chat finished responding.');
@@ -442,9 +445,9 @@ function pollUntilDone(chatId, attempt) {
     attempt = attempt || 0;
     if (attempt > 120) return; // ~6 minutes at 3s intervals, then give up quietly
 
-    fetch('/api/chat/sessions/' + chatId + '/status')
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
+    API.get('/api/chat/sessions/' + chatId + '/status', { silent: true })
+        .then(function (res) {
+            var data = res.success ? res.data : {};
             if (data.status === 'completed' || data.status === 'failed' || data.status === 'idle') {
                 finishThread(chatId);
             } else {
@@ -471,7 +474,7 @@ async function sendMessage(e) {
         return;
     }
     if (threads.has(chatId)) {
-        showErrorToast('This chat is still responding — wait a moment before sending another message.');
+        showErrorToast('This chat is still responding \u2014 wait a moment before sending another message.');
         return;
     }
 
@@ -484,17 +487,15 @@ async function sendMessage(e) {
     input.focus();
 
     try {
-        const formData = new FormData();
+        var formData = new FormData();
         formData.append('message', text);
-        const resp = await fetch('/api/chat/sessions/' + chatId + '/send', { method: 'POST', body: formData });
+        var res = await API.postForm('/api/chat/sessions/' + chatId + '/send', formData);
 
-        if (!resp.ok) {
-            const errData = await resp.json().catch(function () { return {}; });
-            throw new Error(errData.detail || 'Failed to start the response');
+        if (res.success && res.data && res.data.task_id) {
+            connectThread(chatId);
+        } else {
+            throw new Error(res.error || 'Failed to start the response');
         }
-
-        const data = await resp.json();
-        if (data.task_id) connectThread(chatId);
     } catch (err) {
         const thinkingEl = document.getElementById('thinking-bubble');
         if (thinkingEl) thinkingEl.remove();
@@ -518,7 +519,8 @@ function deleteChat(chatId) {
         if (wasCurrent) {
             window._currentChatId = null;
             renderMessages([]);
-            const sessions = await (await fetch('/api/chat/sessions')).json();
+            var res = await API.get('/api/chat/sessions');
+            var sessions = res.success ? res.data : [];
             if (sessions.length > 0) {
                 await selectChat(sessions[0].chat_id);
             } else {
@@ -533,7 +535,7 @@ function startEditTitle(chatId, btn) {
     const span = item.querySelector('.chat-title');
     const currentTitle = span.textContent;
     const escapedVal = currentTitle.replace(/"/g, '&quot;');
-    span.outerHTML = '<input type="text" value="' + escapedVal + '" class="chat-title w-full text-sm px-1 py-0.5 border border-indigo-300 rounded focus:ring-1 focus:ring-indigo-500" ' +
+    span.outerHTML = '<input type="text" value="' + escapedVal + '" class="chat-title w-full text-sm px-1 py-0.5 border border-brand-400/60 rounded focus:ring-1 focus:ring-brand-400 bg-paper-100 text-ink-900" ' +
         'onblur="saveTitle(\'' + chatId + '\', this.value)" ' +
         'onkeydown="if(event.key===\'Enter\') this.blur(); if(event.key===\'Escape\') this.blur();" />';
     const inputEl = item.querySelector('input.chat-title');
@@ -546,10 +548,10 @@ async function saveTitle(chatId, newTitle) {
         loadSessions();
         return;
     }
-    const formData = new FormData();
+    var formData = new FormData();
     formData.append('title', newTitle.trim());
     try {
-        await fetch('/api/chat/sessions/' + chatId, { method: 'PATCH', body: formData });
+        await API.patchForm('/api/chat/sessions/' + chatId, formData);
         await loadSessions();
         if (window._currentChatId === chatId) {
             window.dispatchEvent(new CustomEvent('chat-select', { detail: { chat_id: chatId, title: newTitle.trim() } }));

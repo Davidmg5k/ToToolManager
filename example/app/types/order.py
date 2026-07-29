@@ -1,4 +1,4 @@
-from uuid import UUID
+﻿from uuid import UUID
 from enum import Enum
 
 from sqlmodel import Field, SQLModel
@@ -24,7 +24,7 @@ class CreateOrder(SQLModel):
     status: OrderStatus = OrderStatus.PENDING
 
 
-class UpdateOrder(GetOrder):
+class UpdateOrder(SQLModel):
     product_name: str | None = Field(default=None)
     quantity: int | None = Field(default=None, ge=1)
     unit_price: float | None = Field(default=None, ge=0.0)

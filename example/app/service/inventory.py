@@ -1,4 +1,4 @@
-from uuid import UUID
+﻿from uuid import UUID
 
 from app.exception import (
     InsufficientStockException,
@@ -27,10 +27,10 @@ class InventoryService:
             raise ValidationException("Price cannot be negative", field="price")
         return self.__repo.create(data)
 
-    async def update_product(self, data: UpdateProduct):
-        self.__repo.get_or_raise(data.product_id, "Product")
-        fields = data.model_dump(exclude_unset=True, exclude={"product_id"})
-        return self.__repo.update(data.product_id, fields)
+    async def update_product(self, product_id: UUID, data: UpdateProduct):
+        self.__repo.get_or_raise(product_id, "Product")
+        fields = data.model_dump(exclude_unset=True)
+        return self.__repo.update(product_id, fields)
 
     async def delete_product(self, data: GetProduct):
         self.__repo.get_or_raise(data.product_id, "Product")

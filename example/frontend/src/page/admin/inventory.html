@@ -1,38 +1,6 @@
-{% extends 'template/admin.html' %}
+﻿{% extends 'template/admin.html' %}
 
 {% block title %}Inventory — Admin{% endblock %}
-
-{% block page_config %}
-<script>
-    window.CRUD_CONFIGS = window.CRUD_CONFIGS || {};
-    window.CRUD_CONFIGS['inventory'] = {
-        label: 'Product',
-        endpoint: '/api/inventory',
-        idField: 'product_id',
-        itemLabel: (item) => item.name,
-        columns: [
-            { key: 'name', label: 'Name', sortable: true },
-            { key: 'sku', label: 'SKU', sortable: true },
-            { key: 'price', label: 'Price', type: 'currency', sortable: true },
-            { key: 'stock', label: 'Stock', sortable: true },
-        ],
-        createFields: [
-            { name: 'name', label: 'Product name', type: 'text', required: true },
-            { name: 'sku', label: 'SKU', type: 'text', required: true },
-            { name: 'price', label: 'Price', type: 'number', required: true, step: '0.01', min: 0 },
-            { name: 'stock', label: 'Initial stock', type: 'number', required: true, min: 0, default: 0 },
-            { name: 'description', label: 'Description', type: 'textarea', placeholder: 'Optional' },
-        ],
-        editFields: [
-            { name: 'name', label: 'Product name', type: 'text', required: true },
-            { name: 'sku', label: 'SKU', type: 'text', required: true },
-            { name: 'price', label: 'Price', type: 'number', required: true, step: '0.01', min: 0 },
-            { name: 'stock', label: 'Stock', type: 'number', required: true, min: 0 },
-            { name: 'description', label: 'Description', type: 'textarea', placeholder: 'Optional' },
-        ],
-    };
-</script>
-{% endblock %}
 
 {% block content %}
 <div class="max-w-7xl mx-auto">

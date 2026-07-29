@@ -1,4 +1,4 @@
-from uuid import UUID
+﻿from uuid import UUID
 from enum import Enum
 
 from sqlmodel import Field, SQLModel
@@ -29,7 +29,7 @@ class CreateNotification(SQLModel):
     recipient: str
 
 
-class UpdateNotification(GetNotification):
+class UpdateNotification(SQLModel):
     status: NotificationStatus | None = Field(default=None)
     subject: str | None = Field(default=None)
     body: str | None = Field(default=None)

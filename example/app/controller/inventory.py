@@ -1,4 +1,4 @@
-from uuid import UUID
+﻿from uuid import UUID
 
 from app.service import InventoryService, ProductRepository
 from app.types.inventory import AdjustStock, CreateProduct, GetProduct, UpdateProduct
@@ -16,9 +16,7 @@ class InventoryController:
         return await self.__service.create_product(data)
 
     async def update_product(self, product_id: UUID, data: UpdateProduct):
-        return await self.__service.update_product(
-            UpdateProduct(product_id=product_id, **data.model_dump(exclude_unset=True))
-        )
+        return await self.__service.update_product(product_id, data)
 
     async def delete_product(self, product_id: UUID):
         return await self.__service.delete_product(GetProduct(product_id=product_id))

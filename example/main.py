@@ -1,4 +1,4 @@
-from contextlib import asynccontextmanager
+﻿from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -31,16 +31,14 @@ app = FastAPI(
 @app.exception_handler(AppException)
 async def app_exception_handler(request: Request, exc: AppException):
     is_htmx = request.headers.get("HX-Request") == "true"
+    content = {"success": False, "error": exc.message, "detail": exc.detail}
     if is_htmx:
         return JSONResponse(
             status_code=400,
-            content={"error": exc.message, "detail": exc.detail},
+            content=content,
             headers={"HX-Trigger": "showToast"},
         )
-    return JSONResponse(
-        status_code=400,
-        content={"error": exc.message, "detail": exc.detail},
-    )
+    return JSONResponse(status_code=400, content=content)
 
 
 app.add_middleware(

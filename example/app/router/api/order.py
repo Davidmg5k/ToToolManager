@@ -6,6 +6,7 @@ from sqlmodel import Session
 
 from app import get_session, engine
 from app.controller.order import OrderController
+from app.response import ok, created, no_content
 from app.service import OrderRepository
 from app.types.order import CreateOrder, UpdateOrder
 
@@ -21,7 +22,8 @@ async def list_orders(
     controller: Annotated[OrderController, Depends(_get_controller)],
     user_id: UUID | None = Query(default=None),
 ):
-    return await controller.list_orders(user_id)
+    orders = await controller.list_orders(user_id)
+    return ok([o.model_dump(mode="json") for o in orders])
 
 
 @order_router.get("/{order_id}")
@@ -29,7 +31,8 @@ async def get_order(
     order_id: UUID,
     controller: Annotated[OrderController, Depends(_get_controller)],
 ):
-    return await controller.get_order(order_id)
+    order = await controller.get_order(order_id)
+    return ok(order.model_dump(mode="json"))
 
 
 @order_router.post("/")
@@ -43,7 +46,8 @@ async def create_order(request: Request):
     )
     with Session(engine) as session:
         ctrl = OrderController(OrderRepository(session))
-        return await ctrl.create_order(data)
+        order = await ctrl.create_order(data)
+        return created(order.model_dump(mode="json"))
 
 
 @order_router.patch("/{order_id}")
@@ -52,7 +56,8 @@ async def update_order(
     data: UpdateOrder,
     controller: Annotated[OrderController, Depends(_get_controller)],
 ):
-    return await controller.update_order(order_id, data)
+    order = await controller.update_order(order_id, data)
+    return ok(order.model_dump(mode="json"))
 
 
 @order_router.post("/{order_id}/cancel")
@@ -60,8 +65,12 @@ async def cancel_order(
     order_id: UUID,
     controller: Annotated[OrderController, Depends(_get_controller)],
 ):
-    return await controller.cancel_order(order_id)
+    order = await controller.cancel_order(order_id)
+    return ok(order.model_dump(mode="json"))
+
 
 @order_router.delete("/{order_id}")
 async def delete_order(order_id: UUID, controller: Annotated[OrderController, Depends(_get_controller)]):
-    return await controller.delete_order(order_id)
+    await controller.delete_order(order_id)
+    return no_content()
+

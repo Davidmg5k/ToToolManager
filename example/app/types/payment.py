@@ -1,4 +1,4 @@
-from uuid import UUID
+﻿from uuid import UUID
 from enum import Enum
 
 from sqlmodel import Field, SQLModel
@@ -29,6 +29,6 @@ class CreatePayment(SQLModel):
     currency: str = "USD"
 
 
-class UpdatePayment(GetPayment):
+class UpdatePayment(SQLModel):
     status: PaymentStatus | None = Field(default=None)
     amount: float | None = Field(default=None, ge=0.01)

@@ -1,4 +1,4 @@
-from typing import Annotated
+﻿from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import JSONResponse
@@ -6,6 +6,7 @@ from sqlmodel import Session
 
 from app import get_session
 from app.controller.auth import AuthController
+from app.response import ok, error
 from app.service import UserRepository
 from app.types.auth import LoginRequest, RefreshTokenRequest
 
@@ -28,14 +29,17 @@ async def login(request: Request):
     with Session(engine) as session:
         user = session.exec(select(User).where(User.email == email)).first()
         if user is None or user.password != password:
-            resp = JSONResponse(content={"error": "Invalid email or password"}, status_code=401)
+            resp = JSONResponse(
+                content={"success": False, "error": "Invalid email or password"},
+                status_code=401,
+            )
             resp.headers["HX-Trigger"] = '{"showToast": {"message": "Invalid email or password", "type": "error"}}'
             return resp
 
         import base64, json
         token = base64.b64encode(json.dumps({"user_id": str(user.user_id), "email": user.email}).encode()).decode()
 
-        resp = JSONResponse(content={"ok": True})
+        resp = JSONResponse(content={"success": True, "data": {"user_id": str(user.user_id)}})
         resp.set_cookie("user_id", str(user.user_id), httponly=True, samesite="lax")
         resp.headers["HX-Redirect"] = "/admin/dashboard"
         return resp

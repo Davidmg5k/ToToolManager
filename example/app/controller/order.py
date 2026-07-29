@@ -16,9 +16,7 @@ class OrderController:
         return await self.__service.create_order(data)
 
     async def update_order(self, order_id: UUID, data: UpdateOrder):
-        return await self.__service.update_order(
-            UpdateOrder(order_id=order_id, **data.model_dump(exclude_unset=True))
-        )
+        return await self.__service.update_order(order_id, data)
 
     async def cancel_order(self, order_id: UUID):
         return await self.__service.cancel_order(GetOrder(order_id=order_id))

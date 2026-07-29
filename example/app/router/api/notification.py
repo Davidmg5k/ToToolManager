@@ -6,6 +6,7 @@ from sqlmodel import Session
 
 from app import get_session, engine
 from app.controller.notification import NotificationController
+from app.response import ok, created, no_content
 from app.service import NotificationRepository
 from app.types.notification import CreateNotification, UpdateNotification
 
@@ -21,7 +22,8 @@ async def list_notifications(
     controller: Annotated[NotificationController, Depends(_get_controller)],
     user_id: UUID | None = Query(default=None),
 ):
-    return await controller.list_notifications(user_id)
+    notifications = await controller.list_notifications(user_id)
+    return ok([n.model_dump(mode="json") for n in notifications])
 
 
 @notification_router.get("/{notification_id}")
@@ -29,7 +31,8 @@ async def get_notification(
     notification_id: UUID,
     controller: Annotated[NotificationController, Depends(_get_controller)],
 ):
-    return await controller.get_notification(notification_id)
+    notification = await controller.get_notification(notification_id)
+    return ok(notification.model_dump(mode="json"))
 
 
 @notification_router.post("/")
@@ -44,7 +47,8 @@ async def create_notification(request: Request):
     )
     with Session(engine) as session:
         ctrl = NotificationController(NotificationRepository(session))
-        return await ctrl.create_notification(data)
+        notification = await ctrl.create_notification(data)
+        return created(notification.model_dump(mode="json"))
 
 
 @notification_router.patch("/{notification_id}")
@@ -53,7 +57,8 @@ async def update_notification(
     data: UpdateNotification,
     controller: Annotated[NotificationController, Depends(_get_controller)],
 ):
-    return await controller.update_notification(notification_id, data)
+    notification = await controller.update_notification(notification_id, data)
+    return ok(notification.model_dump(mode="json"))
 
 
 @notification_router.post("/{notification_id}/resend")
@@ -61,8 +66,12 @@ async def resend_notification(
     notification_id: UUID,
     controller: Annotated[NotificationController, Depends(_get_controller)],
 ):
-    return await controller.resend_notification(notification_id)
+    notification = await controller.resend_notification(notification_id)
+    return ok(notification.model_dump(mode="json"))
+
 
 @notification_router.delete("/{notification_id}")
 async def delete_notification(notification_id: UUID, controller: Annotated[NotificationController, Depends(_get_controller)]):
-    return await controller.delete_notification(notification_id)
+    await controller.delete_notification(notification_id)
+    return no_content()
+

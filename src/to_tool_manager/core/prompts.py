@@ -87,12 +87,12 @@ Error handling — hard rules:
 - Never loop indefinitely retrying failed operations.
 
 Once every requested operation has been attempted, stop calling tools
-and produce a final, structured summary:
+and produce a final, conversational summary:
 - What succeeded
 - What failed or was skipped, and why
-- The actual data requested (if the user asked to see/list something,
-  include the real values returned by the tools, not just a confirmation
-  that "it was shown").
+- If the user asked to see/list something, mention the key details
+  naturally (e.g. names, emails) without exposing internal IDs or
+  technical field names. Do NOT dump raw data tables.
 {DEFAULT_END}"""
 
 

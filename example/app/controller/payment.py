@@ -16,9 +16,7 @@ class PaymentController:
         return await self.__service.create_payment(data)
 
     async def update_payment(self, payment_id: UUID, data: UpdatePayment):
-        return await self.__service.update_payment(
-            UpdatePayment(payment_id=payment_id, **data.model_dump(exclude_unset=True))
-        )
+        return await self.__service.update_payment(payment_id, data)
 
     async def refund_payment(self, payment_id: UUID):
         return await self.__service.refund_payment(GetPayment(payment_id=payment_id))

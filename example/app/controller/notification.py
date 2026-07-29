@@ -18,9 +18,7 @@ class NotificationController:
         return await self.__service.create_notification(data)
 
     async def update_notification(self, notification_id: UUID, data: UpdateNotification):
-        return await self.__service.update_notification(
-            UpdateNotification(notification_id=notification_id, **data.model_dump(exclude_unset=True))
-        )
+        return await self.__service.update_notification(notification_id, data)
 
     async def resend_notification(self, notification_id: UUID):
         return await self.__service.resend_notification(

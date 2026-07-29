@@ -1,54 +1,6 @@
-{% extends 'template/admin.html' %}
+﻿{% extends 'template/admin.html' %}
 
 {% block title %}Orders — Admin{% endblock %}
-
-{% block page_config %}
-<script>
-    window.CRUD_CONFIGS = window.CRUD_CONFIGS || {};
-    window.CRUD_CONFIGS['orders'] = {
-        label: 'Order',
-        endpoint: '/api/order/',
-        idField: 'order_id',
-        itemLabel: (item) => item.product_name,
-        columns: [
-            { key: 'product_name', label: 'Product', sortable: true },
-            { key: 'quantity', label: 'Qty', sortable: true },
-            { key: 'total', label: 'Total', type: 'currency', sortable: true, value: (item) => item.total ?? (item.quantity * item.unit_price) },
-            {
-                key: 'status', label: 'Status', type: 'badge', sortable: true,
-                badgeMap: {
-                    pending: 'bg-yellow-100 text-yellow-800',
-                    confirmed: 'bg-blue-100 text-blue-800',
-                    shipped: 'bg-purple-100 text-purple-800',
-                    delivered: 'bg-green-100 text-green-800',
-                    cancelled: 'bg-red-100 text-red-800',
-                },
-            },
-        ],
-        createFields: [
-            { name: 'user_id', label: 'User ID', type: 'text', required: true, placeholder: 'Paste the customer''s user ID' },
-            { name: 'product_name', label: 'Product name', type: 'text', required: true },
-            { name: 'quantity', label: 'Quantity', type: 'number', required: true, min: 1, default: 1 },
-            { name: 'unit_price', label: 'Unit price', type: 'number', required: true, step: '0.01', min: 0 },
-        ],
-        editFields: [
-            { name: 'product_name', label: 'Product name', type: 'text', required: true },
-            { name: 'quantity', label: 'Quantity', type: 'number', required: true, min: 1 },
-            { name: 'unit_price', label: 'Unit price', type: 'number', required: true, step: '0.01', min: 0 },
-            {
-                name: 'status', label: 'Status', type: 'select', required: true,
-                options: [
-                    { value: 'pending', label: 'Pending' },
-                    { value: 'confirmed', label: 'Confirmed' },
-                    { value: 'shipped', label: 'Shipped' },
-                    { value: 'delivered', label: 'Delivered' },
-                    { value: 'cancelled', label: 'Cancelled' },
-                ],
-            },
-        ],
-    };
-</script>
-{% endblock %}
 
 {% block content %}
 <div class="max-w-7xl mx-auto">

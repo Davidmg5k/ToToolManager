@@ -1,32 +1,6 @@
-{% extends 'template/admin.html' %}
+﻿{% extends 'template/admin.html' %}
 
 {% block title %}Users — Admin{% endblock %}
-
-{% block page_config %}
-<script>
-    window.CRUD_CONFIGS = window.CRUD_CONFIGS || {};
-    window.CRUD_CONFIGS['users'] = {
-        label: 'User',
-        endpoint: '/api/user',
-        idField: 'user_id',
-        itemLabel: (item) => item.user_name,
-        columns: [
-            { key: 'user_name', label: 'Name', sortable: true },
-            { key: 'email', label: 'Email', sortable: true },
-        ],
-        createFields: [
-            { name: 'user_name', label: 'Full name', type: 'text', required: true, placeholder: 'Jane Cooper' },
-            { name: 'email', label: 'Email', type: 'email', required: true, placeholder: 'jane@example.com' },
-            { name: 'password', label: 'Password', type: 'password', required: true, placeholder: 'At least 8 characters' },
-        ],
-        editFields: [
-            { name: 'user_name', label: 'Full name', type: 'text', required: true },
-            { name: 'email', label: 'Email', type: 'email', required: true },
-            { name: 'password', label: 'Password', type: 'password', optionalOnEdit: true, editPlaceholder: 'Leave empty to keep current' },
-        ],
-    };
-</script>
-{% endblock %}
 
 {% block content %}
 <div class="max-w-7xl mx-auto">

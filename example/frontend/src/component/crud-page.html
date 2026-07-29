@@ -3,25 +3,26 @@
     <!-- Header -->
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <div>
-            <h1 class="text-2xl font-bold text-gray-900">{{ title }}</h1>
-            <p class="text-sm text-gray-500 mt-0.5" x-show="!loading">
+            <p class="kicker text-[10px] text-brand-700 mb-1">Resource</p>
+            <h1 class="text-2xl font-display font-bold text-ink-900">{{ title }}</h1>
+            <p class="text-sm text-ink-600 mt-0.5 font-mono" x-show="!loading">
                 <span x-text="filteredItems.length"></span>
                 <span x-text="filteredItems.length === 1 ? 'record' : 'records'"></span>
-                <template x-if="query"><span> matching “<span x-text="query"></span>”</span></template>
+                <template x-if="query"><span> matching &ldquo;<span x-text="query"></span>&rdquo;</span></template>
             </p>
-            <p class="text-sm text-gray-400 mt-0.5" x-show="loading">Loading…</p>
+            <p class="text-sm text-ink-500 mt-0.5" x-show="loading">Loading&hellip;</p>
         </div>
 
         <div class="flex items-center gap-3">
             <div class="relative">
-                <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z"/>
                 </svg>
-                <input type="search" x-model="query" placeholder="Search {{ title|lower }}…"
-                       class="pl-9 pr-3 py-2 w-48 sm:w-64 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-shadow">
+                <input type="search" x-model="query" placeholder="Search {{ title|lower }}&hellip;"
+                       class="pl-9 pr-3 py-2 w-48 sm:w-64 bg-paper-100 border border-paper-400 rounded-lg text-sm text-ink-900 placeholder:text-ink-500 focus:ring-2 focus:ring-brand-400/40 focus:border-brand-400 transition-shadow">
             </div>
             <button @click="openCreate()"
-                    class="inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 shadow-sm shadow-indigo-200 transition-all hover:-translate-y-0.5 whitespace-nowrap">
+                    class="inline-flex items-center gap-1.5 px-4 py-2 bg-brand-400 text-ink-950 text-sm font-semibold rounded-lg hover:bg-brand-300 shadow-brand transition-all hover:-translate-y-0.5 whitespace-nowrap">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
                 New {{ singular }}
             </button>

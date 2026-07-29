@@ -1,4 +1,4 @@
-from uuid import UUID
+﻿from uuid import UUID
 
 from app.service import UserService, UserRepository
 from app.types.user import CreateUser, GetUser, UpdateUser
@@ -16,7 +16,7 @@ class UserController:
         return await self.__service.create_user(data)
 
     async def update_user(self, user_id: UUID, data: UpdateUser):
-        return await self.__service.update_user(UpdateUser(user_id=user_id, **data.model_dump()))
+        return await self.__service.update_user(user_id, data)
 
     async def delete_user(self, user_id: UUID):
         return await self.__service.delete_user(GetUser(user_id=user_id))

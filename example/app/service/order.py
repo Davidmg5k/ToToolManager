@@ -25,17 +25,17 @@ class OrderService:
             raise ValidationException("Quantity must be at least 1", field="quantity")
         return self.__repo.create(data)
 
-    async def update_order(self, data: UpdateOrder):
-        order = self.__repo.get(data.order_id)
+    async def update_order(self, order_id: UUID, data: UpdateOrder):
+        order = self.__repo.get(order_id)
         if order is None:
-            raise NotFoundException("Order", data.order_id)
+            raise NotFoundException("Order", order_id)
         if order.status in ("shipped", "delivered", "cancelled"):
             raise ConflictException(
                 f"Cannot update order in '{order.status}' status",
-                detail={"order_id": str(data.order_id), "current_status": order.status},
+                detail={"order_id": str(order_id), "current_status": order.status},
             )
-        fields = data.model_dump(exclude_unset=True, exclude={"order_id"})
-        return self.__repo.update(data.order_id, fields)
+        fields = data.model_dump(exclude_unset=True)
+        return self.__repo.update(order_id, fields)
 
     async def cancel_order(self, data: GetOrder):
         order = self.__repo.get(data.order_id)

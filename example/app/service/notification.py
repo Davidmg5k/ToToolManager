@@ -33,10 +33,10 @@ class NotificationService:
         sent = await self._send_notification(notification)
         return sent
 
-    async def update_notification(self, data: UpdateNotification):
-        self.__repo.get_or_raise(data.notification_id, "Notification")
-        fields = data.model_dump(exclude_unset=True, exclude={"notification_id"})
-        return self.__repo.update(data.notification_id, fields)
+    async def update_notification(self, notification_id: UUID, data: UpdateNotification):
+        self.__repo.get_or_raise(notification_id, "Notification")
+        fields = data.model_dump(exclude_unset=True)
+        return self.__repo.update(notification_id, fields)
 
     async def resend_notification(self, data: GetNotification):
         notification = self.__repo.get(data.notification_id)

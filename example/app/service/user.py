@@ -1,3 +1,5 @@
+﻿from uuid import UUID
+
 from app.exception import (
     AlreadyExistsException,
     NotFoundException,
@@ -23,10 +25,10 @@ class UserService:
             raise AlreadyExistsException("User", "email", data.email)
         return self.__repo.create(data)
 
-    async def update_user(self, data: UpdateUser):
-        self.__repo.get_or_raise(data.user_id, "User")
-        fields = data.model_dump(exclude_unset=True, exclude={"user_id"})
-        return self.__repo.update(data.user_id, fields)
+    async def update_user(self, user_id: UUID, data: UpdateUser):
+        self.__repo.get_or_raise(user_id, "User")
+        fields = data.model_dump(exclude_unset=True)
+        return self.__repo.update(user_id, fields)
 
     async def delete_user(self, data: GetUser):
         self.__repo.get_or_raise(data.user_id, "User")

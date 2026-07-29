@@ -1,4 +1,4 @@
-﻿// ToToolManager - Core frontend utilities
+// ToToolManager - Core frontend utilities
 // Loaded on every page. Feature-specific code (CRUD tables, chat) lives in
 // its own file and reuses the helpers defined here instead of redefining them.
 
@@ -66,14 +66,14 @@
 
     function buildToast(message, variant) {
         var palette = {
-            error: { bg: 'bg-red-600', icon: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>' },
-            success: { bg: 'bg-emerald-600', icon: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>' },
-            info: { bg: 'bg-gray-800', icon: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>' },
+            error: { bg: 'bg-danger-50 border border-danger-300 text-danger-800', icon: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>' },
+            success: { bg: 'bg-success-50 border border-success-300 text-success-800', icon: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>' },
+            info: { bg: 'bg-paper-100 border border-paper-400 text-ink-900', icon: '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>' },
         }[variant] || palette_default();
-        function palette_default() { return { bg: 'bg-gray-800', icon: '' }; }
+        function palette_default() { return { bg: 'bg-paper-100 border border-paper-400 text-ink-900', icon: '' }; }
 
         var toast = document.createElement('div');
-        toast.className = palette.bg + ' pointer-events-auto text-white pl-3 pr-4 py-3 rounded-lg shadow-lg text-sm font-medium opacity-0 translate-y-2 transition-all duration-300 flex items-start gap-2 max-w-sm';
+        toast.className = palette.bg + ' pointer-events-auto pl-3 pr-4 py-3 rounded-lg shadow-panel text-sm font-medium opacity-0 translate-y-2 transition-all duration-300 flex items-start gap-2 max-w-sm';
         toast.setAttribute('role', variant === 'error' ? 'alert' : 'status');
         toast.innerHTML =
             '<svg class="w-5 h-5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">' + palette.icon + '</svg>' +
@@ -115,21 +115,21 @@
 
         var modal = document.createElement('div');
         modal.id = 'delete-confirm-modal';
-        modal.className = 'fixed inset-0 bg-gray-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4';
+        modal.className = 'fixed inset-0 bg-ink-950/70 backdrop-blur-sm flex items-center justify-center z-50 p-4';
         modal.innerHTML =
-            '<div class="bg-white rounded-xl shadow-xl max-w-md w-full p-6" role="alertdialog" aria-modal="true" aria-labelledby="delete-modal-title">' +
+            '<div class="hud-corners hud-corners-active bg-paper-100 border border-paper-400 rounded-xl shadow-panel max-w-md w-full p-6" role="alertdialog" aria-modal="true" aria-labelledby="delete-modal-title">' +
             '  <div class="flex items-center gap-3 mb-4">' +
-            '    <div class="flex-shrink-0 w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">' +
-            '      <svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">' +
+            '    <div class="flex-shrink-0 w-10 h-10 rounded-full bg-danger-500/10 border border-danger-500/30 flex items-center justify-center">' +
+            '      <svg class="w-5 h-5 text-danger-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">' +
             '        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z"></path>' +
             '      </svg>' +
             '    </div>' +
-            '    <h3 id="delete-modal-title" class="text-lg font-semibold text-gray-900">Delete ' + escapeHtml(entityLabel) + '?</h3>' +
+            '    <h3 id="delete-modal-title" class="text-lg font-display font-semibold text-ink-900">Delete ' + escapeHtml(entityLabel) + '?</h3>' +
             '  </div>' +
-            '  <p class="text-sm text-gray-500 mb-6">This action can\'t be undone.</p>' +
+            '  <p class="text-sm text-ink-600 mb-6">This action can\'t be undone.</p>' +
             '  <div class="flex justify-end gap-3">' +
-            '    <button id="delete-cancel-btn" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>' +
-            '    <button id="delete-confirm-btn" class="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 shadow-sm">Delete</button>' +
+            '    <button id="delete-cancel-btn" class="px-4 py-2 text-sm font-medium text-ink-600 bg-paper-100 border border-paper-400 rounded-lg hover:bg-paper-200 hover:text-ink-900">Cancel</button>' +
+            '    <button id="delete-confirm-btn" class="px-4 py-2 text-sm font-semibold text-white bg-danger-600 rounded-lg hover:bg-danger-700 shadow-sm">Delete</button>' +
             '  </div>' +
             '</div>';
 
@@ -147,15 +147,13 @@
             var btn = this;
             btn.disabled = true;
             btn.textContent = 'Deleting...';
-            fetch(url, { method: 'DELETE' }).then(function (res) {
+            API.del(url).then(function (res) {
                 close();
-                if (res.ok) {
+                if (res.success) {
                     showToast(entityLabel + ' deleted');
                     if (typeof onDeleted === 'function') onDeleted();
                 } else {
-                    return res.json().catch(function () { return {}; }).then(function (data) {
-                        showErrorToast(data.detail || data.error || 'Delete failed');
-                    });
+                    showErrorToast(res.detail?.detail || res.error || 'Delete failed');
                 }
             }).catch(function () {
                 close();
@@ -165,27 +163,25 @@
     };
 
     // ---------------------------------------------------------------------
-    // Dashboard summary counters
+    // Dashboard summary counters (single aggregated endpoint)
     // ---------------------------------------------------------------------
     function loadDashboardStats() {
-        var endpoints = {
-            'stat-users': '/api/user',
-            'stat-orders': '/api/order',
-            'stat-products': '/api/inventory',
-            'stat-payments': '/api/payment',
-        };
-
-        Object.keys(endpoints).forEach(function (elementId) {
-            var el = document.getElementById(elementId);
-            if (!el) return;
-            fetch(endpoints[elementId]).then(function (res) {
-                if (res.ok) return res.json();
-                throw new Error();
-            }).then(function (data) {
-                el.textContent = Array.isArray(data) ? data.length : '---';
-            }).catch(function () {
-                el.textContent = '---';
+        API.get('/api/dashboard/stats').then(function (res) {
+            if (!res.success || !res.data) return;
+            var d = res.data;
+            setStat('stat-users', d.users);
+            setStat('stat-orders', d.orders);
+            setStat('stat-products', d.products);
+            setStat('stat-payments', d.payments);
+        }).catch(function () {
+            ['stat-users', 'stat-orders', 'stat-products', 'stat-payments'].forEach(function (id) {
+                setStat(id, '---');
             });
         });
+    }
+
+    function setStat(elementId, value) {
+        var el = document.getElementById(elementId);
+        if (el) el.textContent = value != null ? value : '---';
     }
 })();

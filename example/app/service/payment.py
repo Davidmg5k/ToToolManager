@@ -35,16 +35,16 @@ class PaymentService:
         processed = await self._process_payment(payment)
         return processed
 
-    async def update_payment(self, data: UpdatePayment):
-        payment = self.__repo.get(data.payment_id)
+    async def update_payment(self, payment_id: UUID, data: UpdatePayment):
+        payment = self.__repo.get(payment_id)
         if payment is None:
-            raise NotFoundException("Payment", data.payment_id)
+            raise NotFoundException("Payment", payment_id)
         if payment.status in (PaymentStatus.COMPLETED, PaymentStatus.REFUNDED):
             raise ConflictException(
                 f"Cannot update payment in '{payment.status}' status"
             )
-        fields = data.model_dump(exclude_unset=True, exclude={"payment_id"})
-        return self.__repo.update(data.payment_id, fields)
+        fields = data.model_dump(exclude_unset=True)
+        return self.__repo.update(payment_id, fields)
 
     async def refund_payment(self, data: GetPayment):
         payment = self.__repo.get(data.payment_id)

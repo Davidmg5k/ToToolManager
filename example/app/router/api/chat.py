@@ -1,4 +1,4 @@
-import json
+﻿import json
 import asyncio
 
 from fastapi import APIRouter, Request, HTTPException
@@ -17,6 +17,7 @@ from app.controller import (
     build_commerce_module,
     ChatController,
 )
+from app.response import ok, created, no_content, error
 from app.service import ChatSessionRepository, ChatMessageRepository, chat_task_manager
 from app.types.chat import CreateChatSession, CreateChatMessage, UpdateChatSession
 from app.security.middleware_ai.sanitize import SensitiveFieldMiddlewareAI
@@ -28,14 +29,15 @@ chat_router = APIRouter(prefix="/api/chat", tags=["api", "chat"])
 MODEL = "groq:openai/gpt-oss-120b"
 
 SYSTEM_PROMPT = (
-    "You are a helpful assistant for a commerce application. "
+    "You are a friendly, conversational assistant for a commerce application. "
     "You can manage users, orders, products, payments, and notifications. "
     "Rules:\n"
-    "- ALWAYS respond in natural, conversational language.\n"
-    "- When listing multiple items, use a markdown table for clarity.\n"
-    "- When creating/updating/deleting, confirm what was done.\n"
-    "- If there is an error, explain it clearly.\n"
-    "- Keep responses short and friendly.\n"
+    "- ALWAYS respond in natural, conversational language, like chatting with a friend.\n"
+    "- When listing items, summarize them briefly in a natural sentence. Do NOT dump raw tables or technical fields.\n"
+    "- Never expose internal IDs, UUIDs, or technical field names to the user.\n"
+    "- When creating/updating/deleting, confirm what was done in a friendly way.\n"
+    "- If there is an error, explain it clearly and helpfully.\n"
+    "- Keep responses short and concise.\n"
     "- Respond in the same language the user writes in."
 )
 
@@ -87,7 +89,7 @@ async def create_session(request: Request):
     try:
         session_obj = await controller.create_session(CreateChatSession(title=title))
         return JSONResponse(
-            content={},
+            content={"success": True, "data": {"chat_id": str(session_obj.chat_id), "title": session_obj.title}},
             headers={
                 "HX-Trigger": json.dumps({
                     "chatSessionCreated": {
@@ -115,7 +117,7 @@ async def list_sessions(request: Request):
                 "message_count": count,
                 "is_processing": s.is_processing,
             })
-        return JSONResponse(content=result)
+        return ok(result)
     finally:
         db.close()
 
@@ -126,12 +128,12 @@ async def update_session(chat_id: str, request: Request):
     form = await request.form()
     title = form.get("title", "")
     if not title.strip():
-        raise HTTPException(status_code=400, detail="Title cannot be empty")
+        return error("Title cannot be empty", status=400)
     controller, db = _get_chat_controller()
     try:
         await controller.update_session_title(UUID(chat_id), title.strip())
         return JSONResponse(
-            content={},
+            content={"success": True, "data": {"chat_id": chat_id, "title": title.strip()}},
             headers={
                 "HX-Trigger": json.dumps({"chatSessionUpdated": {"chat_id": chat_id, "title": title.strip()}})
             },
@@ -149,7 +151,7 @@ async def delete_session(chat_id: str):
         await chat_task_manager.cancel(uid)
         await controller.delete_session(uid)
         return JSONResponse(
-            content={},
+            content={"success": True, "data": {"chat_id": chat_id}},
             headers={
                 "HX-Trigger": json.dumps({"chatSessionDeleted": {"chat_id": chat_id}})
             },
@@ -167,8 +169,15 @@ async def get_messages(chat_id: str):
     controller, db = _get_chat_controller()
     try:
         messages = await controller.get_messages(UUID(chat_id))
-        result = [{"role": msg.role, "content": msg.content} for msg in messages]
-        return JSONResponse(content=result)
+        result = [
+            {
+                "role": msg.role,
+                "content": msg.content,
+                "created_at": msg.created_at.isoformat() if hasattr(msg, "created_at") and msg.created_at else None,
+            }
+            for msg in messages
+        ]
+        return ok(result)
     finally:
         db.close()
 
@@ -182,7 +191,7 @@ async def chat_send(chat_id: str, request: Request):
     form = await request.form()
     message = form.get("message", "")
     if not message.strip():
-        raise HTTPException(status_code=400, detail="Message cannot be empty")
+        return error("Message cannot be empty", status=400)
 
     uid = UUID(chat_id)
     controller, db = _get_chat_controller()
@@ -205,11 +214,11 @@ async def chat_send(chat_id: str, request: Request):
                 title=new_title,
             )
         except ValueError as e:
-            raise HTTPException(status_code=409, detail=str(e))
+            return error(str(e), status=409)
         finally:
             tools_session.close()
 
-        return JSONResponse(content={"task_id": task_id, "status": "started"})
+        return ok({"task_id": task_id, "status": "started"})
     finally:
         db.close()
 
@@ -220,8 +229,8 @@ async def chat_status(chat_id: str):
     uid = UUID(chat_id)
     task = chat_task_manager.get_status(uid)
     if task is None:
-        return JSONResponse(content={"status": "idle"})
-    return JSONResponse(content=task.to_dict())
+        return ok({"status": "idle"})
+    return ok(task.to_dict())
 
 
 @chat_router.get("/sessions/{chat_id}/events")
@@ -273,6 +282,6 @@ async def chat(request: Request):
             system_prompt=SYSTEM_PROMPT,
         )
         result = await agent.run(message)
-        return JSONResponse(content={"role": "assistant", "content": result.output})
+        return ok({"role": "assistant", "content": result.output})
     finally:
         tools_session.close()
