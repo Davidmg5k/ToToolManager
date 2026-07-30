@@ -17,9 +17,9 @@ from app.controller import (
     build_commerce_module,
     ChatController,
 )
-from app.response import ok, created, no_content, error
+from app.response import ok, error
 from app.service import ChatSessionRepository, ChatMessageRepository, chat_task_manager
-from app.types.chat import CreateChatSession, CreateChatMessage, UpdateChatSession
+from app.types.chat import CreateChatSession, CreateChatMessage
 from app.security.middleware_ai.sanitize import SensitiveFieldMiddlewareAI
 from to_tool_manager import ToToolManager
 from to_tool_manager.adapters.pydantic_ai import build_agent

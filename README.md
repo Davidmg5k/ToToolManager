@@ -54,6 +54,38 @@ pip install ag-ui-core       # para adapters.ag_ui
 
 ---
 
+
+
+## Indice
+
+| Seccion | Descripcion |
+|---------|-------------|
+| [Instalacion](#instalacion) | Dependencias por adapter |
+| [Uso rapido](#uso-rapido) | 3 pasos: clase -> registrar -> agente |
+| [Referencia de la API](#referencia-de-la-api) | Service, Module, ToToolManager, ErrorMap, ToolSpec, ToolResponse |
+| [Nivel 1 - Lo minimo](#nivel-1--lo-minimo-un-servicio-con-una-operacion) | Un servicio, una operacion |
+| [Nivel 2 - Multiples operaciones](#nivel-2--servicio-con-multiples-operaciones-y-excepciones-propias) | Batch de ops, error handling |
+| [Nivel 3 - Dos servicios](#nivel-3--dos-servicios-dos-tools-el-patron-tipico) | Patron tipico multi-tool |
+| [Nivel 4 - Raw (sin framework)](#nivel-4--ejecutar-operaciones-directamente-sin-framework) | to_openai_tool_schemas, dispatch |
+| [Nivel 5 - pydantic-ai](#nivel-5--integracion-con-pydantic-ai-agent) | build_agent, run_streaming, iter_agent |
+| [Nivel 6 - FastMCP](#nivel-6--integracion-con-fastmcp-servidor-mcp) | build_mcp_server, build_mcp_agent |
+| [Nivel 7 - Visibilidad](#nivel-7--opciones-de-visibilidad-y-filtrado-de-metodos) | public, protected, include, exclude |
+| [Nivel 8 - Properties](#nivel-8--exponer-propiedades-como-operaciones) | @property como ops de 0 args |
+| [Nivel 9 - ErrorMap](#nivel-9--sistema-de-errores-avanzado-con-errormap) | map, map_callable, when |
+| [Nivel 10 - Prompts](#nivel-10--prompts-personalizados) | build_system_prompt, build_instructions |
+| [Nivel 11 - Modulos](#nivel-11--modulos-sub-agentes-aislados) | Module con sub-agentes |
+| [Nivel 12 - Planner](#nivel-12--planner-planificacion-cross-service) | Step, StepOperation, ServiceDependencyGraph |
+| [Nivel 13 - ag_ui](#nivel-13--integracion-con-ag_ui-streaming-de-estado-a-uis) | AGUIPlanHandler |
+| [Nivel 14 - Skills](#nivel-14--skills-patrones-de-comportamiento-para-agentes) | reasoning, validation, etc. |
+| [Nivel 15 - build_agent completo](#nivel-15--build_agent-con-todas-las-opciones) | Todas las opciones de build_agent |
+| [Nivel 16 - Condicionales when](#nivel-16--operaciones-condicionales-con-when) | when clauses en batches |
+| [Nivel 17 - Singleton](#nivel-17--clase-como-singleton-vs-instancias-frescas) | singleton=True/False |
+| [Nivel 18 - Middleware](#nivel-18--middleware) | Middleware, ToolMiddleware, cadena de ejecucion |
+| [Nivel 19 - Caso completo](#nivel-19--caso-completo-pydantic-ai--planner--streaming) | Ejemplo end-to-end |
+| [Ejemplos completos](#ejemplos-completos) | example/ y example_ui_pydantic/ |
+
+---
+
 ## Uso rápido
 
 ### 1. Definí tus clases de negocio
@@ -951,7 +983,80 @@ Service(
 )
 ```
 
-**Orden de ejecución:** globales → eliminados por `disable_middlewares` → locales del servicio.
+**Flujo de ejecucion de middlewares:**
+
+```
+  LLM llama a tool "Order"
+          |
+          v
+  +-----------------------------------------------------+
+  |  ToToolManager._resolve_middlewares(service)        |
+  |                                                     |
+  |  1. Empezar con middlewares GLOBALES del manager    |
+  |  2. Eliminar los que estan en disable_middlewares   |
+  |  3. Agregar middlewares LOCALES del servicio        |
+  +-----------------------------------------------------+
+          |
+          v  cadena resuelta: [GlobalMW, LocalMW]
+  +-----------------------------------------------------+
+  |  ToToolManager._apply_middlewares()                 |
+  |                                                     |
+  |  Aplica en REVERSE (el primero es el mas externo): |
+  |                                                     |
+  |  GlobalMW.dispatch(func)                            |
+  |    +-> LocalMW.dispatch(func)                       |
+  |          +-> func(*args)  <- ejecucion real         |
+  |          +<- ToolResponse                           |
+  |        +<- procesa/transforma respuesta             |
+  |    +<- procesa/transforma respuesta                 |
+  +-----------------------------------------------------+
+          |
+          v
+  ToolResponse final -> LLM
+```
+
+**Ejemplo concreto:**
+
+```
+  manager = ToToolManager(
+      services=[order_service],
+      middlewares=[SecurityMiddleware()]      <- GLOBAL
+  )
+
+  order_service = Service(
+      name="Order",
+      service=Order,
+      middlewares=[AuthMiddleware(include=["create"])],  <- LOCAL
+      disable_middlewares=["SecurityMiddleware"],         <- desactiva global
+  )
+
+  Flujo para llamada a "create":
+    SecurityMiddleware  (GLOBAL)  <- DESACTIVADA por disable_middlewares
+    AuthMiddleware      (LOCAL)   <- solo corre para "create"
+    +-> Order.create()
+
+  Flujo para llamada a "get_orders":
+    AuthMiddleware      (LOCAL)   <- NO corre (include=["create"])
+    +-> Order.get_orders()  <- sin interceptacion
+```
+
+**Para Modules**, los middlewares del modulo se apilan despues de los del manager:
+
+```
+  Module(name="Commerce", middlewares=[ModuleMW])
+      |
+      v
+  Internamente crea un sub-ToToolManager:
+    global_middlewares = [ManagerMW] + [ModuleMW]
+      |
+      v
+  Cada Service dentro del modulo resuelve:
+    1. ManagerMW + ModuleMW  (como "globales" del sub-manager)
+    2. - disable_middlewares del service
+    3. + middlewares locales del service
+```
+
+Orden de ejecución:** globales → eliminados por `disable_middlewares` → locales del servicio.
 
 ---
 
