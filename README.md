@@ -725,71 +725,169 @@ module = Module(
 
 ### Nivel 12 — Planner (planificación cross-service)
 
-El planner agrega una capa de planificación sobre el manager, permitiendo
-crear planes con pasos que referencian operaciones de múltiples servicios.
+Planner sirve para dos escenarios distintos, que no son modos configurables
+sino simplemente dos formas de usar la misma API:
+
+- **Manual**: el programador arma el Plan a mano en código (sabe de antemano
+  qué steps y dependencias hacen falta) y llama `create_plan`/`execute_plan`
+  directamente. No hay ningún LLM en el medio.
+- **Automático**: el LLM/agent decide los steps. `Planner.build_tools()` expone
+  `create_plan`/`execute_plan`/`get_plan`/`update_plan_step` como tools; el
+  agente los llama con JSON, igual que llamaría a cualquier otro tool del
+  ToToolManager.
+
+Ambos casos usan exactamente el mismo Planner, el mismo `Plan`/`Step`, y las
+mismas features (`$from`, `condition`, `depends_on`) — la única diferencia es
+quién arma el plan.
+
+#### Servicios de ejemplo (usados en los dos casos de abajo)
 
 ```python
-from to_tool_manager import Service, ToToolManager
-from to_tool_manager.core.planner import (
-    Step, StepOperation, Planner, ServiceDependency, ServiceDependencyGraph,
-)
+class UserService:
+    def create_user(self, name: str) -> dict:
+        ...  # -> {"id": 42, "name": "David"}
+
+class OrderService:
+    def create(self, user_id: int, item: str) -> dict:
+        ...  # -> {"order_id": 7, "user_id": 42, "item": "Widget"}
+
+    def notify_failure(self) -> dict:
+        ...
 
 manager = ToToolManager([
-    Service(name="Order", service=Order, description="Manages orders.",
-            error_map={OrderAlreadyExistsError: ("already_exists", False),
-                       OrderNotFoundError: ("not_found", False)}),
-    Service(name="User", service=User, description="Manages users.",
-            error_map={UserAlreadyExistsError: ("already_exists", False),
-                       UserNotFoundError: ("not_found", False)}),
+    Service(name="User", service=UserService),
+    Service(name="Order", service=OrderService),
 ])
-
-# Definir dependencias entre servicios
-graph = ServiceDependencyGraph(
-    dependencies=[
-        ServiceDependency(source="Order", target="User", reason="Orders reference users"),
-    ]
-)
-
-planner = manager.with_planner(dependency_graph=graph)
-
-# Crear un plan con pasos
-plan = await planner.create_plan([
-    Step(
-        description="Crear usuario David",
-        operations=[
-            StepOperation(service="User", method="create_user", args={"user_name": "David"}),
-        ],
-    ),
-    Step(
-        description="Crear orden para David",
-        depends_on=[],
-        operations=[
-            StepOperation(service="Order", method="create", args={"product_name": "laptop"}),
-        ],
-    ),
-    Step(
-        description="Listar todo",
-        operations=[
-            StepOperation(service="User", method="get_users", args={}),
-            StepOperation(service="Order", method="get_orders", args={}),
-        ],
-    ),
-])
-
-# Ejecutar el plan (pasos independientes corren en paralelo)
-completed_plan = await planner.execute_plan(plan.id)
-
-for step in completed_plan.steps:
-    print(f"{step.description}: {step.status.value}")
 ```
 
-El planner también expone 4 tools para que el agente gestione planes programáticamente:
+#### 1. Planificación manual
+
+El programador ya sabe el flujo (crear usuario → crear orden con ese usuario →
+avisar solo si la orden falló) y lo escribe directo, sin pasar por un LLM.
+Usa ``$from`` para pasar el `id` del usuario del step 1 al step 2, y `condition`
+para que el step 3 sea puramente defensivo.
 
 ```python
-tools = planner.build_tools()  # create_plan, execute_plan, update_plan_step, get_plan
+from to_tool_manager.core.planner import Step, StepOperation
+
+planner = manager.with_planner()
+
+steps = [
+    Step(
+        id="create_user",
+        description="Crear el usuario",
+        operations=[
+            StepOperation(service="User", method="create_user", args={"name": "David"}),
+        ],
+    ),
+    Step(
+        id="create_order",
+        description="Crear la orden para ese usuario",
+        operations=[
+            StepOperation(
+                service="Order",
+                method="create",
+                args={
+                    # en vez del literal, referencia al resultado de create_user
+                    "user_id": {"$from": "create_user", "path": "User.result.id"},
+                    "item": "Widget",
+                },
+            )
+        ],
+        depends_on=["create_user"],
+    ),
+    Step(
+        id="notify_on_failure",
+        description="Avisar solo si la orden falló",
+        operations=[
+            StepOperation(service="Order", method="notify_failure", args={}),
+        ],
+        # no hace falta agregar "create_order" a depends_on a mano:
+        # create_plan lo auto-deriva de esta misma condition.
+        condition={"op": "create_order", "outcome": "error"},
+    ),
+]
+
+plan = await planner.create_plan(steps)   # valida referencias/orden ANTES de ejecutar
+plan = await planner.execute_plan(plan.id)
+
+for step in plan.steps:
+    print(step.id, step.status, step.result)
+
+# create_user       -> COMPLETED {"User": {"success": True, "result": [...{"id": 42}...]}}
+# create_order      -> COMPLETED {"Order": {..."user_id": 42...}}  (resuelto vía $from)
+# notify_on_failure -> SKIPPED   (la condition no se cumplió: create_order tuvo éxito)
 ```
 
-**Planner con handler de eventos** (para UIs en tiempo real):
+Ideal para pipelines fijos, jobs programados, o cualquier flujo donde el orden
+y las dependencias no cambian de una corrida a otra — el LLM no necesita
+reinventar el plan cada vez.
+
+#### 2. Planificación automática
+
+Acá el LLM arma el plan. `build_tools()` le da al agente las mismas piezas
+(`create_plan`, `execute_plan`, `get_plan`, `update_plan_step`) como tools de
+function-calling — el agente decide steps, dependencias, ``$from`` y `condition`
+según el pedido del usuario en lenguaje natural.
+
+```python
+planner = manager.with_planner()
+tools = planner.build_tools()   # [{"func", "name", "description"}, ...]
+
+# Se registran junto con los tool_specs normales del manager en el loop
+# del agente (cualquier adapter: raw, pydantic-ai, fastmcp, ag_ui).
+agent_tools = manager.tool_specs + tools
+```
+
+Ante un pedido como *"Creá un usuario David y hacele una orden de un Widget;
+si la orden falla, notificá"*, el LLM —sin que nadie le escriba el plan a
+mano— termina llamando al tool `create_plan` con un payload equivalente al
+ejemplo manual de arriba:
+
+```json
+{
+  "steps": [
+    {
+      "description": "Crear el usuario",
+      "operations": [
+        {"service": "User", "method": "create_user", "args": {"name": "David"}}
+      ]
+    },
+    {
+      "description": "Crear la orden",
+      "operations": [
+        {
+          "service": "Order",
+          "method": "create",
+          "args": {
+            "user_id": {"$from": "step0", "path": "User.result.id"},
+            "item": "Widget"
+          }
+        }
+      ],
+      "depends_on": ["step0"]
+    },
+    {
+      "description": "Notificar si falló",
+      "operations": [
+        {"service": "Order", "method": "notify_failure", "args": {}}
+      ],
+      "condition": {"op": "step1", "outcome": "error"}
+    }
+  ]
+}
+```
+
+Y después llama a `execute_plan` con el `plan_id` que le devolvió `create_plan`.
+Si el LLM referenció mal un step (typo, id inexistente), `create_plan` lo
+rechaza con un error legible en la misma respuesta del tool — el agente ve el
+error y puede corregir el plan en el siguiente turno, sin que nada se ejecute
+a medias.
+
+Ideal cuando el flujo varía según el pedido del usuario y no se puede fijar de
+antemano en código.
+
+#### Planner con handler de eventos (para UIs en tiempo real)
 
 ```python
 class LogHandler:
@@ -804,7 +902,6 @@ await planner.execute_plan(plan.id)
 ```
 
 ---
-
 ### Nivel 13 — Integración con ag_ui (streaming de estado a UIs)
 
 ```python
@@ -1235,66 +1332,6 @@ y `execute_plan` para ejecutarlos. El planner:
 
 ---
 
-------------------->|                     |                    |
-    |                    |                     |                    |
-    |                    |-- LLM decide:       |                    |
-    |                    |   crear plan primero|                    |
-    |                    |                     |                    |
-    |                    |-- create_plan ----->|                    |
-    |                    |   steps: [          |                    |
-    |                    |     {create_user},  |                    |
-    |                    |     {add_product},  |                    |
-    |                    |     {create_order}  |                    |
-    |                    |   ]                 |                    |
-    |                    |                     |                    |
-    |                    |                     |-- Valida deps:     |
-    |                    |                     |   Order depende    |
-    |                    |                     |   de User+Product  |
-    |                    |                     |   OK: User y       |
-    |                    |                     |   Product van      |
-    |                    |                     |   primero          |
-    |                    |<-- plan_id ---------|                    |
-    |                    |                     |                    |
-    |                    |-- LLM decide:       |                    |
-    |                    |   ejecutar plan     |                    |
-    |                    |                     |                    |
-    |                    |-- execute_plan --->|                    |
-    |                    |   plan_id: "abc"   |                    |
-    |                    |                    |                    |
-    |                    |                    |-- Step 1+2         |
-    |                    |                    |   (independientes): |
-    |                    |                    |                    |-- User.create("Ana")
-    |                    |                    |                    |<-- "User 'Ana' created"
-    |                    |                    |                    |-- Product.add("monitor",200)
-    |                    |                    |                    |<-- "Product added"
-    |                    |                    |                    |
-    |                    |                    |-- Step 3           |
-    |                    |                    |   (depende 1+2):   |
-    |                    |                    |                    |-- Order.create("monitor")
-    |                    |                    |                    |<-- "Order created"
-    |                    |                    |                    |
-    |                    |<-- plan completado -|                    |
-    |                    |                     |                    |
-    |                    |-- LLM genera        |                    |
-    |                    |   respuesta final   |                    |
-    |<-- BusinessReply --|                     |                    |
-```
-
-#### La diferencia clave
-
-**Sin planner:** el LLM llama directamente a `User.create()`, `Product.add()`,
-`Order.create()` como tools separadas. No hay validacion de dependencias,
-no hay batching paralelo, no hay tracking de estado.
-
-**Con planner:** el LLM usa `create_plan` para definir la secuencia de pasos,
-y `execute_plan` para ejecutarlos. El planner:
-- Valida que las dependencias se respeten (Order no puede ir antes de User)
-- Ejecuta steps independientes en paralelo (User y Product simultaneamente)
-- Trackea estado de cada step (pending/in_progress/completed/failed)
-- Emite eventos para UIs en tiempo real
-
----
-
 ---
 
 ## Ejemplos completos
@@ -1370,3 +1407,5 @@ mapear, los defaults son: `ValueError`/`TypeError` → `validation_error`
 - Probado end-to-end: el mismo `manager.tool_specs` corre sin cambios
   contra un `Agent` real de pydantic-ai y contra un servidor `FastMCP`
   real, con `pyright` en 0 errores sobre todo el paquete.
+
+
