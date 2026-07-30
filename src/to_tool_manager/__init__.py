@@ -22,6 +22,8 @@ dependency on any agent framework::
     from to_tool_manager.adapters.fastmcp import register_on_mcp
     from to_tool_manager.adapters.raw import to_openai_tool_schemas, dispatch
 """
+from to_tool_manager.adapters.fastmcp import build_mcp_server
+from to_tool_manager.adapters.pydantic_ai import build_agent
 from to_tool_manager.core import (
     ErrorEntry,
     ErrorMap,
@@ -53,6 +55,7 @@ from to_tool_manager.core.planner import (
 )
 from to_tool_manager.security.middleware import Middleware, ToolMiddleware
 
+
 __all__ = [
     "ToToolManager",
     "Service",
@@ -83,6 +86,9 @@ __all__ = [
     # Security
     "Middleware",
     "ToolMiddleware",
+    # Builders
+    "build_agent",
+    "build_mcp_server"
 ]
 
-__version__ = "0.2.0"
+__version__ = "0.3.4"
