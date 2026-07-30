@@ -405,33 +405,57 @@ Common use cases: strip passwords, remove internal UUIDs, redact PII, log tool c
 
 ## Request Flow
 
-```
-User sends message (e.g., "Order 3 units of Widget X for user Alice")
-  |
-  v
-POST /api/chat/sessions/{chat_id}/send
-  |
-  +-- Assembles ToToolManager with all services + modules
-  +-- build_agent() creates AI agent with LLM + tools
-  |
-  v
-agent.run_stream(message)
-  |
-  +-- AI decides: "I need to call commerce module"
-  |    +-- inventory_service.get_product(...)     -> checks stock
-  |    +-- order_service.create_order(...)        -> places order
-  |    +-- payment_service.process_payment(...)   -> charges user
-  |
-  +-- Each tool call goes through:
-  |    +-- Service method execution
-  |    +-- ErrorMap exception translation
-  |    +-- Middleware response sanitization
-  |    +-- ToolResponse returned to AI
-  |
-  +-- AI formulates natural-language reply
-  |
-  v
-Tokens stream to frontend via SSE (Server-Sent Events)
+```text
+User sends message
+       |
+       v
++------------------------------------------+
+| POST /api/chat/sessions/{chat_id}/send   |
++------------------------------------------+
+       |
+       v
++------------------------------------------+
+| Assemble ToToolManager with all services |
+| + modules                                |
+|                                          |
+| build_agent() creates AI agent with     |
+| LLM + tools                             |
++------------------------------------------+
+       |
+       v
++------------------------------------------+
+| agent.run_stream(message)                |
++------------------------------------------+
+       |
+       v
++------------------------------------------+
+| AI decides which tools to call           |
+|                                          |
+| commerce module:                         |
+|   inventory_service.get_product()        |
+|   order_service.create_order()           |
+|   payment_service.process_payment()      |
++------------------------------------------+
+       |
+       v
++------------------------------------------+
+| Each tool call goes through:             |
+|   1. Service method execution            |
+|   2. ErrorMap exception translation      |
+|   3. Middleware response sanitization     |
+|   4. ToolResponse returned to AI         |
++------------------------------------------+
+       |
+       v
++------------------------------------------+
+| AI formulates natural-language reply     |
++------------------------------------------+
+       |
+       v
++------------------------------------------+
+| Tokens stream to frontend via SSE        |
+| (Server-Sent Events)                     |
++------------------------------------------+
 ```
 
 ---
