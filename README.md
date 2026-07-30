@@ -80,8 +80,8 @@ pip install ag-ui-core       # para adapters.ag_ui
 | [Nivel 15 - build_agent completo](#nivel-15--build_agent-con-todas-las-opciones) | Todas las opciones de build_agent |
 | [Nivel 16 - Condicionales when](#nivel-16--operaciones-condicionales-con-when) | when clauses en batches |
 | [Nivel 17 - Singleton](#nivel-17--clase-como-singleton-vs-instancias-frescas) | singleton=True/False |
-| [Nivel 18 - Middleware](#nivel-18--middleware) | Middleware, ToolMiddleware, cadena de ejecucion |
-| [Nivel 19 - Caso completo](#nivel-19--caso-completo-pydantic-ai--planner--streaming) | Ejemplo end-to-end |
+| [Nivel 18 - Middleware](#nivel-18--middleware) | Middleware vs ToolMiddleware, secuencias, por que van en capas |
+| [Nivel 19 - Caso completo](#nivel-19--caso-completo-pydantic-ai--planner--streaming) | Planner + agent + streaming con diagrama |
 | [Ejemplos completos](#ejemplos-completos) | example/ y example_ui_pydantic/ |
 
 ---
@@ -927,34 +927,58 @@ Service(
 
 ---
 
-### Nivel 18 — Middleware
+### Nivel 18 -- Middleware
 
-Interceptá llamadas a tools para logging, validación, sanitización o control de acceso.
+Intercepta llamadas a tools para logging, validacion, sanitizacion o control de acceso.
 
-**`Middleware`** — intercepta la llamada completa a una tool:
+#### Middleware vs ToolMiddleware
+
+Hay **dos tipos** de middleware, y van en capas separadas por una razon:
+
+| Tipo | Que hace | Donde se registra | Filtra por metodo? |
+|------|----------|-------------------|--------------------|
+| `Middleware` | Intercepta la llamada **completa** a la tool | Manager (global) o Service (local) | No, corre siempre |
+| `ToolMiddleware` | Intercepta **metodos especificos** via `include`/`exclude` | Service (local) o Manager (global) | Si |
+
+**Por que van en capas separadas?**
+
+`Middleware` es el caso general: logging, metricas, rate limiting -- cosas que
+deben pasar en TODA llamada sin excepcion. `ToolMiddleware` agrega filtrado
+por nombre de metodo: solo corre para los metodos que listas en `include` o
+`exclude`. Esto permite cosas como "solo sanitizar passwords en `get_user`"
+sin tener que escribir el filtro en cada middleware.
+
+Ambos comparten la misma interfaz (`dispatch`), pero `ToolMiddleware` tiene
+un paso extra de verificacion antes de ejecutar.
+
+#### Ejemplo: Middleware basico (global)
 
 ```python
-from to_tool_manager import Middleware, ToolResponse
+from to_tool_manager import Middleware
 
 class LoggingMiddleware(Middleware):
     async def dispatch(self, func, /, *args, **kw):
-        print(f"[LOG] Ejecutando tool...")
+        print(f"[LOG] Ejecutando {func.__name__}...")
         response = await func(*args, **kw)
         print(f"[LOG] Completado")
         return response
+
+manager = ToToolManager([service], middlewares=[LoggingMiddleware()])
 ```
 
-**`ToolMiddleware`** — middleware con filtrado por nombre de método:
+#### Ejemplo: ToolMiddleware con filtrado (local)
 
 ```python
 from to_tool_manager import ToolMiddleware, ToolResponse, ToolError
 
 class AuthMiddleware(ToolMiddleware):
     def __init__(self):
+        # Solo corre para estos dos metodos
         super().__init__(include=["create_user", "delete_user"])
 
     async def dispatch(self, func, /, *args, **kw):
-        if not self.is_user_authenticated():
+        if not self.is_authenticated():
+            # Puede bloquear la llamada devolviendo un ToolResponse con error
             return ToolResponse(
                 error=ToolError(
                     category=frozenset({"authentication_error"}),
@@ -966,87 +990,67 @@ class AuthMiddleware(ToolMiddleware):
         return await func(*args, **kw)
 ```
 
-**Middlewares globales** (aplicados a todas las tools):
-
-```python
-manager = ToToolManager([service], middlewares=[LoggingMiddleware()])
-```
-
-**Middlewares por servicio** (con `disable_middlewares` para desactivar globales):
+#### Ejemplo: Middleware por servicio (local) desactivando el global
 
 ```python
 Service(
     name="Order",
     service=Order,
-    middlewares=[AuthMiddleware()],                          # solo este servicio
-    disable_middlewares=["LoggingMiddleware"],               # quitar el global
+    middlewares=[AuthMiddleware()],                    # solo este servicio
+    disable_middlewares=["LoggingMiddleware"],         # quitar el global
 )
 ```
 
-**Flujo de ejecucion de middlewares:**
+#### Diagrama de secuencia: cadena de middlewares
 
 ```
-  LLM llama a tool "Order"
-          |
-          v
-  +-----------------------------------------------------+
-  |  ToToolManager._resolve_middlewares(service)        |
-  |                                                     |
-  |  1. Empezar con middlewares GLOBALES del manager    |
-  |  2. Eliminar los que estan en disable_middlewares   |
-  |  3. Agregar middlewares LOCALES del servicio        |
-  +-----------------------------------------------------+
-          |
-          v  cadena resuelta: [GlobalMW, LocalMW]
-  +-----------------------------------------------------+
-  |  ToToolManager._apply_middlewares()                 |
-  |                                                     |
-  |  Aplica en REVERSE (el primero es el mas externo): |
-  |                                                     |
-  |  GlobalMW.dispatch(func)                            |
-  |    +-> LocalMW.dispatch(func)                       |
-  |          +-> func(*args)  <- ejecucion real         |
-  |          +<- ToolResponse                           |
-  |        +<- procesa/transforma respuesta             |
-  |    +<- procesa/transforma respuesta                 |
-  +-----------------------------------------------------+
-          |
-          v
-  ToolResponse final -> LLM
+  LLM                  ToToolManager           GlobalMW         LocalMW          Service
+   |                        |                     |                |                |
+   |-- tool_call("Order") ->|                     |                |                |
+   |                        |                     |                |                |
+   |                        |-- _resolve_middlewares(service) -->  |                |
+   |                        |   1. globals: [LoggingMW]           |                |
+   |                        |   2. - disable_middlewares           |                |
+   |                        |   3. + locals: [AuthMW]             |                |
+   |                        |   resultado: [LoggingMW, AuthMW]    |                |
+   |                        |                     |                |                |
+   |                        |-- _apply_middlewares() ------------->|                |
+   |                        |                     |                |                |
+   |                        |                     |-- dispatch -->|                |
+   |                        |                     |                |-- dispatch -->|
+   |                        |                     |                |   is_allowed? |
+   |                        |                     |                |   SI (create) |
+   |                        |                     |                |                |-- func(args)
+   |                        |                     |                |                |< ToolResponse
+   |                        |                     |                |< ToolResponse  |
+   |                        |                     |< ToolResponse  |                |
+   |                        |< ToolResponse       |                |                |
+   |< ToolResponse          |                     |                |                |
+   |                        |                     |                |                |
+
+  Para "get_orders" (no esta en include):
+   |                        |                     |                |                |
+   |                        |-- _apply_middlewares() ------------->|                |
+   |                        |                     |-- dispatch -->|                |
+   |                        |                     |                |-- is_allowed? |
+   |                        |                     |                |   NO (skip)   |
+   |                        |                     |                |   retorna     |
+   |                        |                     |                |   ToolResponse|
+   |                        |                     |   sin dispatch |   directamente|
+   |                        |                     |< ToolResponse  |                |
+   |                        |< ToolResponse       |                |                |
+   |< ToolResponse          |                     |                |                |
 ```
 
-**Ejemplo concreto:**
+#### Para Modules
 
-```
-  manager = ToToolManager(
-      services=[order_service],
-      middlewares=[SecurityMiddleware()]      <- GLOBAL
-  )
-
-  order_service = Service(
-      name="Order",
-      service=Order,
-      middlewares=[AuthMiddleware(include=["create"])],  <- LOCAL
-      disable_middlewares=["SecurityMiddleware"],         <- desactiva global
-  )
-
-  Flujo para llamada a "create":
-    SecurityMiddleware  (GLOBAL)  <- DESACTIVADA por disable_middlewares
-    AuthMiddleware      (LOCAL)   <- solo corre para "create"
-    +-> Order.create()
-
-  Flujo para llamada a "get_orders":
-    AuthMiddleware      (LOCAL)   <- NO corre (include=["create"])
-    +-> Order.get_orders()  <- sin interceptacion
-```
-
-**Para Modules**, los middlewares del modulo se apilan despues de los del manager:
+Los middlewares del modulo se apilan como "globales" del sub-manager interno:
 
 ```
   Module(name="Commerce", middlewares=[ModuleMW])
       |
       v
-  Internamente crea un sub-ToToolManager:
+  sub-ToToolManager:
     global_middlewares = [ManagerMW] + [ModuleMW]
       |
       v
@@ -1056,11 +1060,18 @@ Service(
     3. + middlewares locales del service
 ```
 
-Orden de ejecución:** globales → eliminados por `disable_middlewares` → locales del servicio.
+**Orden de ejecucion:** globales -> eliminados por `disable_middlewares` -> locales del servicio.
 
 ---
 
-### Nivel 19 — Caso completo: pydantic-ai + planner + streaming
+### Nivel 19 -- Caso completo: pydantic-ai + planner + streaming
+
+El planner se conecta al agent via `planner.build_tools()`, que devuelve
+4 tools (`create_plan`, `execute_plan`, `update_plan_step`, `get_plan`).
+Estas tools se pasan al agent como toolsets adicionales, y el LLM decide
+cuando usarlas.
+
+#### Ejemplo corregido
 
 ```python
 import asyncio
@@ -1073,21 +1084,19 @@ from to_tool_manager.core.planner import (
 
 # 1. Definir servicios
 class Product:
-    """Gestiona productos del catálogo."""
-
     def __init__(self):
-        self.__catalog: dict[str, float] = {"gpu": 500.0, "cpu": 300.0}
+        self._catalog = {"gpu": 500.0, "cpu": 300.0}
 
     def add_product(self, name: str, price: float):
-        """Agrega un producto al catálogo."""
-        self.__catalog[name] = price
+        self._catalog[name] = price
         return f"Product '{name}' added at ${price}"
 
     def get_products(self):
-        """Lista todos los productos con precios."""
-        return self.__catalog
+        return self._catalog
 
 class ProductAlreadyExistsError(Exception): ...
+class OrderAlreadyExistsError(Exception): ...
+class OrderNotFoundError(Exception): ...
 
 # 2. Configurar manager
 manager = ToToolManager([
@@ -1095,9 +1104,7 @@ manager = ToToolManager([
         name="Order", service=Order, description="Manages customer orders.",
         error_map={OrderAlreadyExistsError: ("already_exists", False)},
     ),
-    Service(
-        name="User", service=User, description="Manages system users.",
-    ),
+    Service(name="User", service=User, description="Manages system users."),
     Service(
         name="Product", service=Product, description="Product catalog.",
         error_map={ProductAlreadyExistsError: ("already_exists", False)},
@@ -1111,10 +1118,14 @@ graph = ServiceDependencyGraph(dependencies=[
 ])
 planner = manager.with_planner(dependency_graph=graph)
 
-# 4. Crear agente
+# 4. Crear agente con las tools del planner
 class BusinessReply(BaseModel):
     summary: str
     details: dict
+
+# planner.build_tools() devuelve 4 tools: create_plan, execute_plan,
+# update_plan_step, get_plan. Se pasan como toolsets adicionales.
+planner_tools = planner.build_tools()
 
 agent = build_agent(
     "groq:llama-3.1-8b-instant",
@@ -1123,14 +1134,87 @@ agent = build_agent(
     name="business-agent",
 )
 
-# 5. Ejecutar con streaming
+# Registrar las tools del planner en el agent
+for pt in planner_tools:
+    agent.tools.append(pt["func"])
+
+# 5. Ejecutar
 async def main():
-    async with run_streaming(agent, "Creá el usuario Ana, agregá el producto 'monitor' a $200, y creá una orden para ella") as stream:
-        async for text in stream.stream_text():
-            print(text, end="", flush=True)
+    result = await agent.run(
+        "Creá el usuario Ana, agregá el producto 'monitor' a $200, "
+        "y creá una orden para ella. Usá el planner para coordinar."
+    )
+    print(result.output)
 
 asyncio.run(main())
 ```
+
+#### Diagrama de secuencia: planner via agent
+
+```
+  Usuario              Agent                 Planner             Service
+    |                    |                     |                    |
+    | "Creá usuario,     |                     |                    |
+    |  producto y orden" |                     |                    |
+    |------------------->|                     |                    |
+    |                    |                     |                    |
+    |                    |-- LLM decide:       |                    |
+    |                    |   crear plan primero|                    |
+    |                    |                     |                    |
+    |                    |-- create_plan ----->|                    |
+    |                    |   steps: [          |                    |
+    |                    |     {create_user},  |                    |
+    |                    |     {add_product},  |                    |
+    |                    |     {create_order}  |                    |
+    |                    |   ]                 |                    |
+    |                    |                     |                    |
+    |                    |                     |-- Valida deps:     |
+    |                    |                     |   Order depende    |
+    |                    |                     |   de User+Product  |
+    |                    |                     |   OK: User y       |
+    |                    |                     |   Product van      |
+    |                    |                     |   primero          |
+    |                    |<-- plan_id ---------|                    |
+    |                    |                     |                    |
+    |                    |-- LLM decide:       |                    |
+    |                    |   ejecutar plan     |                    |
+    |                    |                     |                    |
+    |                    |-- execute_plan --->|                    |
+    |                    |   plan_id: "abc"   |                    |
+    |                    |                    |                    |
+    |                    |                    |-- Step 1+2         |
+    |                    |                    |   (independientes): |
+    |                    |                    |                    |-- User.create("Ana")
+    |                    |                    |                    |<-- "User 'Ana' created"
+    |                    |                    |                    |-- Product.add("monitor",200)
+    |                    |                    |                    |<-- "Product added"
+    |                    |                    |                    |
+    |                    |                    |-- Step 3           |
+    |                    |                    |   (depende 1+2):   |
+    |                    |                    |                    |-- Order.create("monitor")
+    |                    |                    |                    |<-- "Order created"
+    |                    |                    |                    |
+    |                    |<-- plan completado -|                    |
+    |                    |                     |                    |
+    |                    |-- LLM genera        |                    |
+    |                    |   respuesta final   |                    |
+    |<-- BusinessReply --|                     |                    |
+```
+
+#### La diferencia clave
+
+**Sin planner:** el LLM llama directamente a `User.create()`, `Product.add()`,
+`Order.create()` como tools separadas. No hay validacion de dependencias,
+no hay batching paralelo, no hay tracking de estado.
+
+**Con planner:** el LLM usa `create_plan` para definir la secuencia de pasos,
+y `execute_plan` para ejecutarlos. El planner:
+- Valida que las dependencias se respeten (Order no puede ir antes de User)
+- Ejecuta steps independientes en paralelo (User y Product simultaneamente)
+- Trackea estado de cada step (pending/in_progress/completed/failed)
+- Emite eventos para UIs en tiempo real
+
+---
 
 ---
 
