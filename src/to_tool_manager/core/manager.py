@@ -137,6 +137,7 @@ def _build_tool_description(
     operations: Sequence[OperationSpec],
     *,
     class_description: str | None = None,
+    contract: str,
 ) -> str:
     parts: list[str] = []
     if service.description and service.description.strip():
@@ -156,7 +157,7 @@ def _build_tool_description(
         params = ", ".join(_format_param(p) for p in op.parameters) or "no arguments"
         lines.append(f"- {op.name}({params}): {op.description}")
     lines.append("")
-    lines.append(_build_operations_contract(operations))
+    lines.append(contract)
     return "\n".join(lines)
 
 
@@ -447,15 +448,18 @@ class ToToolManager:
         dispatch_call = self._apply_middlewares(dispatch_call, resolved)
 
         cls_summary = class_summary(service.service)
+        contract = _build_operations_contract(operations)
         return ToolSpec(
             name=service.name,
-            description=_build_tool_description(service, operations, class_description=cls_summary),
+            description=_build_tool_description(
+                service, operations, class_description=cls_summary, contract=contract
+            ),
             parameters=(
                 ParamSpec(
                     name="operations",
                     annotation=list[dict],
                     required=True,
-                    description=_build_operations_contract(operations),
+                    description=contract,
                 ),
             ),
             call=dispatch_call,

@@ -1,6 +1,6 @@
 [project]
 name = "to-tool-manager"
-version = "0.3.5"
+version = "0.3.6"
 description = "Add your description here"
 readme = "README.md"
 authors = [

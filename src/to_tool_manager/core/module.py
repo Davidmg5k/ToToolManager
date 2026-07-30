@@ -23,7 +23,7 @@ What "sub-agent" means depends on the adapter:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Sequence
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Literal, Sequence
 
 from to_tool_manager.core.types import (
     OperationSpec,
@@ -87,6 +87,8 @@ def _build_module_description(
     description: str,
     services_overview: str,
     operations: Sequence[OperationSpec],
+    *,
+    contract: str,
 ) -> str:
     parts: list[str] = []
     if description and description.strip():
@@ -105,7 +107,7 @@ def _build_module_description(
         params = ", ".join(_format_param(p) for p in op.parameters) or "no arguments"
         lines.append(f"- {op.name}({params}): {op.description}")
     lines.append("")
-    lines.append(_build_module_operations_contract(operations))
+    lines.append(contract)
     return "\n".join(lines)
 
 
@@ -157,6 +159,36 @@ class Module:
     build_agent`). If None, the parent agent's model is used. Ignored by
     every other adapter (raw, fastmcp, ag_ui), since only pydantic-ai has
     a concept of a sub-agent running its own model."""
+
+    subagent_mode: Literal["sync", "async", "auto"] = "sync"
+    """Preferred execution mode passed to `subagents-pydantic-ai` as this
+    Module's `SubAgentConfig["preferred_mode"]` (pydantic-ai adapter
+    only; ignored elsewhere). Config-level `preferred_mode` takes
+    priority over the delegating LLM's own "auto" mode guess (see
+    `decide_execution_mode`'s priority order), so this is what actually
+    decides sync vs. async -- not a hint.
+
+    Defaults to `"sync"`: a Module here is an explicit, named,
+    request/response unit (see the class docstring), not an
+    open-ended background worker. `"async"` makes the PARENT model
+    call `task()` then, on a LATER turn, `wait_tasks()`/`check_task()`
+    to get the result -- an extra full model round trip that's rarely
+    worth it for the "ask a Module something, get an answer back"
+    pattern this library is built around. Set to `"async"` (long,
+    independently-runnable Module work the parent can multitask
+    around) or `"auto"` (let the delegating LLM decide per-call) only
+    if that trade-off is actually wanted for a specific Module."""
+
+    include_efficiency_appendix: bool = True
+    """If True (default), a short operational appendix -- "batch every
+    operation you need from your own services into ONE dispatch call
+    instead of calling it repeatedly" -- is appended to this Module's
+    sub-agent instructions (pydantic-ai adapter only). Without it nothing
+    tells the sub-agent's OWN model this, so it tends to call its
+    dispatch tool once per operation instead of once per turn, adding
+    extra internal round trips on top of the parent<->sub-agent hop
+    that already exists. Set False if `system_prompt`/`instructions`
+    already covers this or the appendix isn't wanted for some Module."""
 
     middlewares: Sequence[Middleware] = field(default_factory=tuple)
     """Middlewares applied at the tool level for this module.
@@ -212,6 +244,7 @@ class Module:
             all_operations.extend(spec.operations)
 
         services_overview = _build_services_overview(self.services)
+        contract = _build_module_operations_contract(all_operations)
 
         async def dispatch_call(operations: Any = None, **_ignored) -> ToolResponse:
             if not isinstance(operations, list) or not operations:
@@ -310,14 +343,14 @@ class Module:
         return ToolSpec(
             name=self.name,
             description=_build_module_description(
-                self.name, self.description, services_overview, all_operations
+                self.name, self.description, services_overview, all_operations, contract=contract
             ),
             parameters=(
                 ParamSpec(
                     name="operations",
                     annotation=list[dict],
                     required=True,
-                    description=_build_module_operations_contract(all_operations),
+                    description=contract,
                 ),
             ),
             call=dispatch_call,

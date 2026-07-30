@@ -933,52 +933,57 @@ Intercepta llamadas a tools para logging, validacion, sanitizacion o control de 
 
 #### Middleware vs ToolMiddleware
 
-Hay **dos tipos** de middleware, y van en capas separadas por una razon:
+Hay **dos tipos** de middleware. No son intercambiables: cada uno vive en un nivel distinto.
 
 | Tipo | Que hace | Donde se registra | Filtra por metodo? |
 |------|----------|-------------------|--------------------|
-| `Middleware` | Intercepta la llamada **completa** a la tool | Manager (global) o Service (local) | No, corre siempre |
-| `ToolMiddleware` | Intercepta **metodos especificos** via `include`/`exclude` | Service (local) o Manager (global) | Si |
+| `Middleware` | Intercepta la llamada **completa** a la tool (el batch de operaciones) | `ToToolManager(middlewares=[...])` (global) | No, corre siempre |
+| `ToolMiddleware` | Intercepta **metodos individuales** dentro de un servicio | `Service(middlewares=[...])` (local) | Si, via `include`/`exclude` |
 
-**Por que van en capas separadas?**
+**Por que estan en capas separadas?**
 
-`Middleware` es el caso general: logging, metricas, rate limiting -- cosas que
-deben pasar en TODA llamada sin excepcion. `ToolMiddleware` agrega filtrado
-por nombre de metodo: solo corre para los metodos que listas en `include` o
-`exclude`. Esto permite cosas como "solo sanitizar passwords en `get_user`"
-sin tener que escribir el filtro en cada middleware.
+`ToolMiddleware` opera a nivel de metodo individual: envuelve cada metodo
+en la dispatch table con `is_allowed()` (linea 301 de `manager.py`). Por eso
+**solo puede vivir en `Service.middlewares`** -- necesita acceso a los nombres
+de los metodos para filtrar. Si lo pusieras en el manager level, no tendria
+sense porque no sabe que metodos tiene cada servicio.
 
-Ambos comparten la misma interfaz (`dispatch`), pero `ToolMiddleware` tiene
-un paso extra de verificacion antes de ejecutar.
+`Middleware` opera a nivel de tool completa: envuelve el `dispatch_call` entero
+(linea 247 de `manager.py`). Corre una vez por tool call, no por metodo.
+Y explicitamente **salta** los `ToolMiddleware` (linea 248: `if isinstance(mw, ToolMiddleware): continue`).
 
-#### Ejemplo: Middleware basico (global)
+En resumen:
+- **Global** (`ToToolManager`) = solo `Middleware` (logging, metricas, rate limiting)
+- **Local** (`Service`) = `Middleware` + `ToolMiddleware` (auth, sanitizacion por metodo)
+
+#### Ejemplo: Middleware global (solo Middleware)
 
 ```python
 from to_tool_manager import Middleware
 
 class LoggingMiddleware(Middleware):
     async def dispatch(self, func, /, *args, **kw):
-        print(f"[LOG] Ejecutando {func.__name__}...")
+        print(f"[LOG] Ejecutando tool...")
         response = await func(*args, **kw)
         print(f"[LOG] Completado")
         return response
 
+# Solo Middleware en el manager (ToolMiddleware no iria aca)
 manager = ToToolManager([service], middlewares=[LoggingMiddleware()])
 ```
 
-#### Ejemplo: ToolMiddleware con filtrado (local)
+#### Ejemplo: ToolMiddleware local (solo en Service)
 
 ```python
 from to_tool_manager import ToolMiddleware, ToolResponse, ToolError
 
 class AuthMiddleware(ToolMiddleware):
     def __init__(self):
-        # Solo corre para estos dos metodos
+        # Solo corre para estos dos metodos del servicio
         super().__init__(include=["create_user", "delete_user"])
 
     async def dispatch(self, func, /, *args, **kw):
         if not self.is_authenticated():
-            # Puede bloquear la llamada devolviendo un ToolResponse con error
             return ToolResponse(
                 error=ToolError(
                     category=frozenset({"authentication_error"}),
@@ -988,58 +993,72 @@ class AuthMiddleware(ToolMiddleware):
                 )
             )
         return await func(*args, **kw)
+
+# ToolMiddleware SOLO va en Service.middlewares
+Service(
+    name="User",
+    service=User,
+    middlewares=[AuthMiddleware(include=["create_user"])],
+)
 ```
 
-#### Ejemplo: Middleware por servicio (local) desactivando el global
+#### Ejemplo: Combinacion (global + local + desactivar)
 
 ```python
-Service(
+manager = ToToolManager(
+    [order_service],
+    middlewares=[LoggingMiddleware()],       # Middleware GLOBAL
+)
+
+order_service = Service(
     name="Order",
     service=Order,
-    middlewares=[AuthMiddleware()],                    # solo este servicio
-    disable_middlewares=["LoggingMiddleware"],         # quitar el global
+    middlewares=[AuthMiddleware(include=["create"])],   # ToolMiddleware LOCAL
+    disable_middlewares=["LoggingMiddleware"],            # desactiva el global
 )
 ```
 
 #### Diagrama de secuencia: cadena de middlewares
 
 ```
-  LLM                  ToToolManager           GlobalMW         LocalMW          Service
-   |                        |                     |                |                |
-   |-- tool_call("Order") ->|                     |                |                |
-   |                        |                     |                |                |
-   |                        |-- _resolve_middlewares(service) -->  |                |
-   |                        |   1. globals: [LoggingMW]           |                |
-   |                        |   2. - disable_middlewares           |                |
-   |                        |   3. + locals: [AuthMW]             |                |
-   |                        |   resultado: [LoggingMW, AuthMW]    |                |
-   |                        |                     |                |                |
-   |                        |-- _apply_middlewares() ------------->|                |
-   |                        |                     |                |                |
-   |                        |                     |-- dispatch -->|                |
-   |                        |                     |                |-- dispatch -->|
-   |                        |                     |                |   is_allowed? |
-   |                        |                     |                |   SI (create) |
-   |                        |                     |                |                |-- func(args)
-   |                        |                     |                |                |< ToolResponse
-   |                        |                     |                |< ToolResponse  |
-   |                        |                     |< ToolResponse  |                |
-   |                        |< ToolResponse       |                |                |
-   |< ToolResponse          |                     |                |                |
-   |                        |                     |                |                |
+  LLM                  ToToolManager          LoggingMW(M)       AuthMW(TM)         Service
+   |                        |                     |                |                   |
+   |-- tool_call("Order") ->|                     |                |                   |
+   |                        |                     |                |                   |
+   |                        |-- _resolve_middlewares(service) ---->|                   |
+   |                        |   1. globals: [LoggingMW]           |                   |
+   |                        |   2. - disable_middlewares           |                   |
+   |                        |   3. + locals: [AuthMW]             |                   |
+   |                        |   resolved: [LoggingMW, AuthMW]     |                   |
+   |                        |                     |                |                   |
+   |                        |-- _apply_middlewares() ------------->|                   |
+   |                        |   SKIPS AuthMW (isinstance check)   |                   |
+   |                        |   solo envuelve con LoggingMW       |                   |
+   |                        |                     |                |                   |
+   |                        |                     |-- dispatch -->|                   |
+   |                        |                     |                |-- is_allowed?     |
+   |                        |                     |                |   create: SI      |
+   |                        |                     |                |-- dispatch(func)->|
+   |                        |                     |                |                   |-- func(args)
+   |                        |                     |                |                   |< ToolResponse
+   |                        |                     |                |< ToolResponse     |
+   |                        |                     |< ToolResponse  |                   |
+   |                        |< ToolResponse       |                |                   |
+   |< ToolResponse          |                     |                |                   |
+   |                        |                     |                |                   |
 
-  Para "get_orders" (no esta en include):
-   |                        |                     |                |                |
-   |                        |-- _apply_middlewares() ------------->|                |
-   |                        |                     |-- dispatch -->|                |
-   |                        |                     |                |-- is_allowed? |
-   |                        |                     |                |   NO (skip)   |
-   |                        |                     |                |   retorna     |
-   |                        |                     |                |   ToolResponse|
-   |                        |                     |   sin dispatch |   directamente|
-   |                        |                     |< ToolResponse  |                |
-   |                        |< ToolResponse       |                |                |
-   |< ToolResponse          |                     |                |                |
+  Para "get_orders" (no esta en include de AuthMW):
+   |                        |                     |                |                   |
+   |                        |-- _apply_middlewares() ------------->|                   |
+   |                        |                     |-- dispatch -->|                   |
+   |                        |                     |                |-- is_allowed?     |
+   |                        |                     |                |   get_orders: NO  |
+   |                        |                     |                |   retorna         |
+   |                        |                     |                |   ToolResponse    |
+   |                        |                     |   sin wrappear |   directamente    |
+   |                        |                     |< ToolResponse  |                   |
+   |                        |< ToolResponse       |                |                   |
+   |< ToolResponse          |                     |                |                   |
 ```
 
 #### Para Modules
@@ -1055,12 +1074,12 @@ Los middlewares del modulo se apilan como "globales" del sub-manager interno:
       |
       v
   Cada Service dentro del modulo resuelve:
-    1. ManagerMW + ModuleMW  (como "globales" del sub-manager)
+    1. ManagerMW + ModuleMW  (como "globales" del sub-manager, solo Middleware)
     2. - disable_middlewares del service
-    3. + middlewares locales del service
+    3. + middlewares locales del service (Middleware + ToolMiddleware)
 ```
 
-**Orden de ejecucion:** globales -> eliminados por `disable_middlewares` -> locales del servicio.
+**Orden de ejecucion:** globales (solo `Middleware`) -> eliminados por `disable_middlewares` -> locales del servicio (`Middleware` + `ToolMiddleware`).
 
 ---
 
@@ -1157,6 +1176,66 @@ asyncio.run(main())
     | "Creá usuario,     |                     |                    |
     |  producto y orden" |                     |                    |
     |------------------->|                     |                    |
+    |                    |                     |                    |
+    |                    |-- LLM decide:       |                    |
+    |                    |   crear plan primero|                    |
+    |                    |                     |                    |
+    |                    |-- create_plan ----->|                    |
+    |                    |   steps: [          |                    |
+    |                    |     {create_user},  |                    |
+    |                    |     {add_product},  |                    |
+    |                    |     {create_order}  |                    |
+    |                    |   ]                 |                    |
+    |                    |                     |                    |
+    |                    |                     |-- Valida deps:     |
+    |                    |                     |   Order depende    |
+    |                    |                     |   de User+Product  |
+    |                    |                     |   OK: User y       |
+    |                    |                     |   Product van      |
+    |                    |                     |   primero          |
+    |                    |<-- plan_id ---------|                    |
+    |                    |                     |                    |
+    |                    |-- LLM decide:       |                    |
+    |                    |   ejecutar plan     |                    |
+    |                    |                     |                    |
+    |                    |-- execute_plan --->|                    |
+    |                    |   plan_id: "abc"   |                    |
+    |                    |                    |                    |
+    |                    |                    |-- Step 1+2         |
+    |                    |                    |   (independientes): |
+    |                    |                    |                    |-- User.create("Ana")
+    |                    |                    |                    |<-- "User 'Ana' created"
+    |                    |                    |                    |-- Product.add("monitor",200)
+    |                    |                    |                    |<-- "Product added"
+    |                    |                    |                    |
+    |                    |                    |-- Step 3           |
+    |                    |                    |   (depende 1+2):   |
+    |                    |                    |                    |-- Order.create("monitor")
+    |                    |                    |                    |<-- "Order created"
+    |                    |                    |                    |
+    |                    |<-- plan completado -|                    |
+    |                    |                     |                    |
+    |                    |-- LLM genera        |                    |
+    |                    |   respuesta final   |                    |
+    |<-- BusinessReply --|                     |                    |
+```
+
+#### La diferencia clave
+
+**Sin planner:** el LLM llama directamente a `User.create()`, `Product.add()`,
+`Order.create()` como tools separadas. No hay validacion de dependencias,
+no hay batching paralelo, no hay tracking de estado.
+
+**Con planner:** el LLM usa `create_plan` para definir la secuencia de pasos,
+y `execute_plan` para ejecutarlos. El planner:
+- Valida que las dependencias se respeten (Order no puede ir antes de User)
+- Ejecuta steps independientes en paralelo (User y Product simultaneamente)
+- Trackea estado de cada step (pending/in_progress/completed/failed)
+- Emite eventos para UIs en tiempo real
+
+---
+
+------------------->|                     |                    |
     |                    |                     |                    |
     |                    |-- LLM decide:       |                    |
     |                    |   crear plan primero|                    |

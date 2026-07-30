@@ -37,6 +37,11 @@ try:
 except ImportError:  # pragma: no cover
     _HAS_SUBAGENTS = False
 
+try:
+    from pydantic_ai.usage import UsageLimits
+except ImportError:  # pragma: no cover
+    UsageLimits = None  # type: ignore[assignment,misc]
+
 from pydantic_ai.settings import ModelSettings
 
 # Re-export streaming types so consumers don't import pydantic-ai directly.
@@ -132,6 +137,21 @@ def _build_callable(spec: ToolSpec):
 # ---------------------------------------------------------------------------
 # Module -> real sub-agent (requires the optional subagents-pydantic-ai pkg)
 # ---------------------------------------------------------------------------
+
+_UNSET: Any = object()
+"""Sentinel distinguishing "caller didn't pass this" from an explicit
+`None` (which means "no limit, run unbounded") for `subagent_usage_limits`."""
+
+_DEFAULT_SUBAGENT_REQUEST_LIMIT = 8
+"""Default cap on model requests for a SINGLE delegated Module run (one
+`task()` call), applied only when the caller doesn't pass
+`subagent_usage_limits` explicitly. Generous enough for the common
+"read a couple of things, maybe write one, then answer" pattern while
+still turning a confused/looping sub-agent into a bounded-latency error
+instead of an unbounded one. Purely a latency/cost safety net -- raise
+or disable it (`subagent_usage_limits=None`) for Modules that
+legitimately need long tool-calling chains."""
+
 
 @dataclass
 class SubAgentDeps:
@@ -229,6 +249,17 @@ class _AutoDepsAgent(Agent):
     del _name
 
 
+_SUBAGENT_EFFICIENCY_APPENDIX = """
+
+## Execution efficiency
+You have exactly one dispatch tool for your own services, accepting a
+list of `operations`. Before answering, identify every operation you
+need for this task and send them all in ONE call to that tool (batched,
+with `id`/`when` to sequence dependent ones) instead of calling it once
+per operation -- each extra call is a full extra turn for you, on top
+of the turn your parent agent already spent delegating to you."""
+
+
 def _default_module_instructions(module: Module) -> str:
     """Builds a sensible default system prompt for a Module's sub-agent
     when neither `system_prompt` nor `instructions` was set explicitly --
@@ -253,14 +284,22 @@ def _build_subagent_config(module: Module, *, default_model: Any) -> "SubAgentCo
     module_specs = module.sub_manager.tool_specs
     toolset = to_function_toolset(module_specs)
 
+    base_instructions = module.system_prompt or module.instructions or _default_module_instructions(module)
+    instructions = (
+        base_instructions + _SUBAGENT_EFFICIENCY_APPENDIX
+        if module.include_efficiency_appendix
+        else base_instructions
+    )
+
     config: dict[str, Any] = {
         "name": module.name,
         "description": module.description.strip() if module.description else (
             f"Delegates to the '{module.name}' module "
             f"({', '.join(s.name for s in module.services)})."
         ),
-        "instructions": module.system_prompt or module.instructions or _default_module_instructions(module),
+        "instructions": instructions,
         "toolsets": [toolset],
+        "preferred_mode": module.subagent_mode,
     }
     if module.model is not None:
         config["model"] = module.model
@@ -272,6 +311,7 @@ def _build_subagent_capability(
     *,
     default_model: Any,
     include_general_purpose: bool,
+    usage_limits: Any,
 ) -> "SubAgentCapability | None":
     """Builds ONE `SubAgentCapability` covering every `Module` registered
     on `manager`, or None if there are no Modules at all -- so `build_agent`
@@ -294,6 +334,7 @@ def _build_subagent_capability(
         subagents=configs,
         default_model=default_model,
         include_general_purpose=include_general_purpose,
+        usage_limits=usage_limits,
     )
 
 
@@ -343,6 +384,7 @@ def build_agent(
     defer_model_check: bool = False,
     capabilities: list | None = None,
     include_general_purpose_subagent: bool = False,
+    subagent_usage_limits: Any = _UNSET,
 ) -> Agent:
     """Create a pydantic-ai Agent wired to the manager's tools.
 
@@ -396,6 +438,14 @@ def build_agent(
         from registered Modules. Defaults to ``False`` because
         to_tool_manager's model is explicit, named Modules -- not an
         open-ended delegate.
+    subagent_usage_limits:
+        ``pydantic_ai.usage.UsageLimits`` (or a per-task factory) applied
+        to every delegated Module run. If omitted entirely, defaults to
+        ``UsageLimits(request_limit=8)`` as a latency/cost safety net so
+        a confused sub-agent can't loop indefinitely. Pass ``None``
+        explicitly to run Module delegations with no cap, or your own
+        ``UsageLimits``/factory to override the default. Ignored when
+        the manager has no ``Module``s.
     """
     from to_tool_manager.core.prompts import build_instructions, build_system_prompt
 
@@ -428,10 +478,17 @@ def build_agent(
         agent_kwargs["defer_model_check"] = defer_model_check
 
     resolved_capabilities: list[Any] = list(capabilities or [])
+    if subagent_usage_limits is not _UNSET:
+        resolved_usage_limits = subagent_usage_limits
+    elif UsageLimits is not None:
+        resolved_usage_limits = UsageLimits(request_limit=_DEFAULT_SUBAGENT_REQUEST_LIMIT)
+    else:  # pragma: no cover — pydantic-ai always ships usage.UsageLimits
+        resolved_usage_limits = None
     subagent_capability = _build_subagent_capability(
         manager,
         default_model=model,
         include_general_purpose=include_general_purpose_subagent,
+        usage_limits=resolved_usage_limits,
     )
     if subagent_capability is not None:
         resolved_capabilities.append(subagent_capability)
