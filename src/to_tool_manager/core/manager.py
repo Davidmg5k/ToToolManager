@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 from typing import Any, Sequence
 
+from to_tool_manager.core.conditions import _evaluate_when
 from to_tool_manager.core.discovery import class_summary, discover_methods
 from to_tool_manager.core.executor import make_safe_caller
 from to_tool_manager.core.module import Module
@@ -71,65 +72,6 @@ def _build_operations_contract(operations: Sequence[OperationSpec]) -> str:
 
     example = json.dumps({"operations": example_ops})
     return _OPERATIONS_CONTRACT.format(example=example)
-
-
-def _evaluate_when(when: Any, resolved_by_ref: dict[str, dict[str, Any]]) -> str | None:
-    """
-    Evaluates a declarative `when` clause against operations already
-    resolved earlier in the SAME call. Returns None if the operation
-    should run, or a human-readable reason (str) if it should be
-    skipped instead.
-
-    Intentionally not Turing-complete: a single {"op", "outcome",
-    optional "category"} condition, no boolean combinators, no loops.
-    This is enough to express "run B only if A failed/succeeded" without
-    introducing arbitrary code execution.
-    """
-    if not isinstance(when, dict):
-        return "malformed 'when' clause (must be an object); operation skipped."
-
-    op_ref = when.get("op")
-    outcome = when.get("outcome")
-    if not isinstance(op_ref, str) or outcome not in ("success", "error"):
-        return "malformed 'when' clause (need 'op': str and 'outcome': 'success'|'error'); operation skipped."
-
-    referenced = resolved_by_ref.get(op_ref)
-    if referenced is None:
-        return f"referenced operation '{op_ref}' has not run (yet) or does not exist; operation skipped."
-    if referenced.get("skipped"):
-        return f"referenced operation '{op_ref}' was itself skipped; operation skipped."
-
-    ref_success = bool(referenced.get("success"))
-    outcome_match = (ref_success and outcome == "success") or (not ref_success and outcome == "error")
-    if not outcome_match:
-        actual = "success" if ref_success else "error"
-        return f"condition not met ('{op_ref}' outcome was '{actual}', expected '{outcome}')."
-
-    category = when.get("category")
-    if category is not None:
-        ref_error = referenced.get("error") or {}
-        ref_cats = ref_error.get("category")
-        # Normalize ref_cats to a set for matching
-        if isinstance(ref_cats, str):
-            ref_cats = {ref_cats}
-        elif isinstance(ref_cats, (list, tuple, set, frozenset)):
-            ref_cats = set(ref_cats)
-        else:
-            ref_cats = set()
-        # Normalize the target category to a set
-        if isinstance(category, str):
-            target_cats = {category}
-        elif isinstance(category, (list, tuple, set, frozenset)):
-            target_cats = set(category)
-        else:
-            target_cats = set()
-        if not target_cats & ref_cats:
-            return (
-                f"condition not met (expected error category "
-                f"'{category}', got '{ref_cats or None}')."
-            )
-
-    return None  # condition met — the operation should run
 
 
 def _build_tool_description(
@@ -426,11 +368,12 @@ class ToToolManager:
                     )
 
                 if response.error is None:
-                    entry = {"method": method_name, "success": True, "result": response.content}
+                    entry = {"method": method_name, "id": custom_ref, "success": True, "result": response.content}
                 else:
                     cats = response.error.category
                     entry = {
                         "method": method_name,
+                        "id": custom_ref,
                         "success": False,
                         "error": {
                             "category": sorted(cats) if cats else None,

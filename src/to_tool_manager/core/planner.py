@@ -15,13 +15,15 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
-from dataclasses import dataclass, field
+import re
 from datetime import datetime, timezone
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Literal, Protocol, Sequence
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
+
+from to_tool_manager.core.conditions import _evaluate_when
 
 if TYPE_CHECKING:
     from to_tool_manager.core.manager import ToToolManager
@@ -60,6 +62,17 @@ class Step(BaseModel):
     status: StepStatus = Field(default=StepStatus.PENDING, description="Current status")
     operations: list[StepOperation] = Field(default_factory=list, description="Operations to execute")
     depends_on: list[str] = Field(default_factory=list, description="Ids of steps that must complete first")
+    condition: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "Optional gate on whether this step runs at all, same shape as an "
+            "operation-level `when` clause: {'op': <step_id>, 'outcome': "
+            "'success'|'error', 'category'?: <str|list>}. If unmet, the step "
+            "is marked SKIPPED (not FAILED) and never executed. The "
+            "referenced step id is automatically added to `depends_on` if "
+            "not already present, so ordering is always safe."
+        ),
+    )
     result: Any = Field(default=None, description="Execution result (set after completion)")
     error: str | None = Field(default=None, description="Error message if failed")
 
@@ -71,6 +84,147 @@ class Plan(BaseModel):
     steps: list[Step] = Field(default_factory=list, description="Ordered list of steps")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
+# Cross-step references ($from)
+# ---------------------------------------------------------------------------
+
+
+class PlanRefError(ValueError):
+    """Raised when a `$from` reference in a step's args cannot be resolved."""
+
+
+_PATH_SEGMENT_RE = re.compile(r"^([^\[\]]+)((?:\[\d+\])*)$")
+
+
+def _scan_from_refs(value: Any) -> list[tuple[str, str]]:
+    """Recursively collects every `{"$from": step_id, "path": path}` marker
+    found inside *value*, for structural (step-id-exists) validation at
+    create_plan time — before anything has executed."""
+    refs: list[tuple[str, str]] = []
+    if isinstance(value, dict):
+        if set(value.keys()) == {"$from", "path"}:
+            refs.append((value["$from"], value["path"]))
+        else:
+            for v in value.values():
+                refs.extend(_scan_from_refs(v))
+    elif isinstance(value, list):
+        for item in value:
+            refs.extend(_scan_from_refs(item))
+    return refs
+
+
+def _navigate_segment(current: Any, segment: str, *, path: str, step_id: str) -> Any:
+    """Applies one dotted path segment (optionally with `[N]` index
+    suffixes) to *current*, navigating into the actual returned data —
+    this is unrelated to picking *which operation* in a multi-op step
+    (that's done by explicit `id`, never by index; see _resolve_ref)."""
+    match = _PATH_SEGMENT_RE.match(segment)
+    if not match:
+        raise PlanRefError(f"$from path '{path}': malformed path segment '{segment}'.")
+    key, brackets = match.group(1), match.group(2)
+
+    if not isinstance(current, dict) or key not in current:
+        raise PlanRefError(
+            f"$from path '{path}': key '{key}' not found in step '{step_id}' result."
+        )
+    current = current[key]
+
+    for idx_str in re.findall(r"\[(\d+)\]", brackets):
+        idx = int(idx_str)
+        if not isinstance(current, list) or idx >= len(current):
+            raise PlanRefError(
+                f"$from path '{path}': index [{idx}] out of range at '{key}' "
+                f"in step '{step_id}' result."
+            )
+        current = current[idx]
+
+    return current
+
+
+def _resolve_ref(step_id: str, path: str, plan: Plan) -> Any:
+    """Resolves a single `$from` reference against a completed step's
+    result, as shaped by Planner._execute_step:
+    ``{"<service>": {"success": bool, "result": [<op entry>, ...]} | {"success": False, "error": {...}}}``
+    """
+    ref_step = next((s for s in plan.steps if s.id == step_id), None)
+    if ref_step is None:
+        raise PlanRefError(f"$from references unknown step '{step_id}'.")
+    if ref_step.status != StepStatus.COMPLETED:
+        raise PlanRefError(
+            f"$from references step '{step_id}' which has not completed "
+            f"(status='{ref_step.status.value}')."
+        )
+
+    segments = path.split(".")
+    if not segments or not segments[0]:
+        raise PlanRefError(f"$from path '{path}': must start with a service name.")
+
+    service_name, remaining = segments[0], segments[1:]
+    if not isinstance(ref_step.result, dict) or service_name not in ref_step.result:
+        available = sorted(ref_step.result) if isinstance(ref_step.result, dict) else []
+        raise PlanRefError(
+            f"$from path '{path}': step '{step_id}' has no result for service "
+            f"'{service_name}'. Services called in that step: {available or 'none'}."
+        )
+
+    service_result = ref_step.result[service_name]
+    if not service_result.get("success"):
+        raise PlanRefError(
+            f"$from path '{path}': service '{service_name}' in step '{step_id}' "
+            "did not succeed, so its result can't be referenced."
+        )
+
+    entries = service_result.get("result")
+    if not isinstance(entries, list):
+        raise PlanRefError(
+            f"$from path '{path}': unexpected result shape for service "
+            f"'{service_name}' in step '{step_id}'."
+        )
+
+    if len(entries) == 1:
+        # Single operation for this service in this step — auto-unwrap,
+        # no `id` segment needed.
+        entry = entries[0]
+    else:
+        if not remaining:
+            raise PlanRefError(
+                f"$from path '{path}': step '{step_id}' called {len(entries)} "
+                f"operations on '{service_name}'; specify which one by its "
+                f"explicit 'id', e.g. '{service_name}.<op_id>.result...'."
+            )
+        op_id, remaining = remaining[0], remaining[1:]
+        entry = next((e for e in entries if e.get("id") == op_id), None)
+        if entry is None:
+            available_ids = [e.get("id") for e in entries if e.get("id")]
+            raise PlanRefError(
+                f"$from path '{path}': no operation with id '{op_id}' in step "
+                f"'{step_id}'/'{service_name}'. Available ids: "
+                f"{available_ids or 'none (give the ops an explicit id first)'}."
+            )
+
+    current: Any = entry
+    for segment in remaining:
+        current = _navigate_segment(current, segment, path=path, step_id=step_id)
+    return current
+
+
+def _resolve_refs(value: Any, plan: Plan) -> Any:
+    """Recursively resolves every `$from` marker inside *value* (a
+    StepOperation.args dict, typically) against already-completed steps
+    in *plan*. Not Turing-complete: a single reference-lookup mechanism,
+    no arithmetic or conditionals embedded in it (same criterion as `when`)."""
+    if isinstance(value, dict):
+        if set(value.keys()) == {"$from", "path"}:
+            step_id, path = value["$from"], value["path"]
+            if not isinstance(step_id, str) or not isinstance(path, str):
+                raise PlanRefError("'$from' must be a step id (str) and 'path' a string.")
+            return _resolve_ref(step_id, path, plan)
+        return {k: _resolve_refs(v, plan) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_resolve_refs(v, plan) for v in value]
+    return value
 
 
 # ---------------------------------------------------------------------------
@@ -241,7 +395,42 @@ class Planner:
                 await method(event)
 
     async def create_plan(self, steps: list[Step]) -> Plan:
-        """Create a new plan and validate step order."""
+        """Create a new plan, validate step order, and validate references.
+
+        - A step's `condition.op` (if set) is auto-added to its
+          `depends_on` so execution order is always safe (R2 + R3 style
+          auto-derivation, but at the step/condition level).
+        - Every `$from` reference is checked against known step ids
+          upfront — a typo'd or forward step id fails at create_plan,
+          not mid-execution (R1 + R4 spirit: catch what's checkable now).
+        """
+        step_ids = {s.id for s in steps}
+
+        for step in steps:
+            if step.condition is not None:
+                op_ref = step.condition.get("op") if isinstance(step.condition, dict) else None
+                if not isinstance(op_ref, str):
+                    raise ValueError(
+                        f"Step '{step.id}': condition must be an object with a string 'op'."
+                    )
+                if op_ref not in step_ids:
+                    raise ValueError(
+                        f"Step '{step.id}': condition references unknown step '{op_ref}'."
+                    )
+                if op_ref not in step.depends_on:
+                    step.depends_on.append(op_ref)
+
+        for step in steps:
+            for op in step.operations:
+                for ref_step_id, _path in _scan_from_refs(op.args):
+                    if not isinstance(ref_step_id, str) or ref_step_id not in step_ids:
+                        raise ValueError(
+                            f"Step '{step.id}': operation on '{op.service}' has a "
+                            f"'$from' reference to unknown step '{ref_step_id}'."
+                        )
+                    if ref_step_id not in step.depends_on:
+                        step.depends_on.append(ref_step_id)
+
         plan = Plan(steps=steps)
 
         errors = self._validator.validate_order(steps)
@@ -319,10 +508,38 @@ class Planner:
             if not next_steps:
                 break
 
-            tasks = [self._execute_step(plan.id, step) for step in next_steps]
+            # Gate each candidate step on its `condition` (R2) before it
+            # ever reaches execution. The referenced step is guaranteed to
+            # already be completed/skipped/failed here because create_plan
+            # auto-added it to depends_on.
+            runnable_steps: list[Step] = []
+            outcomes = self._step_outcomes(plan)
+            for step in next_steps:
+                if step.condition is not None:
+                    reason = _evaluate_when(step.condition, outcomes)
+                    if reason is not None:
+                        step.status = StepStatus.SKIPPED
+                        step.result = {"skipped": True, "reason": reason}
+                        await self._emit(
+                            PlanEvent(
+                                type=PlanEventType.STEP_UPDATED,
+                                plan_id=plan.id,
+                                data={"step": step.model_dump()},
+                            )
+                        )
+                        completed_ids.add(step.id)
+                        continue
+                runnable_steps.append(step)
+
+            if not runnable_steps:
+                # Some steps were skipped above; loop again — that may
+                # unblock further steps even if nothing executed this round.
+                continue
+
+            tasks = [self._execute_step(plan.id, step) for step in runnable_steps]
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
-            for step, result in zip(next_steps, results):
+            for step, result in zip(runnable_steps, results):
                 if isinstance(result, Exception):
                     step.status = StepStatus.FAILED
                     step.error = str(result)
@@ -348,6 +565,34 @@ class Planner:
 
         return plan
 
+    @staticmethod
+    def _step_outcomes(plan: Plan) -> dict[str, dict[str, Any]]:
+        """Builds a `resolved_by_ref`-shaped dict from step statuses/results,
+        so `Step.condition` can be evaluated by the exact same
+        `_evaluate_when` used for operation-level `when` clauses."""
+        outcomes: dict[str, dict[str, Any]] = {}
+        for s in plan.steps:
+            if s.status == StepStatus.SKIPPED:
+                outcomes[s.id] = {"success": False, "skipped": True}
+            elif s.status in (StepStatus.COMPLETED, StepStatus.FAILED):
+                categories: set[str] = set()
+                if isinstance(s.result, dict):
+                    for svc_result in s.result.values():
+                        if isinstance(svc_result, dict) and svc_result.get("success") is False:
+                            cats = (svc_result.get("error") or {}).get("category")
+                            if isinstance(cats, str):
+                                categories.add(cats)
+                            elif isinstance(cats, (list, tuple, set, frozenset)):
+                                categories.update(cats)
+                outcomes[s.id] = {
+                    "success": s.status == StepStatus.COMPLETED,
+                    "error": {"category": sorted(categories) if categories else None, "message": s.error},
+                }
+            # PENDING/IN_PROGRESS steps are intentionally omitted — a
+            # condition referencing one is unreachable because create_plan
+            # already forced it into depends_on.
+        return outcomes
+
     async def _execute_step(self, plan_id: str, step: Step) -> Any:
         """Execute a single step by batching operations per service."""
         step.status = StepStatus.IN_PROGRESS
@@ -360,12 +605,21 @@ class Planner:
             )
         )
 
+        plan = self._plans[plan_id]
+
         ops_by_service: dict[str, list[dict[str, Any]]] = {}
         for op in step.operations:
+            # $from resolution happens here, before ops_by_service is built,
+            # so the rest of _execute_step (and ToToolManager/ToolSpec below
+            # it) never finds out a reference was involved. A PlanRefError
+            # here propagates like any other exception raised inside this
+            # coroutine — caught by execute_plan's asyncio.gather and turned
+            # into a FAILED step with the error message, same as today.
+            resolved_args = _resolve_refs(op.args, plan)
             ops_by_service.setdefault(op.service, []).append(
                 {
                     "method": op.method,
-                    "args": op.args,
+                    "args": resolved_args,
                     **({"id": op.id} if op.id else {}),
                 }
             )
@@ -461,14 +715,24 @@ class Planner:
             Args:
                 steps: List of step objects, each with:
                     - description: What the step does
-                    - operations: List of {service, method, args} objects
+                    - operations: List of {service, method, args, id?} objects.
+                      An arg value can be {"$from": <step_id>, "path": "..."}
+                      to use another step's result instead of a literal —
+                      e.g. {"user_id": {"$from": "step1", "path": "User.result.id"}}.
+                      If that step called more than one operation on the same
+                      service, add the op's explicit "id" to the path:
+                      "User.<op_id>.result.id".
                     - depends_on: Optional list of step ids this depends on
+                    - condition: Optional {"op": <step_id>, "outcome":
+                      "success"|"error", "category"?: <str|list>} — if unmet,
+                      this step is skipped (not run) instead of failing the plan.
             """
             plan_steps = [
                 Step(
                     description=s["description"],
                     operations=[StepOperation(**op) for op in s.get("operations", [])],
                     depends_on=s.get("depends_on", []),
+                    condition=s.get("condition"),
                 )
                 for s in steps
             ]
