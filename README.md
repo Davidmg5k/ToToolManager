@@ -1,4 +1,4 @@
-# to_tool_manager
+﻿# to_tool_manager
 
 Convierte clases Python normales (tu capa de servicios) en **tools**
 para agentes, sin atarte a ningún framework de agentes.
@@ -50,6 +50,163 @@ pip install pydantic-ai      # para adapters.pydantic_ai
 pip install fastmcp          # para adapters.fastmcp
 pip install ag-ui-core       # para adapters.ag_ui
 # adapters.raw no necesita nada extra
+```
+
+---
+
+## Uso rápido
+
+### 1. Definí tus clases de negocio
+
+```python
+class Order:
+    """Gestiona órdenes de clientes."""
+
+    def __init__(self) -> None:
+        self.__orders: list[str] = ["gpu"]
+
+    def create(self, product_name: str):
+        """Crea una nueva orden.
+
+        Args:
+            product_name: Nombre del producto a ordenar.
+        """
+        if product_name in self.__orders:
+            raise OrderAlreadyExistsError(f"Order '{product_name}' already exists")
+        self.__orders.append(product_name)
+        return f"Order '{product_name}' created successfully"
+
+    def delete(self, product_name: str):
+        """Elimina una orden por nombre de producto."""
+        if product_name not in self.__orders:
+            raise OrderNotFoundError(f"Order '{product_name}' not found")
+        self.__orders.remove(product_name)
+        return f"Order '{product_name}' deleted successfully"
+
+    def get_orders(self):
+        """Devuelve todas las órdenes actuales."""
+        return self.__orders
+```
+
+### 2. Registralas como tools
+
+```python
+from to_tool_manager import Service, ToToolManager
+
+manager = ToToolManager([
+    Service(
+        name="Order",
+        service=Order,
+        description="Manages customer orders.",
+        error_map={
+            OrderAlreadyExistsError: ("already_exists", False),
+            OrderNotFoundError: ("not_found", False),
+        },
+    ),
+])
+```
+
+### 3. Construí el agente
+
+```python
+from to_tool_manager.adapters.pydantic_ai import build_agent
+
+agent = build_agent("groq:llama-3.1-8b-instant", manager)
+result = await agent.run("Creá una orden para laptop")
+print(result.output)
+```
+
+---
+
+## Referencia de la API
+
+### `Service`
+
+Registra una clase Python como tool.
+
+```python
+Service(
+    name="Order",                     # nombre de la tool (requerido)
+    service=Order,                    # la clase a envolver (requerido)
+    description="Manages orders.",    # descripción de la tool (default: auto)
+    visibility={"public"},            # qué métodos exponer (default)
+    include=frozenset({"create"}),    # whitelist (ignora visibility)
+    exclude=frozenset({"_internal"}), # blacklist
+    expose_properties=False,          # exponer @property como ops de 0 args
+    error_map=ErrorMap(),             # clasificación de excepciones
+    sanitize_system_errors=True,      # ocultar texto raw de errores no mapeados
+    singleton=True,                   # reusar instancia vs. crear por llamada
+    args=(),                          # args del constructor
+    kwargs={},                        # kwargs del constructor
+    middlewares=[],                   # middlewares de este servicio
+    disable_middlewares=[],           # desactivar middlewares globales para este servicio
+)
+```
+
+### `Module`
+
+Agrupa varios servicios bajo un solo sub-agente con su propio system prompt.
+
+```python
+Module(
+    name="Commerce",
+    description="Sub-agente de comercio.",
+    system_prompt="Sos un especialista en comercio. Respondé en español.",
+    services=[service1, service2],
+    middlewares=[],
+    disable_middlewares=[],
+)
+```
+
+### `ToToolManager`
+
+Punto de entrada único. Crea una instancia por aplicación.
+
+```python
+manager = ToToolManager(
+    services=[service_or_module, ...],    # Service o Module
+    middlewares=[GlobalMiddleware()],      # middlewares globales
+)
+
+manager.tool_specs       # list[ToolSpec] — las tools generadas
+manager.services         # dict[str, Service] — servicios registrados
+manager.modules          # dict[str, Module] — módulos registrados
+manager.get_service("Order")  # lookup por nombre
+manager.refresh()             # invalidar cache de tool_specs
+manager.register_middleware([mw])  # registrar middleware en runtime
+```
+
+### `ErrorMap`
+
+Builder composable para clasificar excepciones.
+
+```python
+ErrorMap()
+    .map(NotFoundError, category="not_found")
+    .map(AlreadyExistsError, category="already_exists")
+    .map(ValidationError, category="validation_error", retryable=True)
+    .map_entry(SomeError, ErrorEntry(category="custom", retryable=False))
+    .map_callable(HTTPError, lambda e: ("not_found", False) if e.status_code == 404 else ("server", False))
+    .when(lambda e: hasattr(e, "timeout"), category="timeout", retryable=True)
+```
+
+También acepta el formato dict legacy: `error_map={ExcType: ("category", retryable)}`.
+
+### `ToolSpec` (dato de salida)
+
+Cada `Service`/`Module` produce un `ToolSpec` con:
+
+- `name` — nombre de la tool
+- `description` — descripción auto-generada
+- `operations` — tupla de `OperationSpec` (una por método expuesto)
+- `call(operations=[...])` — dispatch que **nunca lanza excepciones**, siempre retorna `ToolResponse`
+
+### `ToolResponse`
+
+```python
+ToolResponse(content=resultado, error=None)   # éxito
+ToolResponse(content=None, error=ToolError(...))  # error clasificado
+response.ok  # True si no hay error
 ```
 
 ---
@@ -317,6 +474,15 @@ register_on_mcp(mcp, manager.tool_specs)
 mcp.run()
 ```
 
+Si tenés `Module`, usá `build_mcp_agent` para montar sub-servidores aislados por namespace:
+
+```python
+from to_tool_manager.adapters.fastmcp import build_mcp_agent
+
+mcp = build_mcp_agent("commerce", manager)
+mcp.run()
+```
+
 ---
 
 ### Nivel 7 — Opciones de visibilidad y filtrado de métodos
@@ -394,7 +560,7 @@ assert [op.name for op in spec.operations] == ["version", "max_retries", "reload
 
 ```python
 from to_tool_manager import Service, ToToolManager
-from to_tool_manager.core.types import ErrorMap, ErrorClassification
+from to_tool_manager.core.types import ErrorMap
 
 class HTTPError(Exception):
     def __init__(self, status_code: int, message: str):
@@ -512,6 +678,17 @@ assert "create" in op_names       # de Order
 assert "get_users" in op_names    # de User
 ```
 
+Modules soportan middlewares propios y pueden desactivar middlewares globales:
+
+```python
+module = Module(
+    name="SecureModule",
+    services=[service1, service2],
+    middlewares=[LocalMiddleware()],
+    disable_middlewares=["GlobalSecurity"],
+)
+```
+
 ---
 
 ### Nivel 12 — Planner (planificación cross-service)
@@ -553,7 +730,7 @@ plan = await planner.create_plan([
     ),
     Step(
         description="Crear orden para David",
-        depends_on=[],  # se ejecuta después del paso anterior por orden
+        depends_on=[],
         operations=[
             StepOperation(service="Order", method="create", args={"product_name": "laptop"}),
         ],
@@ -572,6 +749,12 @@ completed_plan = await planner.execute_plan(plan.id)
 
 for step in completed_plan.steps:
     print(f"{step.description}: {step.status.value}")
+```
+
+El planner también expone 4 tools para que el agente gestione planes programáticamente:
+
+```python
+tools = planner.build_tools()  # create_plan, execute_plan, update_plan_step, get_plan
 ```
 
 **Planner con handler de eventos** (para UIs en tiempo real):
@@ -634,7 +817,7 @@ toolset = build_skills_toolset(skills=[reasoning_skill, validation_skill])
 | `validation` | Validación de inputs, estado, dependencias y seguridad |
 | `error_handling` | Clasificación de errores, estrategia de retry, comunicación |
 | `composition` | Agrupación de operaciones independientes vs dependientes |
-| `planificación` | Cuándo planificar, estructura de pasos, batching inteligente |
+| `planning` | Cuándo planificar, estructura de pasos, batching inteligente |
 
 ---
 
@@ -712,7 +895,67 @@ Service(
 
 ---
 
-### Nivel 18 — Caso completo: pydantic-ai + planner + streaming
+### Nivel 18 — Middleware
+
+Interceptá llamadas a tools para logging, validación, sanitización o control de acceso.
+
+**`Middleware`** — intercepta la llamada completa a una tool:
+
+```python
+from to_tool_manager import Middleware, ToolResponse
+
+class LoggingMiddleware(Middleware):
+    async def dispatch(self, func, /, *args, **kw):
+        print(f"[LOG] Ejecutando tool...")
+        response = await func(*args, **kw)
+        print(f"[LOG] Completado")
+        return response
+```
+
+**`ToolMiddleware`** — middleware con filtrado por nombre de método:
+
+```python
+from to_tool_manager import ToolMiddleware, ToolResponse, ToolError
+
+class AuthMiddleware(ToolMiddleware):
+    def __init__(self):
+        super().__init__(include=["create_user", "delete_user"])
+
+    async def dispatch(self, func, /, *args, **kw):
+        if not self.is_user_authenticated():
+            return ToolResponse(
+                error=ToolError(
+                    category=frozenset({"authentication_error"}),
+                    message="No autorizado",
+                    exception_type="AuthError",
+                    retryable=False,
+                )
+            )
+        return await func(*args, **kw)
+```
+
+**Middlewares globales** (aplicados a todas las tools):
+
+```python
+manager = ToToolManager([service], middlewares=[LoggingMiddleware()])
+```
+
+**Middlewares por servicio** (con `disable_middlewares` para desactivar globales):
+
+```python
+Service(
+    name="Order",
+    service=Order,
+    middlewares=[AuthMiddleware()],                          # solo este servicio
+    disable_middlewares=["LoggingMiddleware"],               # quitar el global
+)
+```
+
+**Orden de ejecución:** globales → eliminados por `disable_middlewares` → locales del servicio.
+
+---
+
+### Nivel 19 — Caso completo: pydantic-ai + planner + streaming
 
 ```python
 import asyncio
@@ -786,23 +1029,69 @@ asyncio.run(main())
 
 ---
 
+## Ejemplos completos
+
+### `example/` — App de comercio completa (FastAPI + HTMX)
+
+Aplicación de comercio completa con:
+- SQLModel + SQLite (WAL mode)
+- Capas: Router → Controller → Service → Repository
+- AI agent integrado con streaming via SSE
+- UI admin con HTMX + Jinja2
+- Suite completa de tests
+
+```bash
+cd example
+python run.py                    # iniciar en localhost:8000
+python util/seed_data.py         # sembrar datos de prueba
+pytest test/                     # correr tests
+```
+
+### `example_ui_pydantic/` — Agente standalone con UI web
+
+Ejemplo mínimo con pydantic-ai, sin base de datos:
+- Clases plain con storage en memoria
+- Módulos, middlewares personalizados
+- Una línea para UI web: `agent.to_web()`
+
+```bash
+cd example_ui_pydantic
+python ui_exe.py                 # iniciar en localhost:5000
+```
+
+### Patrón de uso típico
+
+```python
+# 1. Clases de negocio
+class Order:
+    def create(self, product_name: str): ...
+    def get_orders(self): ...
+
+# 2. Registrar
+manager = ToToolManager([
+    Service(name="Order", service=Order, error_map={...}),
+    Service(name="User", service=User, error_map={...}),
+])
+
+# 3. Agente
+agent = build_agent("groq:llama-3.1-8b-instant", manager)
+result = await agent.run("message")
+
+# 4. O web UI
+app = agent.to_web()
+```
+
+---
+
 ## Manejo de errores
 
 Nunca uses string-matching sobre mensajes. Definí tus propias
 excepciones de dominio y mapealas explícitamente en `error_map`. Sin
 mapear, los defaults son: `ValueError`/`TypeError` → `validation_error`
 (reintentable); `KeyError`/`LookupError` → `not_found`; el resto →
-`system_error` sanitizado, no reintentable.
+`unclassified` sanitizado, no reintentable.
 
 ---
-
-## Ejemplos completos
-
-- `examples/classes.py` — clases `Order`/`User`, con excepciones propias.
-- `examples/run_pydantic_ai_agent.py` — caso real con Groq.
-- `examples/run_fastmcp_server.py` — las mismas clases como servidor MCP.
-- `examples/test_core.py` — sanity check del core, incluye el escenario
-  "crear usuario + listar usuarios en una sola llamada".
 
 ## Por qué es agnóstico
 
