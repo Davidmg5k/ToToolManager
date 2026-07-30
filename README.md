@@ -1388,6 +1388,47 @@ app = agent.to_web()
 
 ---
 
+## En la práctica: qué resuelve to_tool_manager
+
+Las imágenes muestran un caso real donde un usuario pide **múltiples
+operaciones** al mismo tiempo:
+
+**Imagen 1 — La solicitud del usuario:**
+
+![Solicitud multi-operación](data/img/1.jpeg)
+
+> "Hello. Create a new user report. Then, generate a report of all
+> payments to analyze available funds, losses, and related
+> administrative aspects. Also, create the following user: Gustavo
+> (gus@ttm.com) with any password."
+
+**Imagen 2 — La respuesta del agente:**
+
+![Respuesta del agente](data/img/2.jpeg)
+
+El agente ejecutó **todas las operaciones en una sola interacción**:
+
+- ✅ **User creation**: creó a Gustavo
+- 📊 **User report**: 14 usuarios registrados
+- 📊 **Payments report**: análisis completo de fondos, pérdidas y estados
+
+**Qué demuestra esto:**
+
+| Sin to_tool_manager | Con to_tool_manager |
+|---------------------|---------------------|
+| 3 round-trips separados (User.create, User.list, Payment.report) | 1 sola tool call con batch de operaciones |
+| El LLM decide el orden secuencialmente | El manager ejecuta todo junto, el LLM solo recibe el resultado |
+| Más tokens, más latencia | Menos tokens, menos latencia |
+| Manejo manual de errores por servicio | ErrorMap unificado, ToolResponse siempre seguro |
+
+El usuario no sabe que hay múltiples servicios por detrás. Solo hace
+**un pedido** y recibe **una respuesta consolidada**. Esa es la
+diferencia clave: `to_tool_manager` convierte la complejidad técnica
+en una interfaz simple para el LLM y para el usuario.
+
+
+---
+
 ## Manejo de errores
 
 Nunca uses string-matching sobre mensajes. Definí tus propias
