@@ -1,12 +1,14 @@
 [project]
 name = "to-tool-manager"
 version = "0.3.6"
-description = "Add your description here"
+description = "Convert Python service classes into AI tool specifications for LLM integration"
 readme = "README.md"
 authors = [
     { name = "Conectar Wali SAS", email = "conectarwalisas@gmail.com" }
 ]
 requires-python = ">=3.12"
+repository = "https://github.com/Davidmg5k/ToToolManager"
+license = {file = "LICENSE"}
 dependencies = [
     "markdown>=3.10.2",
     "ornator",
