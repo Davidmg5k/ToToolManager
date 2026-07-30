@@ -25,6 +25,7 @@ A full-featured demo showing how `to_tool_manager` turns plain Python services i
 - [Available Modules](#available-modules)
 - [Request Flow](#request-flow)
 - [Testing](#testing)
+- [Demo Walkthrough](#demo-walkthrough)
 
 ---
 
@@ -443,6 +444,57 @@ pytest test/ -v
 ```
 
 Tests cover all API endpoints (REST and chat) and use an isolated SQLite test database.
+
+
+
+---
+
+## Demo Walkthrough
+
+The following screenshots show a complete interaction with the AI agent, from querying a non-existent user to creating one through natural language.
+
+### Step 1: Query a Non-Existent User
+
+The user asks the AI to find a user named "gus". The system does not have this user, so the AI reports it does not exist.
+
+![Query non-existent user](data/docs/img/1.jpeg)
+
+### Step 2: Create the User Manually
+
+The user provides the details to create the new user manually. The AI calls the `user_service.create_user` tool and confirms creation.
+
+![Create user manually](data/docs/img/2.jpeg)
+
+### Step 3: List All Payments
+
+The user requests a list of all payments. The AI calls `payment_service.list_payments` and presents the results.
+
+![List all payments](data/docs/img/3.jpeg)
+
+### Step 4: AI Chat Interaction
+
+The user sends a natural language request to the AI chat interface. The AI analyzes the request and decides which tools to invoke.
+
+![AI chat interaction](data/docs/img/4.jpeg)
+
+### Step 5-6: AI Response
+
+The AI processes the request, calls the appropriate services, and formulates a response. Here the AI is creating a new user named "gus" based on the conversation context.
+
+![AI response part 1](data/docs/img/5.jpeg)
+![AI response part 2](data/docs/img/6.jpeg)
+
+### Step 7: User Created Successfully
+
+The AI confirms that the new user "gus" was created successfully, showing the user details returned by the service.
+
+![User created successfully](data/docs/img/7.jpeg)
+
+### Step 8: Full User List with Total Count
+
+The AI lists all users in the system along with a total count, confirming "gus" is now part of the user database.
+
+![Full user list with total](data/docs/img/8.jpeg)
 
 ---
 
