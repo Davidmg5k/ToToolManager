@@ -99,7 +99,8 @@ The AI can **combine** these services freely -- for example, placing an order tr
 
 ## Prerequisites
 
-- **Python 3.10+**
+- **Python 3.12+**
+- **uv** (package manager -- install from [astral.sh/uv](https://astral.sh/uv))
 - **An LLM provider API key** (Groq, OpenAI, Anthropic, etc. -- anything supported by `pydantic-ai`)
 - Create a `.env` file in this directory:
 
@@ -112,14 +113,16 @@ GROQ_API_KEY=your_groq_api_key_here
 ## Running the App
 
 ```bash
-# From the example directory
-pip install -r requirements.txt
+# From the project root (to_tool_manager/)
+uv sync
 
-# Start the server
+# From the example directory
 python run.py
 ```
 
 The app starts at `http://localhost:8000`. On first launch it creates an SQLite database and seeds it with sample data (users, products, orders, payments, notifications).
+
+**Dev dependencies** (FastAPI, SQLModel, pytest, httpx, Groq provider) are installed automatically by `uv sync` via the `[dependency-groups] dev` section in `pyproject.toml`.
 
 ---
 
@@ -463,8 +466,9 @@ User sends message
 ## Testing
 
 ```bash
-# From the example directory
-pytest test/ -v
+# From the project root (to_tool_manager/)
+uv sync
+pytest example/test/ -v
 ```
 
 Tests cover all API endpoints (REST and chat) and use an isolated SQLite test database.
