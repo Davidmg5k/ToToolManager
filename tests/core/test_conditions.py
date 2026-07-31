@@ -1,5 +1,4 @@
-﻿import pytest
-from to_tool_manager.core.conditions import _evaluate_when
+﻿from to_tool_manager.core.conditions import _evaluate_when
 
 
 class TestEvaluateWhen:

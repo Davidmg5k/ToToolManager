@@ -1,5 +1,4 @@
-﻿import pytest
-from to_tool_manager.core.prompts import (
+﻿from to_tool_manager.core.prompts import (
     build_system_prompt,
     build_instructions,
     build_service_description,

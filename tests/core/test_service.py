@@ -1,6 +1,5 @@
 ﻿import pytest
 from to_tool_manager.core.service import Service
-from to_tool_manager.core.discovery import Visibility
 from to_tool_manager.core.types import ErrorMap
 
 

@@ -1,7 +1,6 @@
 ﻿import pytest
 from to_tool_manager.core.module import Module
 from to_tool_manager.core.service import Service
-from to_tool_manager.core.types import ToolResponse
 
 
 class OrderService:

@@ -4,7 +4,6 @@ from to_tool_manager.core.discovery import (
     discover_methods,
     parse_docstring,
     class_summary,
-    MethodInfo,
 )
 
 

@@ -1,5 +1,4 @@
-﻿import pytest
-from to_tool_manager.skills import (
+﻿from to_tool_manager.skills import (
     reasoning_skill,
     dependencies_skill,
     validation_skill,
