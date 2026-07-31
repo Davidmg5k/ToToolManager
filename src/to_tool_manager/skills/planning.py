@@ -9,7 +9,6 @@ from pydantic_ai_skills import Skill
 
 PLANNING_CONTENT = """
 ## Cross-Service Planning Patterns
-
 ### 0. Guiding Principle
 Before executing anything, analyze the most appropriate order to apply the requested changes, ensuring their propagation does not introduce inconsistencies or break the correct functioning of the rest of the system. This principle applies generically to any request — regardless of scope, number of services, or type of operation — and must always be weighed against two factors:
 - **The user's actual intent**: what outcome they need, not just the literal sequence of actions they described.
@@ -22,43 +21,35 @@ Create a plan when the request involves:
 - Multiple services (e.g., User + Order + Product)
 - Dependent operations (e.g., create user before creating their order)
 - Complex sequences that benefit from explicit step tracking
-- Any change whose propagation could plausibly affect other parts of the system, even within a single service
 
-For simple, single-service requests with no risk of side effects, skip planning and use tools directly.
+For simple, single-service requests, skip planning and use tools directly.
 
 ### 2. Plan Structure
 Each step should include:
 - `description`: Clear explanation of what this step does
 - `operations`: List of {service, method, args} objects to execute
 - `depends_on`: IDs of steps that must complete first (empty if independent)
-- `impact`: (optional) other resources/services this step could affect, used to detect hidden dependencies
 
 ### 3. Smart Batching
 - Steps without dependencies → execute in parallel (separate tool calls)
 - Steps with dependencies → execute in sequence
 - Group operations from the SAME service into a single step when possible
 - Independent operations across DIFFERENT services can be parallel steps
-- Never batch in parallel two steps that touch the same resource, even if no explicit dependency was declared — infer this from `impact` or from operation arguments
 
-### 4. Dependency & Ordering Rules
+### 4. Dependency Rules
 When a dependency graph exists:
 - The planner validates execution order automatically
 - Steps are reordered if needed
 - Violations are reported before execution
 
 When no graph exists:
-- The agent must reason explicitly about the safest order before acting, considering:
-  - Which operations create/modify data that others read or depend on
-  - Which operations are destructive or hard to reverse (these go last, or require extra confirmation)
-  - Whether reordering could better satisfy the user's intent without changing the outcome
+- The agent decides order based on logical reasoning
 - Read operations before write operations when they reference the same data
 - Verify preconditions before creating dependent resources
-- When in doubt about propagation risk, prefer the more conservative order and state the assumption
 
 ### 5. Error Handling in Plans
 - If a step fails, mark it as `failed`
 - Steps that depend on a failed step are marked as `skipped`
-- Re-evaluate whether already-completed steps left the system in a consistent state; report if not
 - Report what failed, why, and what succeeded
 - Never silently ignore failures in a plan
 

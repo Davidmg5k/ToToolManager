@@ -4,8 +4,6 @@ Agnostic Skills — Behavioral patterns for agents.
 These skills contain no business logic.
 They are guidelines that influence HOW the agent thinks and executes.
 """
-from typing import List
-
 from pydantic_ai_skills import SkillsToolset
 
 from to_tool_manager.skills.composition import composition_skill
@@ -45,7 +43,7 @@ default_skills = [
 
 
 def build_skills_toolset(
-    skills: List | None =None,
+    skills=None,
     directories=None,
 ):
     """

@@ -75,6 +75,42 @@ class Step(BaseModel):
     )
     result: Any = Field(default=None, description="Execution result (set after completion)")
     error: str | None = Field(default=None, description="Error message if failed")
+    state_field: str | None = Field(
+        default=None,
+        description=(
+            "Optional: name of a field on the Planner's `state_type` model "
+            "that this step's result maps to. Purely additive — only "
+            "meaningful if the Planner was built with `state_type` set; "
+            "otherwise ignored. The step must call exactly one service; if "
+            "that service's call resolved a single operation, the raw "
+            "return value is used, otherwise the list of per-operation "
+            "results is used as-is."
+        ),
+    )
+
+
+def _step_state_value(step: Step) -> Any:
+    """Extracts the value a completed step contributes to `state_field`
+    (R5). Reuses the same auto-unwrap convention as `$from`: a step
+    mapped to a state field must call exactly one service; if that
+    service ran a single operation, the raw return value is used,
+    otherwise the list of per-operation result entries is used as-is."""
+    if not isinstance(step.result, dict) or len(step.result) != 1:
+        n = len(step.result) if isinstance(step.result, dict) else 0
+        raise ValueError(
+            f"Step '{step.id}': state_field requires the step to call "
+            f"exactly one service (it called {n})."
+        )
+    (service_name, service_result), = step.result.items()
+    if not service_result.get("success"):
+        raise ValueError(
+            f"Step '{step.id}': service '{service_name}' did not succeed, "
+            "can't map its result to state."
+        )
+    entries = service_result.get("result")
+    if isinstance(entries, list) and len(entries) == 1:
+        return entries[0].get("result")
+    return entries
 
 
 class Plan(BaseModel):
@@ -257,34 +293,87 @@ class DependencyValidator:
         self._graph = graph
 
     def validate_order(self, steps: list[Step]) -> list[str] | None:
-        """Validate that step order respects service dependencies.
+        """Validate (and, when a graph is set, auto-derive) step order.
+
+        - If a dependency graph is present: for every declared
+          `ServiceDependency(source, target)`, every step touching
+          `source` gets `target`'s steps auto-added to its `depends_on`
+          (if not already there). This is additive/idempotent — steps
+          that already declare the right `depends_on` explicitly are
+          untouched, steps that contradict it (see below) get caught by
+          the cycle check.
+        - Always (graph or not): the resulting `depends_on` graph is
+          checked for cycles. A cycle from an explicit `depends_on` that
+          contradicts an auto-derived edge is reported the same way as
+          any other cycle — before this, a circular `depends_on` would
+          pass validation silently and hang execute_plan's dependency
+          loop forever, since nothing would ever get added to `completed`.
 
         Returns None if valid, or a list of error messages.
         """
-        if self._graph is None:
-            return None
-
-        service_steps: dict[str, list[str]] = {}
-        for step in steps:
-            for op in step.operations:
-                service_steps.setdefault(op.service, []).append(step.id)
-
         errors: list[str] = []
-        for dep in self._graph.dependencies:
-            target_ids = service_steps.get(dep.target, [])
-            source_ids = service_steps.get(dep.source, [])
-            if not target_ids or not source_ids:
-                continue
 
-            max_target = max(i for i, s in enumerate(steps) if s.id in target_ids)
-            min_source = min(i for i, s in enumerate(steps) if s.id in source_ids)
-            if min_source < max_target:
-                errors.append(
-                    f"Service '{dep.source}' depends on '{dep.target}', "
-                    f"but steps are ordered incorrectly."
-                )
+        if self._graph is not None:
+            service_steps: dict[str, list[str]] = {}
+            for step in steps:
+                for op in step.operations:
+                    service_steps.setdefault(op.service, []).append(step.id)
+            step_by_id = {s.id: s for s in steps}
+
+            for dep in self._graph.dependencies:
+                for source_id in service_steps.get(dep.source, []):
+                    for target_id in service_steps.get(dep.target, []):
+                        if source_id == target_id:
+                            continue
+                        source_step = step_by_id[source_id]
+                        if target_id not in source_step.depends_on:
+                            source_step.depends_on.append(target_id)
+
+        cycle = self._find_cycle(steps)
+        if cycle:
+            errors.append(
+                "Circular dependency detected among steps: "
+                + " -> ".join(cycle)
+                + ". If a service dependency graph is set, check whether an "
+                "explicit `depends_on` contradicts it."
+            )
 
         return errors if errors else None
+
+    @staticmethod
+    def _find_cycle(steps: list[Step]) -> list[str] | None:
+        """DFS-based cycle detection over `Step.depends_on`. Returns the
+        cycle as a list of step ids if one exists, else None. Dangling
+        `depends_on` ids (referencing a step not in this plan) are
+        skipped here — that's a separate, earlier check in create_plan."""
+        depends_on_by_id = {s.id: s.depends_on for s in steps}
+        UNVISITED, IN_PROGRESS, DONE = 0, 1, 2
+        state: dict[str, int] = {s.id: UNVISITED for s in steps}
+        path: list[str] = []
+
+        def visit(node: str) -> list[str] | None:
+            state[node] = IN_PROGRESS
+            path.append(node)
+            for dep_id in depends_on_by_id.get(node, []):
+                if dep_id not in state:
+                    continue  # dangling ref, validated elsewhere
+                if state[dep_id] == IN_PROGRESS:
+                    cycle_start = path.index(dep_id)
+                    return path[cycle_start:] + [dep_id]
+                if state[dep_id] == UNVISITED:
+                    found = visit(dep_id)
+                    if found:
+                        return found
+            path.pop()
+            state[node] = DONE
+            return None
+
+        for step in steps:
+            if state[step.id] == UNVISITED:
+                found = visit(step.id)
+                if found:
+                    return found
+        return None
 
     def get_next_executable(
         self, steps: list[Step], completed: set[str]
@@ -362,22 +451,67 @@ class Planner:
             ]),
         ])
         result = await planner.execute_plan(plan.id)
+
+    Or, built with the fluent `PlanBuilder` (R6, sugar over the same
+    `Step`/`StepOperation` model — no separate execution engine)::
+
+        steps = (
+            PlanBuilder()
+            .step("Create user").op("User", "create_user", {"name": "David"})
+            .step("Create order").op("Order", "create", {"user_id": {"$from": "step0", "path": "User.result.id"}})
+            .depends_on("step0")
+            .build()
+        )
+        plan = await planner.create_plan(steps)
+
+    `state_type` (R5) is optional and purely additive: without it,
+    everything behaves exactly as before. With it, steps can set
+    `state_field` to say which field of that model their result maps to,
+    and `get_state(plan_id)` returns a validated instance built from
+    whichever steps completed — a typed, ergonomic snapshot for code that
+    consumes the finished plan. It doesn't change how steps read each
+    other's data *during* execution — that's still `$from` (R1).
     """
 
     def __init__(
         self,
         manager: ToToolManager,
         dependency_graph: ServiceDependencyGraph | None = None,
+        state_type: type[BaseModel] | None = None,
     ) -> None:
         self._manager = manager
         self._validator = DependencyValidator(dependency_graph)
         self._plans: dict[str, Plan] = {}
         self._handlers: list[PlanEventHandler] = []
+        self._state_type = state_type
 
     @property
     def manager(self) -> ToToolManager:
         """Access the underlying ToToolManager."""
         return self._manager
+
+    @staticmethod
+    def builder() -> "PlanBuilder":
+        """Shorthand for `PlanBuilder()` (R6)."""
+        return PlanBuilder()
+
+    def get_state(self, plan_id: str) -> BaseModel:
+        """Build a validated `state_type` instance from this plan's
+        completed steps (R5). Raises if this planner has no `state_type`
+        configured, or if `state_type` validation fails (e.g. a required
+        field's step hasn't completed yet)."""
+        if self._state_type is None:
+            raise ValueError(
+                "This planner has no state_type configured — pass "
+                "state_type=... to with_planner()/Planner() to use get_state()."
+            )
+        plan = self._plans[plan_id]
+        values: dict[str, Any] = {}
+        for step in plan.steps:
+            if not step.state_field or step.status != StepStatus.COMPLETED:
+                continue
+            values[step.state_field] = _step_state_value(step)
+        return self._state_type(**values)
 
     def add_handler(self, handler: PlanEventHandler) -> None:
         """Register an event handler for plan lifecycle events."""
@@ -395,14 +529,23 @@ class Planner:
                 await method(event)
 
     async def create_plan(self, steps: list[Step]) -> Plan:
-        """Create a new plan, validate step order, and validate references.
+        """Create a new plan: validate references, derive dependencies,
+        validate order, and validate against the manager's tool specs —
+        all before anything executes.
 
         - A step's `condition.op` (if set) is auto-added to its
-          `depends_on` so execution order is always safe (R2 + R3 style
-          auto-derivation, but at the step/condition level).
+          `depends_on` so execution order is always safe (R2).
         - Every `$from` reference is checked against known step ids
           upfront — a typo'd or forward step id fails at create_plan,
-          not mid-execution (R1 + R4 spirit: catch what's checkable now).
+          not mid-execution (R1).
+        - Every explicit `depends_on` id must reference a real step.
+        - If a `ServiceDependencyGraph` was passed to `with_planner`,
+          `depends_on` is auto-derived from it for steps that weren't
+          explicit; the resulting graph (explicit + derived) is checked
+          for cycles (R3).
+        - `service`/`method` on every operation are validated against
+          `manager.tool_specs` (R4) — a typo surfaces here, not as a
+          generic exception buried inside execute_plan's asyncio.gather.
         """
         step_ids = {s.id for s in steps}
 
@@ -431,12 +574,46 @@ class Planner:
                     if ref_step_id not in step.depends_on:
                         step.depends_on.append(ref_step_id)
 
-        plan = Plan(steps=steps)
+        for step in steps:
+            for dep_id in step.depends_on:
+                if dep_id not in step_ids:
+                    raise ValueError(
+                        f"Step '{step.id}': depends_on references unknown step '{dep_id}'."
+                    )
+
+        if self._state_type is not None:
+            valid_fields = set(self._state_type.model_fields)
+            for step in steps:
+                if step.state_field is not None and step.state_field not in valid_fields:
+                    raise ValueError(
+                        f"Step '{step.id}': state_field '{step.state_field}' is not a "
+                        f"field of {self._state_type.__name__}. Valid fields: "
+                        f"{', '.join(sorted(valid_fields)) or 'none'}."
+                    )
 
         errors = self._validator.validate_order(steps)
         if errors:
             raise ValueError(f"Invalid plan order: {'; '.join(errors)}")
 
+        # R4 — validate service/method exist upfront, with the info
+        # manager.tool_specs already exposes, instead of letting a typo
+        # surface only inside asyncio.gather as a generic exception once
+        # execute_plan is already running.
+        for step in steps:
+            for op in step.operations:
+                try:
+                    tool_spec = self._find_tool_spec(op.service)
+                except ValueError as exc:
+                    raise ValueError(f"Step '{step.id}': {exc}") from exc
+                method_names = {o.name for o in tool_spec.operations}
+                if op.method not in method_names:
+                    raise ValueError(
+                        f"Step '{step.id}': method '{op.method}' not found on "
+                        f"service '{op.service}'. Available methods: "
+                        f"{', '.join(sorted(method_names)) or 'none'}."
+                    )
+
+        plan = Plan(steps=steps)
         self._plans[plan.id] = plan
 
         await self._emit(
@@ -802,3 +979,113 @@ class Planner:
             return json.dumps(plan.model_dump(), default=str)
 
         return get_plan
+
+
+# ---------------------------------------------------------------------------
+# PlanBuilder (R6) — fluent sugar over Step/StepOperation, no new engine
+# ---------------------------------------------------------------------------
+
+
+class PlanBuilder:
+    """Fluent builder for plans defined in code (as opposed to by an LLM).
+
+    Compiles to a plain `list[Step]` — the same model `create_plan`
+    already validates and `execute_plan` already runs. This is sugar,
+    not a parallel execution engine: covers the same use case as
+    `StateGraph.add_node/add_edge/.compile()` from the earlier design,
+    without duplicating `execute_plan`.
+
+    Usage::
+
+        steps = (
+            PlanBuilder()
+            .step("Create user", id="s_user")
+                .op("User", "create_user", {"name": "David"})
+            .step("Create order", id="s_order")
+                .op("Order", "create", {
+                    "user_id": {"$from": "s_user", "path": "User.result.id"},
+                    "item": "Widget",
+                })
+                .depends_on("s_user")
+            .step("Notify on failure")
+                .op("Order", "notify_failure", {})
+                .when({"op": "s_order", "outcome": "error"})
+            .build()
+        )
+        plan = await planner.create_plan(steps)
+
+    Or, skip the extra `create_plan` call with `.create(planner)`::
+
+        plan = await PlanBuilder().step(...).op(...).create(planner)
+    """
+
+    def __init__(self) -> None:
+        self._steps: list[Step] = []
+
+    def step(
+        self,
+        description: str,
+        *,
+        id: str | None = None,
+        state_field: str | None = None,
+    ) -> "PlanBuilder":
+        """Starts a new step. Chain `.op(...)`, `.depends_on(...)`, and
+        `.when(...)` right after to configure it — they always apply to
+        the most recently added step."""
+        step = Step(
+            id=id or uuid4().hex[:8],
+            description=description,
+            state_field=state_field,
+        )
+        self._steps.append(step)
+        return self
+
+    def op(
+        self,
+        service: str,
+        method: str,
+        args: dict[str, Any] | None = None,
+        *,
+        id: str | None = None,
+    ) -> "PlanBuilder":
+        """Adds an operation to the step most recently added via `.step(...)`."""
+        if not self._steps:
+            raise ValueError("PlanBuilder: call .step(...) before .op(...).")
+        self._steps[-1].operations.append(
+            StepOperation(service=service, method=method, args=args or {}, id=id)
+        )
+        return self
+
+    def depends_on(self, *step_ids: str) -> "PlanBuilder":
+        """Adds dependencies to the step most recently added via `.step(...)`."""
+        if not self._steps:
+            raise ValueError("PlanBuilder: call .step(...) before .depends_on(...).")
+        current = self._steps[-1]
+        for sid in step_ids:
+            if sid not in current.depends_on:
+                current.depends_on.append(sid)
+        return self
+
+    def when(self, condition: dict[str, Any]) -> "PlanBuilder":
+        """Sets `condition` on the step most recently added via `.step(...)`."""
+        if not self._steps:
+            raise ValueError("PlanBuilder: call .step(...) before .when(...).")
+        self._steps[-1].condition = condition
+        return self
+
+    def build(self) -> list[Step]:
+        """Returns the compiled steps. Pass straight to `planner.create_plan(...)`.
+
+        Deliberately returns `list[Step]`, not a `Plan` — assigning the
+        plan id and running R1-R4 validation both live in
+        `Planner.create_plan`, and duplicating that here would be exactly
+        the "two systems that don't talk to each other" problem this
+        whole effort exists to avoid.
+        """
+        return list(self._steps)
+
+    async def create(self, planner: "Planner") -> Plan:
+        """Convenience: `await planner.create_plan(self.build())`. This is
+        the actual analog of `StateGraph.compile()` — all the real logic
+        stays in `Planner.create_plan`, nothing new happens here."""
+        return await planner.create_plan(self.build())

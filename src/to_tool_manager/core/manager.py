@@ -429,6 +429,7 @@ class ToToolManager:
     def with_planner(
         self,
         dependency_graph: ServiceDependencyGraph | None = None,
+        state_type: type[Any] | None = None,
     ) -> Planner:
         """Create a Planner that wraps this manager.
 
@@ -443,6 +444,11 @@ class ToToolManager:
             Optional graph of inter-service dependencies. When provided,
             the planner validates that step execution respects these
             constraints. When absent, the agent decides freely.
+        state_type:
+            Optional Pydantic model class. When provided, steps can set
+            `state_field` and `planner.get_state(plan_id)` returns a
+            validated instance built from completed steps. Purely
+            additive — omit it and nothing changes.
 
         Returns
         -------
@@ -459,7 +465,7 @@ class ToToolManager:
             else:
                 graph = ServiceDependencyGraph(dependencies=dependency_graph)
 
-        return Planner(self, dependency_graph=graph)
+        return Planner(self, dependency_graph=graph, state_type=state_type)
 
     def register_middleware(self, middlewares: Sequence[Middleware] | Middleware) -> None:
         """Register middleware at runtime (appends to global list)."""
