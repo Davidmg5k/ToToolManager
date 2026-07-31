@@ -7,19 +7,25 @@ authors = [
     { name = "Conectar Wali SAS", email = "conectarwalisas@gmail.com" }
 ]
 requires-python = ">=3.12"
+license = "MIT"
 repository = "https://github.com/Davidmg5k/ToToolManager"
-license = {file = "LICENSE"}
-dependencies = [
-    "markdown>=3.10.2",
-    "ornator",
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = []
+
+[project.optional-dependencies]
+pydantic-ai = [
     "pydantic-ai>=2.10.0",
     "pydantic-ai-harness>=0.7.0",
     "pydantic-ai-skills>=1.2.0",
     "subagents-pydantic-ai>=0.2.10",
 ]
-
-[project.scripts]
-to-tool-manager = "to_tool_manager:main"
 
 [build-system]
 requires = ["uv_build>=0.8.15,<0.9.0"]

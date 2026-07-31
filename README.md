@@ -44,9 +44,13 @@ vos importás ese adapter.
 ## Instalación
 
 ```bash
-pip install to_tool_manager
+# Solo el core (agnóstico de framework)
+pip install to-tool-manager
 
-pip install pydantic-ai      # para adapters.pydantic_ai
+# Con adapters para pydantic-ai
+pip install "to-tool-manager[pydantic-ai]"
+
+# Adaptadores de terceros (instalar aparte)
 pip install fastmcp          # para adapters.fastmcp
 pip install ag-ui-core       # para adapters.ag_ui
 # adapters.raw no necesita nada extra

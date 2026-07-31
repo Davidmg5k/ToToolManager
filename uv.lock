@@ -1101,15 +1101,6 @@ wheels = [
 ]
 
 [[package]]
-name = "markdown"
-version = "3.10.3"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/29/6f/da4c6aea59b3001f2e8c0ec7497475aadaf3b021c10cab5b2858f0f32b26/markdown-3.10.3.tar.gz", hash = "sha256:3589362618f743188b4d955b874402bc814f4f83f544dc207719f4baa7d9c45f", size = 372596, upload-time = "2026-07-30T19:05:29.005Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/64/69/4a5af2bc115a9a33fefe51709749de8262be3f9ba063d1753a837cdbc49c/markdown-3.10.3-py3-none-any.whl", hash = "sha256:fa6c92a00a4a3c98b22728c64a935ae1928250ae65058a6ded814d2cc29a4cea", size = 110757, upload-time = "2026-07-30T19:05:27.883Z" },
-]
-
-[[package]]
 name = "markdown-it-py"
 version = "4.2.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1365,15 +1356,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/32/a9/d7525a59fdd240e69b5af4a6338e78fafa1b4203394122cbd6701fb5f84a/opentelemetry_util_http-0.65b0.tar.gz", hash = "sha256:84f82d826978bba416ab453460ff6a7391cdc3534c93a786595e4068680016b7", size = 11243, upload-time = "2026-07-16T15:26:27.898Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/23/3f/ab8d29df207ce5f470a07fa96ebb48af4e95b7fab7e7635311b9a32f2fab/opentelemetry_util_http-0.65b0-py3-none-any.whl", hash = "sha256:7553b606f963097cb190536dc30556cce85090692e471a422fff30ca29b04348", size = 8245, upload-time = "2026-07-16T15:25:46.482Z" },
-]
-
-[[package]]
-name = "ornator"
-version = "0.0.4"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/6a/b7/9e9fd00d565a715181a42130fe1ab9a66cc0d554f76079710904a0e5ee34/ornator-0.0.4.tar.gz", hash = "sha256:c96a076f275ceb6206ee63b1a9d350b377e32e49e3bc2b9ce0e24a27fc7e5642", size = 6392, upload-time = "2025-04-23T22:54:30.963Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/da/95/cfe1875ba52e76dbdba225ac960eecf117a3ba0d9dfa2ec4df9d4f6967a9/ornator-0.0.4-py3-none-any.whl", hash = "sha256:83d1abf436372a9e4587b03bbcde65809117b8051e780e367aa7ade2712854dc", size = 6984, upload-time = "2025-04-23T22:54:29.238Z" },
 ]
 
 [[package]]
@@ -2385,9 +2367,9 @@ wheels = [
 name = "to-tool-manager"
 version = "0.3.6"
 source = { editable = "." }
-dependencies = [
-    { name = "markdown" },
-    { name = "ornator" },
+
+[package.optional-dependencies]
+pydantic-ai = [
     { name = "pydantic-ai" },
     { name = "pydantic-ai-harness" },
     { name = "pydantic-ai-skills" },
@@ -2405,13 +2387,12 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "markdown", specifier = ">=3.10.2" },
-    { name = "ornator" },
-    { name = "pydantic-ai", specifier = ">=2.10.0" },
-    { name = "pydantic-ai-harness", specifier = ">=0.7.0" },
-    { name = "pydantic-ai-skills", specifier = ">=1.2.0" },
-    { name = "subagents-pydantic-ai", specifier = ">=0.2.10" },
+    { name = "pydantic-ai", marker = "extra == 'pydantic-ai'", specifier = ">=2.10.0" },
+    { name = "pydantic-ai-harness", marker = "extra == 'pydantic-ai'", specifier = ">=0.7.0" },
+    { name = "pydantic-ai-skills", marker = "extra == 'pydantic-ai'", specifier = ">=1.2.0" },
+    { name = "subagents-pydantic-ai", marker = "extra == 'pydantic-ai'", specifier = ">=0.2.10" },
 ]
+provides-extras = ["pydantic-ai"]
 
 [package.metadata.requires-dev]
 dev = [
