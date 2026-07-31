@@ -75,10 +75,10 @@ pip install ag-ui-core       # para adapters.ag_ui
 | [Nivel 6 - FastMCP](#nivel-6--integracion-con-fastmcp-servidor-mcp) | build_mcp_server, build_mcp_agent |
 | [Nivel 7 - Visibilidad](#nivel-7--opciones-de-visibilidad-y-filtrado-de-metodos) | public, protected, include, exclude |
 | [Nivel 8 - Properties](#nivel-8--exponer-propiedades-como-operaciones) | @property como ops de 0 args |
-| [Nivel 9 - ErrorMap](#nivel-9--sistema-de-errores-avanzado-con-errormap) | map, map_callable, when |
+| [Nivel 9 - ErrorMap](#nivel-9--sistema-de-errores-avanzado-con-errormap) | map, map_callable, when, message |
 | [Nivel 10 - Prompts](#nivel-10--prompts-personalizados) | build_system_prompt, build_instructions |
 | [Nivel 11 - Modulos](#nivel-11--modulos-sub-agentes-aislados) | Module con sub-agentes |
-| [Nivel 12 - Planner](#nivel-12--planner-planificacion-cross-service) | Step, StepOperation, ServiceDependencyGraph |
+| [Nivel 12 - Planner](#nivel-12--planner-planificacion-cross-service) | Step, StepOperation, build_agent con planning_mode |
 | [Nivel 13 - ag_ui](#nivel-13--integracion-con-ag_ui-streaming-de-estado-a-uis) | AGUIPlanHandler |
 | [Nivel 14 - Skills](#nivel-14--skills-patrones-de-comportamiento-para-agentes) | reasoning, validation, etc. |
 | [Nivel 15 - build_agent completo](#nivel-15--build_agent-con-todas-las-opciones) | Todas las opciones de build_agent |
@@ -170,6 +170,7 @@ Service(
     exclude=frozenset({"_internal"}), # blacklist
     expose_properties=False,          # exponer @property como ops de 0 args
     error_map=ErrorMap(),             # clasificación de excepciones
+    error_rules=[],                   # reglas callable-checked ANTES que error_map
     sanitize_system_errors=True,      # ocultar texto raw de errores no mapeados
     singleton=True,                   # reusar instancia vs. crear por llamada
     args=(),                          # args del constructor
@@ -224,7 +225,11 @@ ErrorMap()
     .map_entry(SomeError, ErrorEntry(category="custom", retryable=False))
     .map_callable(HTTPError, lambda e: ("not_found", False) if e.status_code == 404 else ("server", False))
     .when(lambda e: hasattr(e, "timeout"), category="timeout", retryable=True)
+    .when(lambda e: "auth" in str(e).lower(), category="auth_error", retryable=False,
+          message="Error de autenticación: verificá tus credenciales.")
 ```
+
+Todos los métodos (`map`, `when`, `map_entry`) aceptan el kwarg `message: str | None` que reemplaza `str(exc)` como el mensaje que ve el LLM. Útil para ocultar detalles técnicos o traducir errores a lenguaje claro.
 
 También acepta el formato dict legacy: `error_map={ExcType: ("category", retryable)}`.
 
@@ -634,6 +639,7 @@ error_map = (
         lambda e: hasattr(e, "retry_after"),
         category="rate_limited",
         retryable=True,
+        message="Límite de solicitudes alcanzado. Reintentá en unos segundos.",
     )
 )
 
@@ -890,6 +896,32 @@ a medias.
 
 Ideal cuando el flujo varía según el pedido del usuario y no se puede fijar de
 antemano en código.
+
+#### Wiring automático con `build_agent`
+
+Lo de arriba (`tools = manager.tool_specs + planner.build_tools()`) sigue
+siendo válido para cualquier adapter. Si usás `adapters/pydantic_ai.py`,
+`build_agent()` ahora lo hace por vos:
+
+```python
+from to_tool_manager.adapters.pydantic_ai import build_agent
+
+agent = build_agent(
+    "openai:gpt-4o", manager,
+    planner=manager.with_planner(),
+    planning_mode="gated",  # "off" | "manual" | "gated" (default: "manual")
+)
+```
+
+- `planning_mode="manual"` (default si pasás `planner=...`): los tools del
+  planner están siempre disponibles, el LLM decide libremente.
+- `planning_mode="gated"`: un heurístico sin costo de inferencia
+  (`core.planner.request_looks_complex`) decide, turno a turno, si
+  conviene exponer `create_plan`/`execute_plan` como tools reales o si
+  alcanza con un recordatorio liviano en las instructions — nunca fuerza
+  plan-then-execute en cada turno.
+- No pasar `planner=` (o pasar `planning_mode="off"`) deja todo exactamente
+  como estaba antes de esta fase.
 
 #### Planner con handler de eventos (para UIs en tiempo real)
 

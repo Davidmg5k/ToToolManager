@@ -16,9 +16,11 @@ import asyncio
 import inspect
 import json
 import re
+import unicodedata
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol, Sequence
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -1089,3 +1091,84 @@ class PlanBuilder:
         the actual analog of `StateGraph.compile()` — all the real logic
         stays in `Planner.create_plan`, nothing new happens here."""
         return await planner.create_plan(self.build())
+
+
+# ---------------------------------------------------------------------------
+# R8 — complexity heuristic for planning_mode="gated"
+# ---------------------------------------------------------------------------
+
+_MULTI_STEP_CONNECTORS = (
+    # Spanish
+    "y luego", "y despues", "y tambien", "y ademas", "despues de",
+    "una vez que", "si falla", "si no", "en caso de", "antes de",
+    # English
+    "and then", "after that", "once done", "also", "as well as",
+    "if it fails", "in case", "before that",
+)
+
+
+def _normalize_for_heuristic(text: str) -> str:
+    """Lowercase + strip accents, so 'después'/'despues' and similar
+    variants match the same connector regardless of how the request
+    typed them."""
+    text = text.lower()
+    return "".join(
+        c for c in unicodedata.normalize("NFD", text) if unicodedata.category(c) != "Mn"
+    )
+
+
+def request_looks_complex(
+    prompt: str,
+    service_names: Sequence[str],
+    *,
+    word_threshold: int = 25,
+) -> bool:
+    """Zero-inference-cost heuristic for `planning_mode="gated"` (R8).
+
+    Decides, from the request text ALONE (no model call — this must stay
+    free, it runs on every turn), whether it's worth exposing
+    `create_plan`/`execute_plan` as real tools for this turn, or whether a
+    lightweight prompt reminder is enough instead. Never forces
+    plan-then-execute regardless of the query — that's the antipattern
+    this heuristic exists to avoid (same one already ruled out for
+    sub-agents).
+
+    Signals (needs >= 2 to call a request "complex" — a single incidental
+    match isn't enough on its own, to keep false positives low):
+    - Two or more distinct registered services/modules mentioned by name.
+      Best-effort only: if the request is in a language where service
+      class names don't appear literally (e.g. "orden" vs. "Order"),
+      this signal just doesn't fire — the other two can still.
+    - A long and/or structured request: >= word_threshold words, OR a
+      numbered/bulleted list, OR 3+ sentences.
+    - A multi-step connector phrase ("y luego", "and then", "si falla", ...).
+
+    Returns True ("complex") or False ("simple"). Pure function, no I/O,
+    no side effects — safe to call on every turn.
+    """
+    if not prompt or not prompt.strip():
+        return False
+
+    normalized = _normalize_for_heuristic(prompt)
+    score = 0
+
+    mentioned = {name for name in service_names if _normalize_for_heuristic(name) in normalized}
+    if len(mentioned) >= 2:
+        score += 1
+
+    words = normalized.split()
+    has_list_markers = bool(re.search(r"(^|\n)\s*(-|\*|\d+[.)])\s", prompt))
+    sentence_count = len([s for s in re.split(r"[.;\n]", prompt) if s.strip()])
+    if len(words) >= word_threshold or has_list_markers or sentence_count >= 3:
+        score += 1
+
+    if any(connector in normalized for connector in _MULTI_STEP_CONNECTORS):
+        score += 1
+    connector_matches = sum(1 for connector in _MULTI_STEP_CONNECTORS if connector in normalized)
+    if connector_matches >= 2:
+        # two distinct sequencing/conditional cues (e.g. "y después" AND "si
+        # falla") describe a multi-step, branching request on their own,
+        # even in an otherwise short message.
+        score += 1
+
+    return score >= 2

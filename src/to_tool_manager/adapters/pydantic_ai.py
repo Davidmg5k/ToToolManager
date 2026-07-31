@@ -48,6 +48,7 @@ from pydantic_ai.settings import ModelSettings
 from pydantic_ai.result import StreamedRunResult, StreamedRunResultSync  # noqa: F401
 
 from to_tool_manager.core.module import Module, _build_services_overview
+from to_tool_manager.core.planner import Planner, request_looks_complex
 from to_tool_manager.core.types import ToolSpec
 
 
@@ -363,6 +364,81 @@ def to_function_toolset(specs: Sequence[ToolSpec], *, instructions: str | None =
 
 
 # ---------------------------------------------------------------------------
+# R9 — Planner integration (planning_mode)
+# ---------------------------------------------------------------------------
+
+_PLANNING_REMINDER_ANNEX = """
+
+## Multi-step requests
+If this request needs more than one tool call across different services,
+or later steps depend on earlier results, batch what you can into single
+calls per service (see the `operations`/`id`/`when` pattern above) and
+think through the dependencies before calling anything — don't call
+services one at a time and figure out the order as you go."""
+
+
+def _resolve_prompt_text(prompt: Any) -> str:
+    """`RunContext.prompt` is `str | Sequence[UserContent] | None` — the
+    R8 heuristic only looks at text, so non-string parts (images, etc.)
+    are simply skipped rather than causing an error."""
+    if isinstance(prompt, str):
+        return prompt
+    if isinstance(prompt, (list, tuple)):
+        return " ".join(p for p in prompt if isinstance(p, str))
+    return ""
+
+
+def _build_planner_tools(planner: Planner, manager: Any, mode: str) -> list[Any]:
+    """Turns `planner.build_tools()` into pydantic-ai `Tool`s.
+
+    - mode == "manual": tools are always present, ungated — the LLM
+      decides freely whether to use them, like any other tool.
+    - mode == "gated": each tool gets a `prepare` hook running the R8
+      heuristic against `ctx.prompt` for THAT turn — zero inference cost,
+      no model call. Tools are excluded from that turn's tool list
+      entirely when the heuristic says "simple", not just discouraged in
+      the prompt.
+    - anything else (in particular "off"): no planner tools at all.
+    """
+    from pydantic_ai.tools import Tool
+
+    if mode not in ("manual", "gated"):
+        return []
+
+    raw_tools = planner.build_tools()
+    service_names = list(manager.services) + list(manager.modules)
+
+    if mode == "manual":
+        return [Tool(t["func"], name=t["name"], description=t["description"]) for t in raw_tools]
+
+    async def _prepare(ctx: Any, tool_def: Any) -> Any:
+        text = _resolve_prompt_text(ctx.prompt)
+        return tool_def if request_looks_complex(text, service_names) else None
+
+    return [
+        Tool(t["func"], name=t["name"], description=t["description"], prepare=_prepare)
+        for t in raw_tools
+    ]
+
+
+def _make_gated_instructions(base: str, service_names: Sequence[str]):
+    """Wraps a static instructions string into a dynamic one (R8): appends
+    the lightweight planning reminder only on turns where the heuristic
+    says "simple" (i.e. exactly the turns where the planner tools
+    themselves are hidden by `_build_planner_tools`'s `prepare` hook) —
+    so the model always has either the real tools or the reminder, never
+    neither and never both."""
+
+    async def _instructions(ctx: Any) -> str:
+        text = _resolve_prompt_text(ctx.prompt)
+        if request_looks_complex(text, service_names):
+            return base
+        return base + _PLANNING_REMINDER_ANNEX
+
+    return _instructions
+
+
+# ---------------------------------------------------------------------------
 # build_agent — full Agent constructor signature
 # ---------------------------------------------------------------------------
 
@@ -385,6 +461,8 @@ def build_agent(
     capabilities: list | None = None,
     include_general_purpose_subagent: bool = False,
     subagent_usage_limits: Any = _UNSET,
+    planner: Planner | None = None,
+    planning_mode: str = "manual",
 ) -> Agent:
     """Create a pydantic-ai Agent wired to the manager's tools.
 
@@ -446,6 +524,28 @@ def build_agent(
         explicitly to run Module delegations with no cap, or your own
         ``UsageLimits``/factory to override the default. Ignored when
         the manager has no ``Module``s.
+    planner:
+        Optional ``Planner`` (from ``manager.with_planner(...)``). If
+        omitted, this function behaves exactly as before Fase 4 —
+        nothing about planning changes. If provided, its
+        ``create_plan``/``execute_plan``/``get_plan``/``update_plan_step``
+        tools are wired into this agent according to ``planning_mode``.
+    planning_mode:
+        ``"off"``: ``planner`` is ignored entirely, even if passed — no
+        planner tools, no prompt changes. ``"manual"`` (default): if
+        ``planner`` is set, its tools are added unconditionally, every
+        turn — the model decides on its own whether to use them, like
+        any other tool. No ``planner`` set + default mode is identical
+        to calling this function before Fase 4 existed. ``"gated"``: a
+        zero-inference-cost heuristic (R8, see
+        ``core.planner.request_looks_complex``) decides PER TURN, from
+        the request text alone: simple → planner tools are hidden and a
+        short prompt reminder about batching/dependencies is appended
+        instead; possibly complex → the planner tools are exposed for
+        that turn and the reminder is omitted (the tools' own
+        descriptions are guidance enough). Never forces a
+        plan-then-execute step on every turn regardless of the query —
+        that's the antipattern this mode exists to avoid.
     """
     from to_tool_manager.core.prompts import build_instructions, build_system_prompt
 
@@ -457,6 +557,17 @@ def build_agent(
     all_specs = manager.tool_specs
     service_specs = [s for s in all_specs if s.metadata.get("type") != "module"]
     tools = to_pydantic_ai_tools(service_specs)
+
+    # R9 — Planner integration. No `planner` passed => this block is a
+    # no-op and behaves exactly as it did before Fase 4.
+    planner_tools: list[Any] = []
+    resolved_instructions: Any = instructions if instructions is not None else build_instructions()
+    if planner is not None and planning_mode != "off":
+        planner_tools = _build_planner_tools(planner, manager, planning_mode)
+        if planning_mode == "gated" and isinstance(resolved_instructions, str):
+            service_names = list(manager.services) + list(manager.modules)
+            resolved_instructions = _make_gated_instructions(resolved_instructions, service_names)
+    tools = tools + planner_tools
 
     default_settings: ModelSettings = ModelSettings(parallel_tool_calls=True)
     merged_settings: ModelSettings = {**default_settings, **(model_settings or {})}  # type: ignore[typeddict-item]
@@ -516,7 +627,7 @@ def build_agent(
     agent = agent_cls(
         model,
         system_prompt=system_prompt if system_prompt is not None else build_system_prompt(all_services_and_modules),
-        instructions=instructions or build_instructions(),
+        instructions=resolved_instructions,
         tools=tools,
         output_type=output_type,
         model_settings=merged_settings,
