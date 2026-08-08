@@ -9,6 +9,7 @@ from pydantic_ai_skills import Skill
 
 PLANNING_CONTENT = """
 ## Cross-Service Planning Patterns
+
 ### 0. Guiding Principle
 Before executing anything, analyze the most appropriate order to apply the requested changes, ensuring their propagation does not introduce inconsistencies or break the correct functioning of the rest of the system. This principle applies generically to any request — regardless of scope, number of services, or type of operation — and must always be weighed against two factors:
 - **The user's actual intent**: what outcome they need, not just the literal sequence of actions they described.
