@@ -1,5 +1,5 @@
-"""
-Agnostic Skills — Behavioral patterns for agents.
+﻿"""
+Agnostic Skills -- Behavioral patterns for agents.
 
 These skills contain no business logic.
 They are guidelines that influence HOW the agent thinks and executes.
@@ -21,25 +21,27 @@ __all__ = [
     "composition_skill",
     "planning_skill",
     "default_skills",
+    "ALWAYS_ON_SKILLS",
+    "CONDITIONAL_SKILLS",
     "build_skills_toolset",
 ]
 
-# Always present (same rationale as the other five): each skill is a
-# small, fixed-cost block (well under the 500-token budget) and
-# `build_skills_toolset()` has no visibility into a specific manager's
-# service count, so conditional inclusion by "number of services"
-# would require threading manager state through the adapter just to
-# decide whether to load ~390 tokens of guidance. Not worth the extra
-# API surface — see docs/mejoras-y-plan-de-desarrollo.md (section 2.2,
-# P-1/P-2/P-3) for the full rationale.
-default_skills = [
+# Skills always present in every LLM call.
+ALWAYS_ON_SKILLS = [
     reasoning_skill,
-    dependencies_skill,
     validation_skill,
     error_handling_skill,
     composition_skill,
+]
+
+# Skills included only when the request looks complex (gated by R8 heuristic).
+CONDITIONAL_SKILLS = [
+    dependencies_skill,
     planning_skill,
 ]
+
+# Full list (backward compatible).
+default_skills = ALWAYS_ON_SKILLS + CONDITIONAL_SKILLS
 
 
 def build_skills_toolset(

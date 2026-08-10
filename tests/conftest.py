@@ -1,7 +1,7 @@
-﻿import pytest
+import pytest
 from to_tool_manager.core.types import ErrorMap, ErrorEntry, ParamSpec, ToolSpec, ToolResponse, ToolError
 from to_tool_manager.core.service import Service
-from to_tool_manager.core.manager import ToToolManager
+from to_tool_manager.orchestrator import ToToolManager
 from to_tool_manager.core.discovery import discover_methods
 
 

@@ -28,7 +28,7 @@ from pydantic import BaseModel, Field
 from to_tool_manager.core.conditions import _evaluate_when
 
 if TYPE_CHECKING:
-    from to_tool_manager.core.manager import ToToolManager
+    from to_tool_manager.orchestrator import ToToolManager
     from to_tool_manager.core.types import ToolSpec
 
 

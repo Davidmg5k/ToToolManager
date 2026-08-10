@@ -1,6 +1,6 @@
 """
 to_tool_manager
-================
+===============
 
 Turns plain Python classes ("services") into agent tools, without tying
 you to any specific agent framework.
@@ -12,7 +12,7 @@ Core usage (framework-agnostic)::
     manager = ToToolManager([
         Service(name="Order", service=Order, description="..."),
     ])
-    specs = manager.tool_specs  # list[ToolSpec] — pure data, no framework
+    specs = manager.tool_specs  # list[ToolSpec] -- pure data, no framework
 
 Adapters translate `tool_specs` into whatever a specific framework
 expects, and are imported separately so this package has ZERO hard
@@ -22,7 +22,7 @@ dependency on any agent framework::
     from to_tool_manager.adapters.fastmcp import register_on_mcp
     from to_tool_manager.adapters.raw import to_openai_tool_schemas, dispatch
 """
-from to_tool_manager.adapters.fastmcp import build_mcp_server
+from to_tool_manager.adapters.fastmcp import build_mcp_agent, build_mcp_server
 from to_tool_manager.adapters.pydantic_ai import build_agent
 from to_tool_manager.core import (
     ErrorEntry,
@@ -88,7 +88,8 @@ __all__ = [
     "ToolMiddleware",
     # Builders
     "build_agent",
-    "build_mcp_server"
+    "build_mcp_agent",
+    "build_mcp_server",
 ]
 
 __version__ = "0.3.4"

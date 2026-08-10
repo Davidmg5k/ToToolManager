@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 from inspect import Parameter, Signature
-from typing import TYPE_CHECKING, Any, Sequence
+from typing import TYPE_CHECKING, Any, Callable, Literal, Sequence
 
 try:
     import fastmcp  # noqa: F401
@@ -22,8 +22,14 @@ from to_tool_manager.core.types import ToolSpec
 
 if TYPE_CHECKING:
     from fastmcp import FastMCP
+    from fastmcp.server.auth import AuthProvider
+    from fastmcp.server.middleware import Middleware
+    from fastmcp.server.providers import Provider
+    from fastmcp.server.transforms import Transform
+    from fastmcp.tools.base import Tool
+    import mcp.types
 
-    from to_tool_manager.core.manager import ToToolManager
+    from to_tool_manager.orchestrator import ToToolManager
     from to_tool_manager.core.module import Module
 
 # Canonical tool name a Module's ToolSpec is registered under on its own
@@ -32,6 +38,95 @@ if TYPE_CHECKING:
 # the namespace, so using `spec.name` here would produce a stuttering
 # "OrderManagement_OrderManagement" instead of "OrderManagement_dispatch".
 _MODULE_DISPATCH_TOOL_NAME = "dispatch"
+
+# FastMCP constructor kwargs forwarded by build_mcp_server / build_mcp_agent.
+# Keys map to the parameter name in FastMCP.__init__; None-valued entries are
+# stripped before forwarding so that FastMCP sees only what the caller set.
+_MCP_KWARG_KEYS = (
+    "instructions",
+    "version",
+    "website_url",
+    "icons",
+    "auth",
+    "middleware",
+    "providers",
+    "transforms",
+    "lifespan",
+    "tools",
+    "on_duplicate",
+    "mask_error_details",
+    "dereference_schemas",
+    "strict_input_validation",
+    "list_page_size",
+    "tasks",
+    "session_state_store",
+    "sampling_handler",
+    "sampling_handler_behavior",
+    "client_log_level",
+    "experimental_capabilities",
+)
+
+
+def _build_mcp_kwargs(
+    *,
+    instructions: str | None = None,
+    version: str | int | float | None = None,
+    website_url: str | None = None,
+    icons: list[mcp.types.Icon] | None = None,
+    auth: AuthProvider | None = None,
+    middleware: Sequence[Middleware] | None = None,
+    providers: Sequence[Provider] | None = None,
+    transforms: Sequence[Transform] | None = None,
+    lifespan: Any = None,
+    tools: Sequence[Tool | Callable[..., Any]] | None = None,
+    on_duplicate: Literal["warn", "error", "replace", "ignore"] | None = None,
+    mask_error_details: bool | None = None,
+    dereference_schemas: bool = True,
+    strict_input_validation: bool | None = None,
+    list_page_size: int | None = None,
+    tasks: bool | None = None,
+    session_state_store: Any = None,
+    sampling_handler: Any = None,
+    sampling_handler_behavior: Literal["always", "fallback"] | None = None,
+    client_log_level: mcp.types.LoggingLevel | None = None,
+    experimental_capabilities: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Builds a dict of non-default kwargs to forward to ``FastMCP()``.
+
+    Only entries that differ from FastMCP's own defaults are included, keeping
+    the forwarded dict minimal and avoiding accidental overrides.
+    """
+    raw: dict[str, Any] = {
+        "instructions": instructions,
+        "version": version,
+        "website_url": website_url,
+        "icons": icons,
+        "auth": auth,
+        "middleware": middleware,
+        "providers": providers,
+        "transforms": transforms,
+        "lifespan": lifespan,
+        "tools": tools,
+        "on_duplicate": on_duplicate,
+        "mask_error_details": mask_error_details,
+        "dereference_schemas": dereference_schemas,
+        "strict_input_validation": strict_input_validation,
+        "list_page_size": list_page_size,
+        "tasks": tasks,
+        "session_state_store": session_state_store,
+        "sampling_handler": sampling_handler,
+        "sampling_handler_behavior": sampling_handler_behavior,
+        "client_log_level": client_log_level,
+        "experimental_capabilities": experimental_capabilities,
+    }
+    # Strip None values (FastMCP uses its own defaults for those).
+    # Also strip dereference_schemas when True (FastMCP's own default).
+    # Keep explicit False/0/empty-collection values -- they are intentional.
+    return {
+        k: v
+        for k, v in raw.items()
+        if v is not None and not (k == 'dereference_schemas' and v is True)
+    }
 
 
 def _serialize_content(content: Any) -> str:
@@ -105,17 +200,79 @@ def register_on_mcp(mcp: "FastMCP", specs: Sequence[ToolSpec]) -> None:
         )
 
 
-def build_mcp_server(name: str, specs: Sequence[ToolSpec]) -> "FastMCP":
-    """Convenience: creates a new FastMCP server with all specs registered."""
+def build_mcp_server(
+    name: str,
+    specs: Sequence[ToolSpec],
+    *,
+    instructions: str | None = None,
+    version: str | int | float | None = None,
+    website_url: str | None = None,
+    icons: list["mcp.types.Icon"] | None = None,
+    auth: "AuthProvider | None" = None,
+    middleware: "Sequence[Middleware] | None" = None,
+    providers: "Sequence[Provider] | None" = None,
+    transforms: "Sequence[Transform] | None" = None,
+    lifespan: Any = None,
+    tools: "Sequence[Tool | Callable[..., Any]] | None" = None,
+    on_duplicate: "Literal['warn', 'error', 'replace', 'ignore'] | None" = None,
+    mask_error_details: bool | None = None,
+    dereference_schemas: bool = True,
+    strict_input_validation: bool | None = None,
+    list_page_size: int | None = None,
+    tasks: bool | None = None,
+    session_state_store: Any = None,
+    sampling_handler: Any = None,
+    sampling_handler_behavior: "Literal['always', 'fallback'] | None" = None,
+    client_log_level: "mcp.types.LoggingLevel | None" = None,
+    experimental_capabilities: dict[str, dict[str, Any]] | None = None,
+) -> "FastMCP":
+    """Create a new FastMCP server with all *specs* registered as tools.
+
+    All keyword arguments after *specs* are forwarded verbatim to
+    :class:`fastmcp.FastMCP` -- see its documentation for details on
+    each parameter (``instructions``, ``auth``, ``middleware``, etc.).
+
+    Parameters
+    ----------
+    name:
+        Server name advertised to MCP clients.
+    specs:
+        Tool specifications to register on the server.
+    """
     from fastmcp import FastMCP
 
-    mcp = FastMCP(name)
+    mcp = FastMCP(
+        name,
+        **_build_mcp_kwargs(
+            instructions=instructions,
+            version=version,
+            website_url=website_url,
+            icons=icons,
+            auth=auth,
+            middleware=middleware,
+            providers=providers,
+            transforms=transforms,
+            lifespan=lifespan,
+            tools=tools,
+            on_duplicate=on_duplicate,
+            mask_error_details=mask_error_details,
+            dereference_schemas=dereference_schemas,
+            strict_input_validation=strict_input_validation,
+            list_page_size=list_page_size,
+            tasks=tasks,
+            session_state_store=session_state_store,
+            sampling_handler=sampling_handler,
+            sampling_handler_behavior=sampling_handler_behavior,
+            client_log_level=client_log_level,
+            experimental_capabilities=experimental_capabilities,
+        ),
+    )
     register_on_mcp(mcp, specs)
     return mcp
 
 
 # ---------------------------------------------------------------------------
-# build_mcp_agent — Module-aware server (mirrors pydantic_ai.build_agent)
+# build_mcp_agent -- Module-aware server (mirrors pydantic_ai.build_agent)
 # ---------------------------------------------------------------------------
 
 
@@ -154,14 +311,27 @@ def _register_module_prompt(sub_mcp: "FastMCP", module: "Module") -> None:
     )
 
 
-def _mount_module(mcp: "FastMCP", module: "Module", module_spec: ToolSpec, *, include_prompts: bool) -> None:
+def _mount_module(
+    mcp: "FastMCP",
+    module: "Module",
+    module_spec: ToolSpec,
+    *,
+    include_prompts: bool,
+    mcp_kwargs: dict[str, Any] | None = None,
+) -> None:
     """Builds an isolated sub-server for a single Module and mounts it
     on the parent under its own namespace (RF-2), optionally exposing
     its system prompt as an MCP Prompt (RF-3).
+
+    Parameters
+    ----------
+    mcp_kwargs:
+        Optional dict of kwargs forwarded to ``FastMCP()`` for the
+        sub-server.  Typically the same kwargs used for the parent.
     """
     from fastmcp import FastMCP
 
-    sub_mcp = FastMCP(module.name)
+    sub_mcp = FastMCP(module.name, **(mcp_kwargs or {}))
     sub_mcp.tool(
         _build_callable(module_spec),
         name=_MODULE_DISPATCH_TOOL_NAME,
@@ -178,27 +348,53 @@ def build_mcp_agent(
     manager: "ToToolManager",
     *,
     include_prompts: bool = True,
+    instructions: str | None = None,
+    version: str | int | float | None = None,
+    website_url: str | None = None,
+    icons: list["mcp.types.Icon"] | None = None,
+    auth: "AuthProvider | None" = None,
+    middleware: "Sequence[Middleware] | None" = None,
+    providers: "Sequence[Provider] | None" = None,
+    transforms: "Sequence[Transform] | None" = None,
+    lifespan: Any = None,
+    tools: "Sequence[Tool | Callable[..., Any]] | None" = None,
+    on_duplicate: "Literal['warn', 'error', 'replace', 'ignore'] | None" = None,
+    mask_error_details: bool | None = None,
+    dereference_schemas: bool = True,
+    strict_input_validation: bool | None = None,
+    list_page_size: int | None = None,
+    tasks: bool | None = None,
+    session_state_store: Any = None,
+    sampling_handler: Any = None,
+    sampling_handler_behavior: "Literal['always', 'fallback'] | None" = None,
+    client_log_level: "mcp.types.LoggingLevel | None" = None,
+    experimental_capabilities: dict[str, dict[str, Any]] | None = None,
 ) -> "FastMCP":
     """Create a FastMCP server wired to the manager's tools.
 
-    Mirrors `adapters.pydantic_ai.build_agent`'s behavior for a
+    Mirrors ``adapters.pydantic_ai.build_agent``'s behavior for a
     framework that has no native "sub-agent" concept, using FastMCP's
     own isolation primitive instead:
 
-    - Services -> flat tools on the parent server (RF-1), exactly like
-      `build_mcp_server`.
-    - Modules -> excluded from the parent and mounted as isolated
-      sub-servers via `mount(namespace=module.name)` (RF-2), so their
+    - **Services** -> flat tools on the parent server (RF-1), exactly
+      like ``build_mcp_server``.
+    - **Modules** -> excluded from the parent and mounted as isolated
+      sub-servers via ``mount(namespace=module.name)`` (RF-2), so their
       tools are namespaced (e.g. ``OrderManagement_dispatch``) instead
       of mixing into the parent's flat tool list.
-    - Module system prompts -> registered as MCP Prompts on each
-      sub-server when `include_prompts=True` (RF-3); if a Module has
-      no explicit `system_prompt`, a generic one is generated from its
+    - **Module system prompts** -> registered as MCP Prompts on each
+      sub-server when ``include_prompts=True`` (RF-3); if a Module has
+      no explicit ``system_prompt``, a generic one is generated from its
       description and services, same fallback used when a Module
       becomes a real pydantic-ai sub-agent.
 
-    Does not modify `build_mcp_server`, `register_on_mcp`, or
-    `_build_callable` -- this is a new, additive entry point (RF-5).
+    Does not modify ``build_mcp_server``, ``register_on_mcp``, or
+    ``_build_callable`` -- this is a new, additive entry point (RF-5).
+
+    All keyword arguments after *include_prompts* are forwarded verbatim
+    to :class:`fastmcp.FastMCP` for **both** the parent server **and**
+    every module sub-server.  See the FastMCP documentation for details
+    on each parameter (``instructions``, ``auth``, ``middleware``, etc.).
 
     Parameters
     ----------
@@ -214,17 +410,45 @@ def build_mcp_agent(
     """
     from fastmcp import FastMCP
 
+    mcp_kwargs = _build_mcp_kwargs(
+        instructions=instructions,
+        version=version,
+        website_url=website_url,
+        icons=icons,
+        auth=auth,
+        middleware=middleware,
+        providers=providers,
+        transforms=transforms,
+        lifespan=lifespan,
+        tools=tools,
+        on_duplicate=on_duplicate,
+        mask_error_details=mask_error_details,
+        dereference_schemas=dereference_schemas,
+        strict_input_validation=strict_input_validation,
+        list_page_size=list_page_size,
+        tasks=tasks,
+        session_state_store=session_state_store,
+        sampling_handler=sampling_handler,
+        sampling_handler_behavior=sampling_handler_behavior,
+        client_log_level=client_log_level,
+        experimental_capabilities=experimental_capabilities,
+    )
+
     all_specs = manager.tool_specs
     service_specs = [s for s in all_specs if s.metadata.get("type") != "module"]
     module_specs_by_name = {s.service_name: s for s in all_specs if s.metadata.get("type") == "module"}
 
-    mcp = FastMCP(name)
+    mcp = FastMCP(name, **mcp_kwargs)
     register_on_mcp(mcp, service_specs)
 
     for module_name, module in manager.modules.items():
         module_spec = module_specs_by_name.get(module_name)
-        if module_spec is None:  # pragma: no cover — defensive; manager guarantees 1:1
+        if module_spec is None:  # pragma: no cover -- defensive; manager guarantees 1:1
             continue
-        _mount_module(mcp, module, module_spec, include_prompts=include_prompts)
+        _mount_module(
+            mcp, module, module_spec,
+            include_prompts=include_prompts,
+            mcp_kwargs=mcp_kwargs,
+        )
 
     return mcp

@@ -1,5 +1,5 @@
-﻿import pytest
-from to_tool_manager.core.manager import ToToolManager
+import pytest
+from to_tool_manager.orchestrator import ToToolManager
 from to_tool_manager.core.service import Service
 from to_tool_manager.core.module import Module
 from to_tool_manager.security.middleware import Middleware

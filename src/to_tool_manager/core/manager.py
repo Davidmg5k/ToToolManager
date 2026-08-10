@@ -1,8 +1,8 @@
-"""
+﻿"""
 ToToolManager: the single agnostic entry point.
 
 Core design: ONE tool per Service. Give it a list of `Service` and get
-back one `ToolSpec` per service — each accepting a list of operations
+back one `ToolSpec` per service -- each accepting a list of operations
 (method + args) to run in a single call. This is the whole point of
 "to_tool_manager": a *service* becomes a *tool*, not a method.
 """
@@ -17,61 +17,35 @@ from to_tool_manager.core.executor import make_safe_caller
 from to_tool_manager.core.module import Module
 from to_tool_manager.core.planner import Planner, ServiceDependencyGraph
 from to_tool_manager.core.service import Service
-from to_tool_manager.core.types import OperationSpec, ParamSpec, ToolError, ToolResponse, ToolSpec
+from to_tool_manager.core.types import (
+    OperationSpec,
+    ParamSpec,
+    ToolError,
+    ToolResponse,
+    ToolSpec,
+    _is_complex_type,
+)
 from to_tool_manager.security.middleware import Middleware, ToolMiddleware
 
-_OPERATIONS_CONTRACT = (
-    'Each item: {{"method": <name>, "args": {{...}}}}. Put every operation '
-    "you need from this service into ONE call instead of calling this "
-    'tool repeatedly. Optional per-item "id" (else referenced by '
-    'position "op0", "op1", ...) plus a "when": {{"op": <id>, "outcome": '
-    '"success"|"error", "category"?: <str|list>}} on a LATER item makes it '
-    "run only depending on an earlier item's result in this same call — "
-    "unmet conditions are skipped (reported, not executed), no extra "
-    "request needed to decide.\n"
-    "Example: {example}"
+_OPERATIONS_CONTRACT_REF = (
+    "See operations contract above. "
+    "Each item: {{\"method\": <name>, \"args\": {{...}}}}. "
+    "Optional \"id\" and \"when\" for sequencing."
 )
 
 
 def _format_param(p: ParamSpec) -> str:
     type_name = getattr(p.annotation, "__name__", str(p.annotation))
     marker = "" if p.required else "?"
-    return f"{p.name}{marker}: {type_name}"
-
-
-def _example_placeholder(annotation: Any) -> Any:
-    type_name = getattr(annotation, "__name__", "")
-    return {"str": "...", "int": 0, "float": 0.0, "bool": True}.get(type_name, "...")
+    if _is_complex_type(p.annotation):
+        return f"{p.name}{marker}: {type_name}"
+    if p.required:
+        return f"{p.name}: {type_name}"
+    return f"{p.name}?"
 
 
 def _build_operations_contract(operations: Sequence[OperationSpec]) -> str:
-    """
-    Builds the operations-parameter contract text ONCE per tool, using
-    that service's OWN first operation (and a second one, if it takes no
-    required args) as the worked example — instead of a fixed, unrelated
-    example copy-pasted into every tool's description (which both wastes
-    tokens across many services and is confusing when e.g. the "Order"
-    tool's description shows an example calling "create_user").
-    """
-    if not operations:
-        return _OPERATIONS_CONTRACT.format(example='{"operations": [{"method": "<name>", "args": {}}]}')
-
-    first = operations[0]
-    first_args = {p.name: _example_placeholder(p.annotation) for p in first.parameters if p.required}
-    example_ops: list[dict[str, Any]] = [{"id": "step1", "method": first.name, "args": first_args}]
-
-    no_arg_op = next((op for op in operations[1:] if not any(p.required for p in op.parameters)), None)
-    if no_arg_op is not None:
-        example_ops.append(
-            {
-                "method": no_arg_op.name,
-                "args": {},
-                "when": {"op": "step1", "outcome": "error"},
-            }
-        )
-
-    example = json.dumps({"operations": example_ops})
-    return _OPERATIONS_CONTRACT.format(example=example)
+    return _OPERATIONS_CONTRACT_REF
 
 
 def _build_tool_description(
@@ -92,7 +66,7 @@ def _build_tool_description(
     else:
         header = (
             f"Service tool for managing '{service.name}' operations "
-            f"— exposes the following capabilities:"
+            f"-- exposes the following capabilities:"
         )
     lines = [header, "", "Available operations (use as the `method` value):"]
     for op in operations:
@@ -423,7 +397,6 @@ class ToToolManager:
         return self._specs
 
     def refresh(self) -> None:
-        """Invalidate the cached tool_specs, forcing a rebuild on next access."""
         self._specs = None
 
     def with_planner(
@@ -458,6 +431,7 @@ class ToToolManager:
         from to_tool_manager.core.planner import Planner, ServiceDependencyGraph
 
         # Allow passing a raw list of ServiceDependency or a full graph
+
         graph: ServiceDependencyGraph | None = None
         if dependency_graph is not None:
             if isinstance(dependency_graph, ServiceDependencyGraph):

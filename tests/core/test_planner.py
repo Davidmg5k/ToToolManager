@@ -1,4 +1,4 @@
-﻿import pytest
+import pytest
 from to_tool_manager.core.planner import (
     Planner,
     Plan,
@@ -9,7 +9,7 @@ from to_tool_manager.core.planner import (
     ServiceDependencyGraph,
     DependencyValidator,
 )
-from to_tool_manager.core.manager import ToToolManager
+from to_tool_manager.orchestrator import ToToolManager
 from to_tool_manager.core.service import Service
 
 

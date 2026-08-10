@@ -1,8 +1,8 @@
-"""
+﻿"""
 Adapter for pydantic-ai.
 
 Only this module imports pydantic-ai. The core package (`to_tool_manager`)
-never does — if pydantic-ai isn't installed, importing
+never does -- if pydantic-ai isn't installed, importing
 `to_tool_manager` still works; only importing THIS module fails, with
 a clear error.
 """
@@ -18,7 +18,7 @@ from typing import Any
 
 from pydantic_ai import Agent, models
 
-from to_tool_manager.skills import build_skills_toolset
+from to_tool_manager.skills import build_skills_toolset, ALWAYS_ON_SKILLS, CONDITIONAL_SKILLS
 
 try:
     from pydantic_ai import ModelRetry
@@ -43,26 +43,23 @@ except ImportError:  # pragma: no cover
     UsageLimits = None  # type: ignore[assignment,misc]
 
 from pydantic_ai.settings import ModelSettings
+from pydantic_ai.template import TemplateStr
+from pydantic_ai.agent.abstract import AgentRetries, AgentModelSettings, AgentMetadata
+from pydantic_ai._instructions import AgentInstructions
+from pydantic_ai._agent_graph import EndStrategy
+from pydantic_ai.concurrency import AnyConcurrencyLimit
 
-# Re-export streaming types so consumers don't import pydantic-ai directly.
 from pydantic_ai.result import StreamedRunResult, StreamedRunResultSync  # noqa: F401
 
 from to_tool_manager.core.module import Module, _build_services_overview
 from to_tool_manager.core.planner import Planner, request_looks_complex
 from to_tool_manager.core.types import ToolSpec
 
-
 # ---------------------------------------------------------------------------
 # Error formatting
 # ---------------------------------------------------------------------------
 
 def _format_categories(cats: frozenset[str]) -> str:
-    """Normalizes a category frozenset into a display string for the LLM.
-
-    - Empty → ``""``
-    - Single → ``"not_found"``
-    - Multiple → ``"not_found, missing"``
-    """
     if not cats:
         return ""
     if len(cats) == 1:
@@ -79,8 +76,6 @@ def _format_error(spec: ToolSpec, error) -> str:
     cats = _format_categories(error.category)
     prefix = f"[{cats}] " if cats else ""
     return f"{prefix}{error.message}"
-
-
 # ---------------------------------------------------------------------------
 # Serialization helpers
 # ---------------------------------------------------------------------------
@@ -96,7 +91,6 @@ def _serialize_content(content: Any) -> str:
     if isinstance(content, (list, dict)):
         return json.dumps(content, default=str)
     return str(content)
-
 
 # ---------------------------------------------------------------------------
 # Tool builder
@@ -134,14 +128,11 @@ def _build_callable(spec: ToolSpec):
     tool_func.__annotations__["return"] = str
     return tool_func
 
-
 # ---------------------------------------------------------------------------
 # Module -> real sub-agent (requires the optional subagents-pydantic-ai pkg)
 # ---------------------------------------------------------------------------
 
 _UNSET: Any = object()
-"""Sentinel distinguishing "caller didn't pass this" from an explicit
-`None` (which means "no limit, run unbounded") for `subagent_usage_limits`."""
 
 _DEFAULT_SUBAGENT_REQUEST_LIMIT = 8
 """Default cap on model requests for a SINGLE delegated Module run (one
@@ -186,14 +177,10 @@ class SubAgentDeps:
 # declare it keyword-only, so it can never arrive positionally; `to_cli`/
 # `to_cli_sync` declare it as their very FIRST positional-or-keyword
 # parameter, so an explicit positional call must be respected too.
+
 _KEYWORD_ONLY_DEPS_METHODS = (
-    "run",
-    "run_sync",
-    "run_stream",
-    "run_stream_events",
-    "run_stream_sync",
-    "iter",
-    "to_web",
+    "run", "run_sync", "run_stream", "run_stream_events",
+    "run_stream_sync", "iter", "to_web",
 )
 _LEADING_POSITIONAL_DEPS_METHODS = ("to_cli", "to_cli_sync")
 
@@ -209,7 +196,6 @@ def _with_default_deps_keyword(method: Any) -> Any:
         if kwargs.get("deps") is None and self._to_tool_manager_default_deps is not None:
             kwargs["deps"] = self._to_tool_manager_default_deps
         return method(self, *args, **kwargs)
-
     return wrapper
 
 
@@ -224,7 +210,6 @@ def _with_default_deps_leading_positional(method: Any) -> Any:
         if not args and kwargs.get("deps") is None and self._to_tool_manager_default_deps is not None:
             kwargs["deps"] = self._to_tool_manager_default_deps
         return method(self, *args, **kwargs)
-
     return wrapper
 
 
@@ -240,7 +225,6 @@ class _AutoDepsAgent(Agent):
     this instead of a plain `Agent` when there's at least one `Module`
     AND the caller didn't ask for a custom `deps_type`.
     """
-
     _to_tool_manager_default_deps: Any = None
 
     for _name in _KEYWORD_ONLY_DEPS_METHODS:
@@ -250,7 +234,7 @@ class _AutoDepsAgent(Agent):
     del _name
 
 
-_SUBAGENT_EFFICIENCY_APPENDIX = """
+_EFFICIENCY_APPENDIX = """
 
 ## Execution efficiency
 You have exactly one dispatch tool for your own services, accepting a
@@ -259,6 +243,14 @@ need for this task and send them all in ONE call to that tool (batched,
 with `id`/`when` to sequence dependent ones) instead of calling it once
 per operation -- each extra call is a full extra turn for you, on top
 of the turn your parent agent already spent delegating to you."""
+
+
+def _get_conditional_skills_content() -> str:
+    """Returns the content of conditional skills as a single string."""
+    parts = []
+    for skill in CONDITIONAL_SKILLS:
+        parts.append(skill.content)
+    return "\n\n".join(parts)
 
 
 def _default_module_instructions(module: Module) -> str:
@@ -272,7 +264,10 @@ def _default_module_instructions(module: Module) -> str:
         if module.description and module.description.strip()
         else f"You are the '{module.name}' specialist agent."
     )
-    return f"{header}\n\n{_build_services_overview(module.services)}"
+    base = f"{header}\n\n{_build_services_overview(module.services)}"
+    if module.include_efficiency_appendix:
+        base += _EFFICIENCY_APPENDIX
+    return base
 
 
 def _build_subagent_config(module: Module, *, default_model: Any) -> "SubAgentConfig":
@@ -286,11 +281,9 @@ def _build_subagent_config(module: Module, *, default_model: Any) -> "SubAgentCo
     toolset = to_function_toolset(module_specs)
 
     base_instructions = module.system_prompt or module.instructions or _default_module_instructions(module)
-    instructions = (
-        base_instructions + _SUBAGENT_EFFICIENCY_APPENDIX
-        if module.include_efficiency_appendix
-        else base_instructions
-    )
+    if module.include_efficiency_appendix:
+        if module.system_prompt or module.instructions:
+            base_instructions += _EFFICIENCY_APPENDIX
 
     config: dict[str, Any] = {
         "name": module.name,
@@ -298,7 +291,7 @@ def _build_subagent_config(module: Module, *, default_model: Any) -> "SubAgentCo
             f"Delegates to the '{module.name}' module "
             f"({', '.join(s.name for s in module.services)})."
         ),
-        "instructions": instructions,
+        "instructions": base_instructions,
         "toolsets": [toolset],
         "preferred_mode": module.subagent_mode,
     }
@@ -339,13 +332,7 @@ def _build_subagent_capability(
     )
 
 
-# ---------------------------------------------------------------------------
-# Public helpers
-# ---------------------------------------------------------------------------
-
 def to_pydantic_ai_tools(specs: Sequence[ToolSpec]) -> list:
-    """Returns a list of plain async functions suitable for
-    `Agent(tools=[...])` or `FunctionToolset(tools=[...])`."""
     return [_build_callable(spec) for spec in specs]
 
 
@@ -362,7 +349,6 @@ def to_function_toolset(specs: Sequence[ToolSpec], *, instructions: str | None =
         toolset.add_function(_build_callable(spec), name=spec.name, description=spec.description)
     return toolset
 
-
 # ---------------------------------------------------------------------------
 # R9 — Planner integration (planning_mode)
 # ---------------------------------------------------------------------------
@@ -373,7 +359,7 @@ _PLANNING_REMINDER_ANNEX = """
 If this request needs more than one tool call across different services,
 or later steps depend on earlier results, batch what you can into single
 calls per service (see the `operations`/`id`/`when` pattern above) and
-think through the dependencies before calling anything — don't call
+think through the dependencies before calling anything -- don't call
 services one at a time and figure out the order as you go."""
 
 
@@ -428,36 +414,56 @@ def _make_gated_instructions(base: str, service_names: Sequence[str]):
     themselves are hidden by `_build_planner_tools`'s `prepare` hook) —
     so the model always has either the real tools or the reminder, never
     neither and never both."""
-
     async def _instructions(ctx: Any) -> str:
         text = _resolve_prompt_text(ctx.prompt)
         if request_looks_complex(text, service_names):
             return base
         return base + _PLANNING_REMINDER_ANNEX
-
     return _instructions
+
+
+def _make_gated_system_prompt(
+    base_prompt: str,
+    manager: Any,
+):
+    """Creates a dynamic system prompt that includes conditional skills
+    only when the request looks complex."""
+    service_names = list(manager.services) + list(manager.modules)
+    conditional_content = _get_conditional_skills_content()
+
+    async def _system_prompt(ctx: Any) -> str:
+        text = _resolve_prompt_text(ctx.prompt)
+        if request_looks_complex(text, service_names):
+            return base_prompt + "\n\n" + conditional_content
+        return base_prompt
+
+    return _system_prompt
+
 
 
 # ---------------------------------------------------------------------------
 # build_agent — full Agent constructor signature
 # ---------------------------------------------------------------------------
 
+
 def build_agent(
-    model: models.KnownModelName,
+    model: models.Model | models.KnownModelName | str,
     manager: Any,
     *,
     output_type: Any = str,
     system_prompt: str | Sequence[str] | None = None,
-    instructions: str | None = None,
+    instructions: AgentInstructions = None,
     name: str | None = None,
-    description: str | None = None,
-    model_settings: ModelSettings | None = None,
-    retries: int | None = None,
+    description: TemplateStr | str | None = None,
+    model_settings: AgentModelSettings | None = None,
+    retries: int | AgentRetries | None = None,
     deps_type: type | None = None,
+    validation_context: Any | None = None,
     tool_timeout: float | None = None,
-    max_concurrency: int | None = None,
-    end_strategy: str | None = None,
+    max_concurrency: AnyConcurrencyLimit = None,
+    end_strategy: EndStrategy = "graceful",
     defer_model_check: bool = False,
+    metadata: AgentMetadata | None = None,
     capabilities: list | None = None,
     include_general_purpose_subagent: bool = False,
     subagent_usage_limits: Any = _UNSET,
@@ -554,12 +560,14 @@ def build_agent(
     # ToolSpec is deliberately excluded here -- including it too would
     # expose the same Module both as a flat tool AND as a sub-agent in
     # the same run.
+    
     all_specs = manager.tool_specs
     service_specs = [s for s in all_specs if s.metadata.get("type") != "module"]
     tools = to_pydantic_ai_tools(service_specs)
 
     # R9 — Planner integration. No `planner` passed => this block is a
     # no-op and behaves exactly as it did before Fase 4.
+    
     planner_tools: list[Any] = []
     resolved_instructions: Any = instructions if instructions is not None else build_instructions()
     if planner is not None and planning_mode != "off":
@@ -579,21 +587,25 @@ def build_agent(
         agent_kwargs["description"] = description
     if retries is not None:
         agent_kwargs["retries"] = retries
+    if validation_context is not None:
+        agent_kwargs["validation_context"] = validation_context
     if tool_timeout is not None:
         agent_kwargs["tool_timeout"] = tool_timeout
     if max_concurrency is not None:
         agent_kwargs["max_concurrency"] = max_concurrency
-    if end_strategy is not None:
+    if end_strategy != "graceful":
         agent_kwargs["end_strategy"] = end_strategy
     if defer_model_check:
         agent_kwargs["defer_model_check"] = defer_model_check
+    if metadata is not None:
+        agent_kwargs["metadata"] = metadata
 
     resolved_capabilities: list[Any] = list(capabilities or [])
     if subagent_usage_limits is not _UNSET:
         resolved_usage_limits = subagent_usage_limits
     elif UsageLimits is not None:
         resolved_usage_limits = UsageLimits(request_limit=_DEFAULT_SUBAGENT_REQUEST_LIMIT)
-    else:  # pragma: no cover — pydantic-ai always ships usage.UsageLimits
+    else:  # pragma: no cover
         resolved_usage_limits = None
     subagent_capability = _build_subagent_capability(
         manager,
@@ -604,7 +616,7 @@ def build_agent(
     if subagent_capability is not None:
         resolved_capabilities.append(subagent_capability)
 
-    # If there's at least one Module and the caller didn't bring their own
+     # If there's at least one Module and the caller didn't bring their own
     # deps_type, subagents-pydantic-ai still requires RunContext.deps to
     # satisfy SubAgentDepsProtocol at call time -- otherwise its `task`
     # tool crashes with `AttributeError: 'NoneType' object has no
@@ -614,6 +626,7 @@ def build_agent(
     # a default SubAgentDeps() is both declared as deps_type AND
     # auto-injected at call time via _AutoDepsAgent, so it works the same
     # everywhere without the caller needing to know this protocol exists.
+    
     agent_cls: type[Agent] = Agent
     if deps_type is not None:
         agent_kwargs["deps_type"] = deps_type
@@ -622,11 +635,15 @@ def build_agent(
         agent_cls = _AutoDepsAgent
 
     all_services_and_modules = list(manager.services.values()) + list(manager.modules.values())
-    skills_toolset = build_skills_toolset()
+    skills_toolset = build_skills_toolset(skills=ALWAYS_ON_SKILLS)
+
+    base_system_prompt = system_prompt if system_prompt is not None else build_system_prompt(all_services_and_modules)
+
+    resolved_system_prompt: Any = _make_gated_system_prompt(base_system_prompt, manager)
 
     agent = agent_cls(
         model,
-        system_prompt=system_prompt if system_prompt is not None else build_system_prompt(all_services_and_modules),
+        system_prompt=resolved_system_prompt,
         instructions=resolved_instructions,
         tools=tools,
         output_type=output_type,
@@ -639,10 +656,6 @@ def build_agent(
         agent._to_tool_manager_default_deps = SubAgentDeps()
     return agent
 
-
-# ---------------------------------------------------------------------------
-# Streaming / iteration wrappers
-# ---------------------------------------------------------------------------
 
 @asynccontextmanager
 async def iter_agent(

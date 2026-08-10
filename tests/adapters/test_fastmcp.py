@@ -1,5 +1,5 @@
-﻿import pytest
-from unittest.mock import patch, MagicMock
+import pytest
+from unittest.mock import patch, MagicMock, call
 from to_tool_manager.core.types import ToolSpec, ToolResponse, ToolError
 
 try:
@@ -103,6 +103,40 @@ class TestBuildCallable:
         assert "validation" in result
 
 
+class TestBuildMcpKwargs:
+    def test_strips_none_values(self):
+        from to_tool_manager.adapters.fastmcp import _build_mcp_kwargs
+        result = _build_mcp_kwargs()
+        assert result == {}
+
+    def test_preserves_explicit_values(self):
+        from to_tool_manager.adapters.fastmcp import _build_mcp_kwargs
+        result = _build_mcp_kwargs(
+            instructions="Be helpful",
+            version="1.0",
+            mask_error_details=False,
+        )
+        assert result == {
+            "instructions": "Be helpful",
+            "version": "1.0",
+            "mask_error_details": False,
+        }
+
+    def test_preserves_false_and_zero(self):
+        from to_tool_manager.adapters.fastmcp import _build_mcp_kwargs
+        result = _build_mcp_kwargs(mask_error_details=False, list_page_size=0)
+        assert result == {"mask_error_details": False, "list_page_size": 0}
+
+    def test_strips_only_none_not_other_falsy(self):
+        from to_tool_manager.adapters.fastmcp import _build_mcp_kwargs
+        result = _build_mcp_kwargs(
+            instructions=None,
+            tasks=None,
+            version="2.0",
+        )
+        assert result == {"version": "2.0"}
+
+
 class TestRegisterOnMcp:
     def test_registers_tools(self, sample_spec):
         from to_tool_manager.adapters.fastmcp import register_on_mcp
@@ -126,12 +160,37 @@ class TestBuildMcpServer:
             result = build_mcp_server("test_server", [sample_spec])
             mock_mcp.tool.assert_called_once()
 
+    def test_forwards_kwargs(self, sample_spec):
+        from to_tool_manager.adapters.fastmcp import build_mcp_server
+        mock_mcp = MagicMock()
+        with patch("fastmcp.FastMCP", return_value=mock_mcp) as mock_cls:
+            build_mcp_server(
+                "test_server",
+                [sample_spec],
+                instructions="Be helpful",
+                version="1.0",
+                mask_error_details=True,
+            )
+            mock_cls.assert_called_once_with(
+                "test_server",
+                instructions="Be helpful",
+                version="1.0",
+                mask_error_details=True,
+            )
+
+    def test_no_kwargs_still_works(self, sample_spec):
+        from to_tool_manager.adapters.fastmcp import build_mcp_server
+        mock_mcp = MagicMock()
+        with patch("fastmcp.FastMCP", return_value=mock_mcp) as mock_cls:
+            build_mcp_server("test_server", [sample_spec])
+            mock_cls.assert_called_once_with("test_server")
+
 
 @pytest.mark.skipif(not _has_fastmcp, reason="FastMCP server support not installed")
 class TestBuildMcpAgent:
     def test_builds_agent_no_modules(self, sample_spec):
         from to_tool_manager.adapters.fastmcp import build_mcp_agent
-        from to_tool_manager.core.manager import ToToolManager
+        from to_tool_manager.orchestrator import ToToolManager
         from to_tool_manager.core.service import Service
 
         class Dummy:
@@ -142,3 +201,45 @@ class TestBuildMcpAgent:
         mock_mcp = MagicMock()
         with patch("fastmcp.FastMCP", return_value=mock_mcp):
             result = build_mcp_agent("test_agent", manager)
+
+    def test_forwards_kwargs_to_parent(self, sample_spec):
+        from to_tool_manager.adapters.fastmcp import build_mcp_agent
+        from to_tool_manager.orchestrator import ToToolManager
+        from to_tool_manager.core.service import Service
+
+        class Dummy:
+            pass
+
+        svc = Service(name="Test", service=Dummy)
+        manager = ToToolManager([svc])
+        mock_mcp = MagicMock()
+        with patch("fastmcp.FastMCP", return_value=mock_mcp) as mock_cls:
+            build_mcp_agent(
+                "test_agent",
+                manager,
+                instructions="Server instructions",
+                version="2.0",
+            )
+            # First call is the parent server
+            first_call = mock_cls.call_args_list[0]
+            assert first_call[0][0] == "test_agent"
+            assert first_call[1]["instructions"] == "Server instructions"
+            assert first_call[1]["version"] == "2.0"
+
+    def test_no_kwargs_backward_compat(self, sample_spec):
+        from to_tool_manager.adapters.fastmcp import build_mcp_agent
+        from to_tool_manager.orchestrator import ToToolManager
+        from to_tool_manager.core.service import Service
+
+        class Dummy:
+            pass
+
+        svc = Service(name="Test", service=Dummy)
+        manager = ToToolManager([svc])
+        mock_mcp = MagicMock()
+        with patch("fastmcp.FastMCP", return_value=mock_mcp) as mock_cls:
+            build_mcp_agent("test_agent", manager)
+            # Only the parent call should have name-only
+            first_call = mock_cls.call_args_list[0]
+            assert first_call[0][0] == "test_agent"
+            assert len(first_call[1]) == 0  # no extra kwargs

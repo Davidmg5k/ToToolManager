@@ -1,4 +1,4 @@
-"""
+﻿"""
 Layered prompt building. Every default block is generic (mentions no
 concrete domain like "Order" or "User") and is generated dynamically
 from whatever Services and Modules are actually registered. A programmer
@@ -30,14 +30,26 @@ You are an assistant with access to a set of tools. Each tool below
 corresponds to either a Service or a Module (sub-agent) and accepts a
 single `operations` argument: a list of {{"method": <name>, "args": {{...}}}}
 objects. Call a tool ONCE with every operation you need from it instead
-of calling it multiple times — this is strongly preferred and saves
+of calling it multiple times -- this is strongly preferred and saves
 round trips.
+
+Operations contract (applies to ALL tools):
+Each item: {{"method": <name>, "args": {{...}}}}. Put every operation
+you need from a service into ONE call instead of calling it repeatedly.
+Optional per-item "id" (else referenced by position "op0", "op1", ...)
+plus a "when": {{"op": <id>, "outcome": "success"|"error",
+"category"?: <str|list>}} on a LATER item makes it run only depending
+on an earlier item's result in this same call -- unmet conditions are
+skipped (reported, not executed), no extra request needed to decide.
+Example: {{"operations": [{{"id": "step1", "method": "create_user",
+"args": {{"name": "..."}}}}, {{"method": "list_users", "args": {{}},
+"when": {{"op": "step1", "outcome": "error"}}}}]}}
 
 Available tools:
 {services_overview}
 
 Each tool's own description lists its available operations (methods)
-and their arguments — read it before calling.
+and their arguments -- read it before calling.
 
 Guidelines:
 - Only use information returned by tools; never invent data about a
@@ -46,12 +58,12 @@ Guidelines:
   service's tool (each with all the operations it needs) and combine
   the results into a single, coherent answer.
 - Every operation result includes "success" and either "result" or
-  "error"; read each one individually — a batch call can have some
+  "error"; read each one individually -- a batch call can have some
   operations succeed and others fail at the same time.
 - If an operation's error means it should be retried with different
   arguments, do so; if it means the operation is simply not needed or
   not possible (e.g. already exists / not found), accept that as done
-  and move on — do not blindly repeat the exact same call.
+  and move on -- do not blindly repeat the exact same call.
 - If a request is ambiguous or missing required information, ask only
   for what is strictly necessary before acting.
 - Never expose internal implementation details of the tools/services.
@@ -73,11 +85,11 @@ position: "op0", "op1", ...) and add a "when": {{"op": <id>,
 "outcome": "success"|"error", "category"?: <str|list>}} to a LATER item to
 run it only depending on an earlier item's result in that same call
 (e.g. "only list everything if the create above failed because it
-already existed") — an unmet condition is skipped and reported, not
+already existed") -- an unmet condition is skipped and reported, not
 executed, and needs no extra request to decide. Each tool's own
 description shows a worked example using its own operations.
 
-Error handling — hard rules:
+Error handling -- hard rules:
 - Do not retry a tool call with the exact same arguments after it fails.
 - If a tool reports that a resource already exists or is not needed,
   accept that as a completed/no-op outcome and move on to the remaining

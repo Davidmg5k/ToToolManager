@@ -32,55 +32,32 @@ from to_tool_manager.core.types import (
     ToolError,
     ToolResponse,
     ToolSpec,
+    _is_complex_type,
 )
 
 if TYPE_CHECKING:
     from to_tool_manager.core.service import Service
     from to_tool_manager.security.middleware import Middleware
 
-_MODULE_OPERATIONS_CONTRACT = (
-    'Each item: {{"method": <name>, "args": {{...}}}}. Call this module\'s '
-    "tool ONCE with every operation you need from its services instead of "
-    "calling it repeatedly.\n"
-    "Example: {example}"
+_MODULE_OPERATIONS_CONTRACT_REF = (
+    "See operations contract above. "
+    "Each item: {{\"method\": <name>, \"args\": {{...}}}}. "
+    "Optional \"id\" and \"when\" for sequencing."
 )
 
 
 def _format_param(p: ParamSpec) -> str:
     type_name = getattr(p.annotation, "__name__", str(p.annotation))
     marker = "" if p.required else "?"
-    return f"{p.name}{marker}: {type_name}"
-
-
-def _example_placeholder(annotation: Any) -> Any:
-    type_name = getattr(annotation, "__name__", "")
-    return {"str": "...", "int": 0, "float": 0.0, "bool": True}.get(type_name, "...")
+    if _is_complex_type(p.annotation):
+        return f"{p.name}{marker}: {type_name}"
+    if p.required:
+        return f"{p.name}: {type_name}"
+    return f"{p.name}?"
 
 
 def _build_module_operations_contract(operations: Sequence[OperationSpec]) -> str:
-    if not operations:
-        return _MODULE_OPERATIONS_CONTRACT.format(
-            example='{"operations": [{"method": "<name>", "args": {}}]}'
-        )
-
-    first = operations[0]
-    first_args = {p.name: _example_placeholder(p.annotation) for p in first.parameters if p.required}
-    example_ops: list[dict[str, Any]] = [{"id": "step1", "method": first.name, "args": first_args}]
-
-    no_arg_op = next((op for op in operations[1:] if not any(p.required for p in op.parameters)), None)
-    if no_arg_op is not None:
-        example_ops.append(
-            {
-                "method": no_arg_op.name,
-                "args": {},
-                "when": {"op": "step1", "outcome": "error"},
-            }
-        )
-
-    import json
-
-    example = json.dumps({"operations": example_ops})
-    return _MODULE_OPERATIONS_CONTRACT.format(example=example)
+    return _MODULE_OPERATIONS_CONTRACT_REF
 
 
 def _build_module_description(
@@ -99,7 +76,7 @@ def _build_module_description(
         header = "\n\n".join(parts)
     else:
         header = (
-            f"Module '{module_name}' — a sub-agent managing "
+            f"Module '{module_name}' - a sub-agent managing "
             f"the following services:"
         )
 
@@ -233,11 +210,9 @@ class Module:
 
     @property
     def sub_manager(self) -> Any:
-        """Access the internal ToToolManager (read-only)."""
         return self._get_sub_manager()
 
     def build_tool_spec(self, parent_middlewares: Sequence[Middleware] | None = None) -> ToolSpec:
-        """Build a single ToolSpec that wraps this module as a sub-agent."""
         manager = self._get_sub_manager(parent_middlewares)
 
         all_operations: list[OperationSpec] = []
@@ -365,7 +340,6 @@ class Module:
 
 
 async def _dispatch_to_services(manager: Any, method_name: str, op_args: dict) -> ToolResponse:
-    """Find the service that owns the method and dispatch to it."""
     for spec in manager.tool_specs:
         for op in spec.operations:
             if op.name == method_name:

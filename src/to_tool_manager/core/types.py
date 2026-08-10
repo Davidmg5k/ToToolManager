@@ -1,4 +1,4 @@
-"""
+﻿"""
 Framework-agnostic data contracts.
 
 Nothing in this module (or anywhere under `core/`) imports pydantic-ai,
@@ -7,6 +7,7 @@ that every adapter consumes and produces.
 """
 from __future__ import annotations
 
+import typing
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Mapping
 
@@ -17,13 +18,41 @@ if TYPE_CHECKING:
 _MISSING = object()
 
 
+def _is_complex_type(annotation: Any) -> bool:
+    """Returns True if `annotation` is a complex type that needs its full
+    signature displayed in tool descriptions.
+
+    Complex types include: Pydantic BaseModel, dataclasses, TypedDict,
+    NamedTuple, generic containers (list[X], dict[K,V], Optional[X],
+    Union[...]), and any non-primitive class.
+
+    Primitives (str, int, float, bool, None) return False.
+    """
+    origin = typing.get_origin(annotation)
+    if origin is not None:
+        return True
+    if annotation is type(None):
+        return False
+    if not isinstance(annotation, type):
+        return False
+    if hasattr(annotation, '__dataclass_fields__'):
+        return True
+    if hasattr(annotation, 'model_fields'):
+        return True
+    if hasattr(annotation, '_fields') and hasattr(annotation, '_field_defaults'):
+        return True
+    if annotation.__module__ != 'builtins' and annotation.__name__ not in ('str', 'int', 'float', 'bool', 'bytes', 'list', 'dict', 'set', 'tuple', 'frozenset'):
+        return True
+    return False
+
+
 def _normalize_category(cat: str | Sequence[str] | None) -> frozenset[str]:
     """Normalizes a category value into a frozenset for internal use.
 
     Accepts:
-    - ``None`` → empty frozenset (no category)
-    - ``"not_found"`` → ``frozenset({"not_found"})``
-    - ``["not_found", "missing"]`` → ``frozenset({"not_found", "missing"})``
+    - ``None`` -> empty frozenset (no category)
+    - ``"not_found"`` -> ``frozenset({"not_found"})``
+    - ``["not_found", "missing"]`` -> ``frozenset({"not_found", "missing"})``
     """
     if cat is None:
         return frozenset()
@@ -43,7 +72,7 @@ class ErrorClassification:
     phrase it in a way that's more actionable for the model).
 
     `error_map`/`error_rules` still accept a bare `str` (category only)
-    or a `(str, bool)` tuple as shortcuts — both are normalized to this
+    or a `(str, bool)` tuple as shortcuts -- both are normalized to this
     internally. Use `ErrorClassification` directly when you want the
     `message` override or just prefer the explicit, documented type.
     """
@@ -173,7 +202,7 @@ class ErrorMap:
 
         Returns ``(category, retryable, handled)`` or ``None`` if no rule matched.
         ``category`` is always a ``frozenset[str]`` (empty if no category was set).
-        ``handled`` is always ``True`` when a rule matched — it signals that the
+        ``handled`` is always ``True`` when a rule matched -- it signals that the
         programmer explicitly anticipated this error.
         """
         # 1. Predicate rules (checked first)
@@ -253,15 +282,15 @@ class ParamSpec:
 class ToolError:
     """Structured, framework-agnostic representation of a failed call.
 
-    ``category`` is a ``frozenset[str]`` — empty if no category was
+    ``category`` is a ``frozenset[str]`` -- empty if no category was
     assigned, or one or more category strings. The API accepts
     ``str | Sequence[str] | None`` and normalizes automatically.
 
     ``handled`` indicates whether the programmer explicitly anticipated
     this error via ``error_map`` / ``error_rules``:
 
-    - ``True`` — the error was mapped; the LLM may retry or act on it.
-    - ``False`` — unanticipated error; the LLM must report but NOT act.
+    - ``True`` -- the error was mapped; the LLM may retry or act on it.
+    - ``False`` -- unanticipated error; the LLM must report but NOT act.
     """
 
     category: frozenset[str]
@@ -330,7 +359,7 @@ class ToolResponse:
 class OperationSpec:
     """
     Describes one callable operation (a method or exposed property) that
-    lives inside a service-level tool. Purely descriptive — used to
+    lives inside a service-level tool. Purely descriptive -- used to
     generate the tool's documentation and to validate/route calls.
     """
 
@@ -342,13 +371,13 @@ class OperationSpec:
 @dataclass(frozen=True, slots=True)
 class ToolSpec:
     """
-    ONE tool per Service — this is the core design: a whole service
+    ONE tool per Service -- this is the core design: a whole service
     becomes a single tool, not one tool per method. The tool accepts a
     list of `{"method": ..., "args": {...}}` operations and executes
     all of them in a single call, so an LLM can e.g. create a user AND
     list all users in ONE tool call instead of two.
 
-    `call` is always an async callable — `call(operations=[...])` —
+    `call` is always an async callable -- `call(operations=[...])` --
     that never raises; failures for individual operations are reported
     per-item in the returned ToolResponse.content, so one bad operation
     doesn't block the rest of the batch.
