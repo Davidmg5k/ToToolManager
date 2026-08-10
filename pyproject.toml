@@ -1,6 +1,6 @@
 [project]
 name = "to-tool-manager"
-version = "0.3.6"
+version = "0.3.9"
 description = "Convert Python service classes into AI tool specifications for LLM integration"
 readme = "README.md"
 authors = [
