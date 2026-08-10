@@ -16,15 +16,24 @@ class AgentInterface(ABC):
 
     def __init__(self, 
         model: models.KnownModelName, 
-        middleware: Sequence[Middleware] | None = None
+        middleware: Sequence[Middleware] | None = None,
+        *,
+        capabilities: list | None = None,
     ):
         """Initializes the agent with the given model and middlewares.
 
         Args:
             model: Model name to use (e.g., 'openai:gpt-4o').
             middleware: Optional sequence of middlewares to intercept calls.
+            capabilities: Optional list of pydantic-ai capabilities (e.g.
+                `Planning(...)` from `pydantic_ai_harness.planning` for
+                task planning) passed through to the underlying
+                `build_agent()` call. `None` (the default) preserves the
+                exact behavior this class had before this parameter
+                existed. Capabilities can also be added later, before
+                `build_agent()` is called, via `self.agent.add_capability(...)`.
         """
-        self.__agent_support = AgentSupport(model, middleware)
+        self.__agent_support = AgentSupport(model, middleware, capabilities=capabilities)
 
     @property
     def agent(self) -> AgentSupport:

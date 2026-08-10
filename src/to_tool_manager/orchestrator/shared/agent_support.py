@@ -1,4 +1,4 @@
-from typing import List, Sequence
+from typing import Any, List, Sequence
 
 from pydantic_ai import Agent, models
 
@@ -16,16 +16,26 @@ class AgentSupport:
 
     def __init__(self, 
         model: models.KnownModelName, 
-        middleware: Sequence[Middleware] | None = None
+        middleware: Sequence[Middleware] | None = None,
+        *,
+        capabilities: list | None = None,
     ) -> None:
         """Initializes the agent support.
 
         Args:
             model: Model name to use (e.g., 'openai:gpt-4o').
             middleware: Optional sequence of middlewares.
+            capabilities: Optional list of pydantic-ai capabilities passed
+                straight through to `build_agent()` -- e.g.
+                `[Planning(store=SqlitePlanStore(...))]` from
+                `pydantic_ai_harness.planning` for task planning. `None`
+                (the default) preserves the exact behavior this class had
+                before this parameter existed: `build_agent()` is called
+                with no `capabilities` at all.
         """
         self.__model: models.KnownModelName = model
         self.__middleware: Sequence[Middleware] | None = middleware
+        self.__capabilities: List[Any] = list(capabilities or [])
 
         self.__manager: ToToolManager | None = None
         self.__agent: Agent | None = None
@@ -59,6 +69,22 @@ class AgentSupport:
     def modules(self) -> List[Module]:
         """List of registered modules."""
         return list(self.__modules)
+
+    @property
+    def capabilities(self) -> List[Any]:
+        """List of pydantic-ai capabilities that will be passed to `build_agent()`."""
+        return list(self.__capabilities)
+
+    def add_capability(self, capability: Any) -> None:
+        """Adds a pydantic-ai capability (e.g. `Planning(...)` from
+        `pydantic_ai_harness.planning`) to be wired into the agent on the
+        next `build_agent()` call.
+
+        Args:
+            capability: Any object implementing pydantic-ai's
+                `AbstractCapability` protocol.
+        """
+        self.__capabilities.append(capability)
 
     def add_service(self, name: str, service: type) -> None:
         """Adds a service to the agent.
@@ -132,7 +158,8 @@ class AgentSupport:
         self.__build_ttm(self.__middleware)
         self.__agent = build_agent(
             self.__model, 
-            self.__manager
+            self.__manager,
+            capabilities=self.__capabilities or None,
         )
 
     def __build_ttm(self, middleware: Sequence[Middleware] | None) -> None:

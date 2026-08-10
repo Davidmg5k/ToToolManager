@@ -33,6 +33,7 @@ load_dotenv()
 from to_tool_manager import Module, Service, ToToolManager, Middleware
 from to_tool_manager.adapters.pydantic_ai import build_agent
 from to_tool_manager.core.types import ErrorMap
+from pydantic_ai_harness.planning import Planning
 
 class AuthenticationError(Exception):...
 
@@ -169,9 +170,17 @@ def print_messages(result):
                 print(f"  [{part_type}] {str(getattr(part, 'content', str(part)))}")
 
 
+# `capabilities=[Planning()]` -- pydantic-ai-harness task planning.
+# `OrderManagement` agrupa varias operaciones batch (crear/eliminar
+# usuarios y órdenes); Planning le da al modelo un checklist propio
+# (write_plan/add_task/update_task_status) para trackear una secuencia
+# de pasos del usuario a través de varios turnos, sin invalidar el
+# prompt cache -- complementario al Module de arriba, no un reemplazo:
+# el Module sigue siendo quien ejecuta las operaciones reales.
 agent = build_agent(
     "groq:openai/gpt-oss-120b",
     manager,
+    capabilities=[Planning()],
 )
 
 
