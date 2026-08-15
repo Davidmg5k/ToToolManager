@@ -62,3 +62,47 @@ class TestAgentInterface:
 
         with pytest.raises(TypeError):
             IncompleteAgent(model="openai:gpt-4o")
+
+
+class TestAgentInterfaceCapabilities:
+    """Capabilities passed to AgentInterface.__init__ must reach the
+    underlying AgentSupport unchanged -- AgentInterface keeps no capability
+    list of its own (avoids duplicating AgentSupport's role)."""
+
+    def _concrete_agent_cls(self):
+        class ConcreteAgent(AgentInterface):
+            def _create_services(self):
+                pass
+
+            def _create_modules(self):
+                pass
+
+            def _create_plan(self):
+                pass
+
+        return ConcreteAgent
+
+    def test_capabilities_forwarded_to_agent_support(self):
+        sentinel = object()
+        agent = self._concrete_agent_cls()(model="openai:gpt-4o", capabilities=[sentinel])
+        assert agent.agent.capabilities == [sentinel]
+
+    def test_no_capabilities_defaults_to_empty(self):
+        agent = self._concrete_agent_cls()(model="openai:gpt-4o")
+        assert agent.agent.capabilities == []
+
+    def test_add_capability_via_agent_property(self):
+        """No separate capability-management method on AgentInterface --
+        `self.agent.add_capability(...)` (AgentSupport) is the single path."""
+        sentinel = object()
+        agent = self._concrete_agent_cls()(model="openai:gpt-4o")
+        agent.agent.add_capability(sentinel)
+        assert agent.agent.capabilities == [sentinel]
+
+    def test_name_forwarded_to_agent_support(self):
+        agent = self._concrete_agent_cls()(model="openai:gpt-4o", name="my_agent")
+        assert agent.agent.name == "my_agent"
+
+    def test_no_name_defaults_to_none(self):
+        agent = self._concrete_agent_cls()(model="openai:gpt-4o")
+        assert agent.agent.name is None

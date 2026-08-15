@@ -58,6 +58,42 @@ class TestModule:
         assert "Order" in manager.services
 
 
+class TestModuleSubManagerConcurrency:
+    """Fase 0.2 (D3): Module._get_sub_manager() concurrency guarantee --
+    same double-checked-locking pattern as Service.get_instance (Fase 0.1),
+    verified the same way: widen the race window on construction, then
+    hammer it from many real threads."""
+
+    def test_concurrent_construction_creates_exactly_one_sub_manager(self, monkeypatch):
+        import time
+
+        from to_tool_manager.core.manager import ToToolManager
+        from tests.concurrency_harness import run_concurrently_threads
+
+        original_init = ToToolManager.__init__
+
+        def slow_init(self, *args, **kwargs):
+            time.sleep(0.02)
+            original_init(self, *args, **kwargs)
+
+        monkeypatch.setattr(ToToolManager, "__init__", slow_init)
+
+        svc = Service(name="Order", service=OrderService)
+        module = Module(name="OrderModule", services=[svc])
+
+        result = run_concurrently_threads(lambda _: module._get_sub_manager())
+
+        assert result.ok
+        assert result.unique_result_count == 1
+        assert module.sub_manager is result.results[0]
+
+    def test_locks_are_per_module_not_global(self):
+        svc = Service(name="Order", service=OrderService)
+        module_a = Module(name="A", services=[svc])
+        module_b = Module(name="B", services=[svc])
+        assert module_a._sub_manager_lock is not module_b._sub_manager_lock
+
+
 class TestModuleBuildToolSpec:
     def test_build_tool_spec(self):
         svc = Service(name="Order", service=OrderService)

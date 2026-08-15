@@ -11,7 +11,6 @@ from to_tool_manager.skills.dependencies import dependencies_skill
 from to_tool_manager.skills.error_handling import error_handling_skill
 from to_tool_manager.skills.planning import planning_skill
 from to_tool_manager.skills.reasoning import reasoning_skill
-from to_tool_manager.skills.task_planning import task_planning_skill
 from to_tool_manager.skills.validation import validation_skill
 
 __all__ = [
@@ -21,7 +20,6 @@ __all__ = [
     "error_handling_skill",
     "composition_skill",
     "planning_skill",
-    "task_planning_skill",
     "default_skills",
     "ALWAYS_ON_SKILLS",
     "CONDITIONAL_SKILLS",

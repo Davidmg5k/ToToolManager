@@ -5,6 +5,7 @@ discovery.py / executor.py so this stays a simple, inspectable dataclass.
 """
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable, Mapping, Sequence
 
@@ -76,7 +77,23 @@ class Service:
     reused for all tool calls. Set False if the underlying class is not
     safe to share (e.g. holds per-request state) — a fresh instance will
     be created for the manager's lifetime is still just one instance;
-    for true per-call isolation, instantiate the Service per request."""
+    for true per-call isolation, instantiate the Service per request.
+
+    Concurrency/isolation note: `get_instance()` is safe under concurrent
+    callers -- exactly one instance is ever constructed, guarded by a
+    per-`Service` lock (see `get_instance`). That guarantee is about
+    construction only. `singleton=True` still means every caller shares
+    the SAME instance and therefore any mutable state it holds. If this
+    `Service`/`Manager` is itself reused across multiple requests/tenants
+    (e.g. a host app builds one `ToToolManager` at startup instead of
+    fresh per request, as this project's own `example/` app does), any
+    mutable instance state becomes visible across those tenants -- that
+    is a property of the wrapped class the `Service` author chose to
+    share, not something this library can detect or prevent. Keep
+    `singleton=True` only for classes that are stateless or intentionally
+    safe to share; use `singleton=False`, or rebuild the `Service` per
+    request (as `example/app/router/api/chat.py::_get_manager()` does),
+    when in doubt."""
 
     middlewares: Sequence[Middleware] = field(default_factory=tuple)
     """Middlewares applied at the method level for this service.
@@ -95,6 +112,7 @@ class Service:
     kwargs: dict = field(default_factory=dict)
 
     _instance: Any = field(default=None, init=False, repr=False, compare=False)
+    _instance_lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         if self.include and self.exclude:
@@ -111,9 +129,22 @@ class Service:
             )
 
     def get_instance(self) -> Any:
-        if self._instance is None or not self.singleton:
-            instance = self.service(*self.args, **self.kwargs)
-            if self.singleton:
-                self._instance = instance
+        """Returns the shared instance (if `singleton`) or a fresh one.
+
+        Thread-safe double-checked locking: concurrent callers racing on
+        the first call are guaranteed to observe exactly one constructed
+        instance, never more. The lock is per-`Service` (not global), so
+        unrelated `Service`s never contend with each other.
+        """
+        if not self.singleton:
+            return self.service(*self.args, **self.kwargs)
+
+        instance = self._instance
+        if instance is not None:
             return instance
-        return self._instance
+
+        with self._instance_lock:
+            # Re-check: another thread may have built it while we waited.
+            if self._instance is None:
+                self._instance = self.service(*self.args, **self.kwargs)
+            return self._instance

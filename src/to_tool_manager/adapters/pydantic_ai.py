@@ -19,18 +19,6 @@ from typing import Any
 from pydantic_ai import Agent, models
 
 from to_tool_manager.skills import build_skills_toolset, ALWAYS_ON_SKILLS, CONDITIONAL_SKILLS
-from to_tool_manager.skills.task_planning import task_planning_skill
-
-try:
-    # Already a hard dependency of the `pydantic-ai` extra (see
-    # pyproject.toml) -- this module cannot be imported at all without
-    # that extra installed, since `pydantic_ai` itself is imported above.
-    # No ImportError guard needed for the common case; kept defensive
-    # only so a manually-pruned environment degrades to "capability
-    # detection is a no-op" instead of an ImportError at import time.
-    from pydantic_ai_harness.planning import Planning as _HarnessPlanning
-except ImportError:  # pragma: no cover
-    _HarnessPlanning = None
 
 try:
     from pydantic_ai import ModelRetry
@@ -263,23 +251,6 @@ def _get_conditional_skills_content() -> str:
     for skill in CONDITIONAL_SKILLS:
         parts.append(skill.content)
     return "\n\n".join(parts)
-
-
-def _has_task_planning_capability(resolved_capabilities: Sequence[Any]) -> bool:
-    """True if the caller opted into harness task planning by passing a
-    ``Planning`` capability instance in ``capabilities=[...]``.
-
-    Deliberately a runtime ``isinstance`` check, not a new ``build_agent``
-    kwarg: ``capabilities`` is already the generic extension point this
-    project uses for every other pydantic-ai capability (``SkillsCapability``,
-    the auto-derived ``SubAgentCapability``, etc.), so introducing a
-    parallel ``use_harness_planning=`` surface would duplicate a mechanism
-    that already works -- exactly what R3 (no duplication between the
-    two planning systems) argues against, one layer up.
-    """
-    if _HarnessPlanning is None:  # pragma: no cover — see import guard above
-        return False
-    return any(isinstance(cap, _HarnessPlanning) for cap in resolved_capabilities)
 
 
 def _default_module_instructions(module: Module) -> str:
@@ -585,13 +556,14 @@ def build_agent(
     from to_tool_manager.core.prompts import build_instructions, build_system_prompt
 
     # Service -> plain tool on the parent agent. Module -> real sub-agent
-    # (built below into a SubAgentCapability), so its dispatch-style
-    # ToolSpec is deliberately excluded here -- including it too would
-    # expose the same Module both as a flat tool AND as a sub-agent in
-    # the same run.
-    
-    all_specs = manager.tool_specs
-    service_specs = [s for s in all_specs if s.metadata.get("type") != "module"]
+    # (built below into a SubAgentCapability, via `manager.modules`
+    # directly -- see `_build_subagent_capability`). Using
+    # `manager.service_specs` here (Services only) instead of the full
+    # `manager.tool_specs` avoids building every Module's batched
+    # ToolSpec (dispatch closure, description, recursive sub-manager
+    # visit) just to immediately discard it -- that spec was never used
+    # on this path in the first place (D5).
+    service_specs = manager.service_specs
     tools = to_pydantic_ai_tools(service_specs)
 
     # R9 — Planner integration. No `planner` passed => this block is a
@@ -668,45 +640,15 @@ def build_agent(
 
     base_system_prompt = system_prompt if system_prompt is not None else build_system_prompt(all_services_and_modules)
 
-    # R10 — Task-planning boundary guidance. Appended to the STATIC part of
-    # the prompt (not the per-turn gated wrapper below) on purpose: the
-    # whole point of harness `Planning` is a cache-stable prefix, so
-    # guidance about it must not vary turn-to-turn the way the gated
-    # planner reminder does, or it would defeat that guarantee for every
-    # turn where the heuristic flips. A no-op, byte-identical to before,
-    # whenever `capabilities` doesn't include a `Planning` instance.
-    #
-    # `base_system_prompt` may be a `str` OR a `Sequence[str]` here (both
-    # are valid inputs to `system_prompt=`, and `_make_gated_system_prompt`
-    # already assumed `str` below this point — a pre-existing, separate
-    # type gap). Normalizing to `str` here, rather than assuming `str`
-    # like that pre-existing call already silently did, avoids adding a
-    # NEW way for this block to raise `TypeError` on a valid `Sequence[str]`
-    # input, on top of the one that already existed.
-    if _has_task_planning_capability(resolved_capabilities):
-        base_prompt_text = (
-            base_system_prompt
-            if isinstance(base_system_prompt, str)
-            else "\n\n".join(base_system_prompt)
-        )
-        base_system_prompt = base_prompt_text + "\n\n" + task_planning_skill.content
-
     resolved_system_prompt: Any = _make_gated_system_prompt(base_system_prompt, manager)
 
-    # NOTE — pre-existing bug fix, unrelated to task-planning: `Agent.__init__`
-    # in currently-resolved `pydantic-ai` (this repo pins `>=2.10.0`, which
-    # resolves to 2.27.0 today) only accepts `system_prompt: str | Sequence[str]`
-    # in the constructor — passing the dynamic callable
-    # `_make_gated_system_prompt` produces used to raise
-    # `TypeError: 'function' object is not iterable` for EVERY call to
-    # `build_agent()`, with or without a `planner`/`capabilities`, because
-    # this dynamic-prompt path is unconditional. Confirmed via `git stash`
-    # that this reproduces identically on a clean checkout of `main`.
-    # Dynamic system prompts must instead be registered post-construction
-    # via `agent.system_prompt(fn)` (see `Agent.system_prompt` decorator),
-    # the same mechanism `@agent.system_prompt` uses — so the constructor
-    # gets no `system_prompt=` kwarg at all here, and the dynamic one is
-    # attached right after construction, below.
+    # NOTE: `Agent.__init__`'s `system_prompt` parameter only accepts a
+    # `str | Sequence[str]` -- passing a callable directly raises
+    # `TypeError: 'function' object is not iterable` (pydantic-ai>=2.10.0,
+    # resolves today to 2.21.0), on EVERY call to build_agent(), since
+    # `_make_gated_system_prompt` always returns a callable. Dynamic system
+    # prompts must instead be registered post-construction via the
+    # `agent.system_prompt(fn)` decorator/method.
     agent = agent_cls(
         model,
         instructions=resolved_instructions,

@@ -29,11 +29,11 @@ class OrchestratorBuilder:
 
     def __init__(self) -> None:
         self._agents: list[AgentInterface] = []
-        self._model: models.KnownModelName | None = None
+        self._model: models.Model | models.KnownModelName | str | None = None
         self._middlewares: list[Middleware] = []
         self._config: dict[str, Any] = {}
 
-    def model(self, model: models.KnownModelName) -> "OrchestratorBuilder":
+    def model(self, model: models.Model | models.KnownModelName | str) -> "OrchestratorBuilder":
         """Sets the model to use for the orchestrator."""
         self._model = model
         return self

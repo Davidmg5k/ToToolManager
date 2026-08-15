@@ -9,6 +9,7 @@ back one `ToolSpec` per service -- each accepting a list of operations
 from __future__ import annotations
 
 import json
+import threading
 from typing import Any, Sequence
 
 from to_tool_manager.core.conditions import _evaluate_when
@@ -99,6 +100,9 @@ class ToToolManager:
                 )
 
         self._specs: list[ToolSpec] | None = None
+        self._specs_lock = threading.Lock()
+        self._service_specs: list[ToolSpec] | None = None
+        self._service_specs_lock = threading.Lock()
 
     @property
     def middlewares(self):
@@ -386,18 +390,59 @@ class ToToolManager:
         )
 
     @property
+    def service_specs(self) -> list[ToolSpec]:
+        """Builds (and caches) ToolSpecs for registered Services ONLY --
+        never touches Modules (`Module.build_tool_spec()` is comparatively
+        expensive: it builds a whole dispatch closure, description, and
+        recursively visits the Module's own sub-manager). Used by
+        `tool_specs` for its Service half, and directly by adapters that
+        only need the flat Service tools and would otherwise waste that
+        work building Module specs they're going to discard (see D5:
+        `adapters/pydantic_ai.py::build_agent`, which puts Modules on a
+        SubAgentCapability instead, via `manager.modules` directly).
+
+        Thread-safe double-checked locking, same pattern as `tool_specs`.
+        """
+        specs = self._service_specs
+        if specs is not None:
+            return specs
+
+        with self._service_specs_lock:
+            if self._service_specs is None:
+                self._service_specs = [
+                    self._build_spec_for_service(s) for s in self.__services.values()
+                ]
+            return self._service_specs
+
+    @property
     def tool_specs(self) -> list[ToolSpec]:
         """Builds (and caches) the full, framework-agnostic tool list —
-        exactly ONE ToolSpec per registered Service or Module."""
-        if self._specs is None:
-            self._specs = [self._build_spec_for_service(s) for s in self.__services.values()]
-            for module in self.__modules.values():
-                spec = module.build_tool_spec(parent_middlewares=self.__middlewares)
-                self._specs.append(spec)
-        return self._specs
+        exactly ONE ToolSpec per registered Service or Module.
+
+        Thread-safe double-checked locking (same pattern as
+        `Service.get_instance` / `Module._get_sub_manager`): concurrent
+        callers racing on the first access are guaranteed to observe one
+        consistently-built list, never a half-built one. `refresh()`
+        shares the same lock, so a concurrent `refresh()` can never race
+        with an in-flight build and resurrect a stale cached list.
+        """
+        specs = self._specs
+        if specs is not None:
+            return specs
+
+        with self._specs_lock:
+            if self._specs is None:
+                built = list(self.service_specs)
+                for module in self.__modules.values():
+                    spec = module.build_tool_spec(parent_middlewares=self.__middlewares)
+                    built.append(spec)
+                self._specs = built
+            return self._specs
 
     def refresh(self) -> None:
-        self._specs = None
+        with self._specs_lock, self._service_specs_lock:
+            self._specs = None
+            self._service_specs = None
 
     def with_planner(
         self,

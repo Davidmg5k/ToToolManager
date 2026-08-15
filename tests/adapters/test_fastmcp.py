@@ -194,7 +194,9 @@ class TestBuildMcpAgent:
         from to_tool_manager.core.service import Service
 
         class Dummy:
-            pass
+            def ping(self) -> str:
+                """No-op operation so this Service exposes at least one tool."""
+                return "pong"
 
         svc = Service(name="Test", service=Dummy)
         manager = ToToolManager([svc])
@@ -208,7 +210,9 @@ class TestBuildMcpAgent:
         from to_tool_manager.core.service import Service
 
         class Dummy:
-            pass
+            def ping(self) -> str:
+                """No-op operation so this Service exposes at least one tool."""
+                return "pong"
 
         svc = Service(name="Test", service=Dummy)
         manager = ToToolManager([svc])
@@ -232,7 +236,9 @@ class TestBuildMcpAgent:
         from to_tool_manager.core.service import Service
 
         class Dummy:
-            pass
+            def ping(self) -> str:
+                """No-op operation so this Service exposes at least one tool."""
+                return "pong"
 
         svc = Service(name="Test", service=Dummy)
         manager = ToToolManager([svc])

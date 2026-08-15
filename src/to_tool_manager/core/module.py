@@ -22,6 +22,7 @@ What "sub-agent" means depends on the adapter:
 """
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, Sequence
 
@@ -181,6 +182,7 @@ class Module:
     registered at the manager level."""
 
     _sub_manager: Any = field(default=None, init=False, repr=False, compare=False)
+    _sub_manager_lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False, compare=False)
     _specs: list[ToolSpec] | None = field(default=None, init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -196,17 +198,27 @@ class Module:
         ``ToToolManager``.  They are merged *before* the module's own
         middlewares so that each service inside this module can
         disable them via ``disable_middlewares``.
-        """
-        if self._sub_manager is None:
-            from to_tool_manager.core.manager import ToToolManager
 
-            merged: list[Middleware] = list(parent_middlewares or ())
-            merged.extend(self.middlewares or ())
-            self._sub_manager = ToToolManager(
-                self.services,
-                middlewares=merged or None,
-            )
-        return self._sub_manager
+        Thread-safe double-checked locking (same pattern as
+        `Service.get_instance`): concurrent callers racing on the first
+        call are guaranteed to observe exactly one constructed
+        `ToToolManager`, never more. The lock is per-`Module`.
+        """
+        sub_manager = self._sub_manager
+        if sub_manager is not None:
+            return sub_manager
+
+        with self._sub_manager_lock:
+            if self._sub_manager is None:
+                from to_tool_manager.core.manager import ToToolManager
+
+                merged: list[Middleware] = list(parent_middlewares or ())
+                merged.extend(self.middlewares or ())
+                self._sub_manager = ToToolManager(
+                    self.services,
+                    middlewares=merged or None,
+                )
+            return self._sub_manager
 
     @property
     def sub_manager(self) -> Any:

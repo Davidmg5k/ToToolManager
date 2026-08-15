@@ -95,18 +95,49 @@ class TestDependencyValidator:
         ]
         assert validator.validate_order(steps) is None
 
-    def test_invalid_order(self):
+    def test_wrong_order_gets_auto_corrected(self):
+        """The dependency-graph path is auto-derive/fix, not
+        reject-and-report -- see validate_order's own docstring
+        ('additive/idempotent'). A step declared in the "wrong" order
+        gets `depends_on` populated to match the graph and passes
+        validation; it does NOT come back as a reported error. This
+        replaces the old `test_invalid_order`, which asserted the
+        opposite (a pre-existing failing test, D8 in the roadmap) --
+        that assumption predates this auto-derivation behavior and was
+        never updated to match it."""
         graph = ServiceDependencyGraph(
             dependencies=[ServiceDependency(source="Order", target="User")]
         )
         validator = DependencyValidator(graph)
-        steps = [
-            Step(id="s1", description="Order step", operations=[StepOperation(service="Order", method="create")]),
-            Step(id="s2", description="User step", operations=[StepOperation(service="User", method="get")]),
-        ]
+        order_step = Step(id="s1", description="Order step", operations=[StepOperation(service="Order", method="create")])
+        user_step = Step(id="s2", description="User step", operations=[StepOperation(service="User", method="get")])
+        steps = [order_step, user_step]
+
         errors = validator.validate_order(steps)
+
+        assert errors is None
+        assert "s2" in order_step.depends_on
+
+    def test_contradicting_explicit_depends_on_raises_cycle_error(self):
+        """The actual error path for the dependency-graph branch: an
+        explicit `depends_on` that contradicts the graph-derived edge
+        forms a genuine cycle, which IS reported. No prior test in this
+        class exercised this path at all."""
+        graph = ServiceDependencyGraph(
+            dependencies=[ServiceDependency(source="Order", target="User")]
+        )
+        validator = DependencyValidator(graph)
+        # Graph says Order depends on User (User must run first). This
+        # step explicitly declares the opposite: User depends on Order.
+        order_step = Step(id="s1", description="Order step", operations=[StepOperation(service="Order", method="create")])
+        user_step = Step(id="s2", description="User step", operations=[StepOperation(service="User", method="get")], depends_on=["s1"])
+        steps = [order_step, user_step]
+
+        errors = validator.validate_order(steps)
+
         assert errors is not None
         assert len(errors) > 0
+        assert "circular" in errors[0].lower()
 
     def test_get_next_executable_no_deps(self):
         validator = DependencyValidator(None)

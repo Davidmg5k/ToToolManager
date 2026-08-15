@@ -15,27 +15,37 @@ class AgentSupport:
     """
 
     def __init__(self, 
-        model: models.KnownModelName, 
+        model: models.Model | models.KnownModelName | str, 
         middleware: Sequence[Middleware] | None = None,
-        *,
-        capabilities: list | None = None,
+        capabilities: Sequence[Any] | None = None,
+        name: str | None = None,
     ) -> None:
         """Initializes the agent support.
 
         Args:
-            model: Model name to use (e.g., 'openai:gpt-4o').
+            model: Model to use. Either a model name (e.g. 'openai:gpt-4o')
+                or a `pydantic_ai.models.Model` instance -- including
+                `pydantic_ai.models.test.TestModel`, so this can be built
+                and run without a real provider/API key. Forwarded as-is to
+                `build_agent()`, whose own `model` parameter already accepts
+                both.
             middleware: Optional sequence of middlewares.
-            capabilities: Optional list of pydantic-ai capabilities passed
-                straight through to `build_agent()` -- e.g.
-                `[Planning(store=SqlitePlanStore(...))]` from
-                `pydantic_ai_harness.planning` for task planning. `None`
-                (the default) preserves the exact behavior this class had
-                before this parameter existed: `build_agent()` is called
-                with no `capabilities` at all.
+            capabilities: Optional sequence of pydantic-ai agent capabilities
+                (e.g. ``Planning()`` from ``pydantic_ai_harness.planning``).
+                Forwarded as-is to ``build_agent()``'s own ``capabilities``
+                parameter -- this is only a thin passthrough, no new
+                capability-wiring mechanism is introduced here. Additional
+                capabilities can be appended later via `add_capability()`.
+            name: Optional name for the underlying `Agent`. Forwarded as-is
+                to `build_agent()`'s own `name` parameter, which already
+                existed but was never reachable from this class. Required
+                if this agent will be registered with `AgentOrchestrator`
+                (`SubAgents` needs each sub-agent's `Agent` to have a name).
         """
-        self.__model: models.KnownModelName = model
+        self.__model: models.Model | models.KnownModelName | str = model
         self.__middleware: Sequence[Middleware] | None = middleware
         self.__capabilities: List[Any] = list(capabilities or [])
+        self.__name: str | None = name
 
         self.__manager: ToToolManager | None = None
         self.__agent: Agent | None = None
@@ -72,19 +82,29 @@ class AgentSupport:
 
     @property
     def capabilities(self) -> List[Any]:
-        """List of pydantic-ai capabilities that will be passed to `build_agent()`."""
+        """List of registered agent capabilities."""
         return list(self.__capabilities)
 
-    def add_capability(self, capability: Any) -> None:
-        """Adds a pydantic-ai capability (e.g. `Planning(...)` from
-        `pydantic_ai_harness.planning`) to be wired into the agent on the
-        next `build_agent()` call.
+    @property
+    def name(self) -> str | None:
+        """Name configured for the underlying `Agent`, if any."""
+        return self.__name
+
+    def add_capability(self, capability: Any) -> "AgentSupport":
+        """Adds an agent capability (e.g. `Planning()`), fluent-style.
+
+        Same pattern as `add_service`/`add_module`: purely additive,
+        forwarded verbatim to `build_agent()`'s `capabilities` list. Must be
+        called before `build_agent()`.
 
         Args:
-            capability: Any object implementing pydantic-ai's
-                `AbstractCapability` protocol.
+            capability: A pydantic-ai agent capability instance.
+
+        Returns:
+            self, to allow chaining (`support.add_capability(a).add_capability(b)`).
         """
         self.__capabilities.append(capability)
+        return self
 
     def add_service(self, name: str, service: type) -> None:
         """Adds a service to the agent.
@@ -160,6 +180,7 @@ class AgentSupport:
             self.__model, 
             self.__manager,
             capabilities=self.__capabilities or None,
+            name=self.__name,
         )
 
     def __build_ttm(self, middleware: Sequence[Middleware] | None) -> None:

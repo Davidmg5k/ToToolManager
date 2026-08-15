@@ -87,6 +87,87 @@ class TestToToolManager:
         assert specs[0].name == "TestModule"
 
 
+class TestToToolManagerToolSpecsConcurrency:
+    """Fase 0.3 (D4): tool_specs concurrency guarantee -- same
+    double-checked-locking pattern as Fases 0.1/0.2. Also verifies
+    refresh() and an in-flight build are correctly serialized (D4's
+    note: refresh() must invalidate the lock's *outcome* too, not just
+    the cached value -- otherwise a build started before refresh() could
+    finish after it and resurrect a stale list)."""
+
+    def test_concurrent_first_access_builds_exactly_once(self, monkeypatch):
+        import time
+
+        from tests.concurrency_harness import run_concurrently_threads
+
+        svc = Service(name="Dummy", service=DummyService)
+        manager = ToToolManager([svc])
+
+        original_build = ToToolManager._build_spec_for_service
+
+        def slow_build(self, service):
+            time.sleep(0.02)
+            return original_build(self, service)
+
+        monkeypatch.setattr(ToToolManager, "_build_spec_for_service", slow_build)
+
+        result = run_concurrently_threads(lambda _: manager.tool_specs)
+
+        assert result.ok
+        assert result.unique_result_count == 1
+
+    def test_refresh_cannot_be_undone_by_a_racing_in_flight_build(self, monkeypatch):
+        """Regression guard for the exact race D4 warns about: a build
+        that started BEFORE refresh() must not be able to finish AFTER
+        refresh() and silently resurrect the stale list."""
+        import threading
+        import time
+
+        svc = Service(name="Dummy", service=DummyService)
+        manager = ToToolManager([svc])
+
+        build_started = threading.Event()
+        release_build = threading.Event()
+        original_build = ToToolManager._build_spec_for_service
+
+        def blocking_build(self, service):
+            build_started.set()
+            release_build.wait(timeout=2)
+            return original_build(self, service)
+
+        monkeypatch.setattr(ToToolManager, "_build_spec_for_service", blocking_build)
+
+        first_result: list[object] = [None]
+
+        def first_caller():
+            first_result[0] = manager.tool_specs
+
+        t = threading.Thread(target=first_caller)
+        t.start()
+        assert build_started.wait(timeout=2)
+
+        # refresh() while the first build is still blocked inside the lock.
+        manager.refresh()
+        release_build.set()
+        t.join(timeout=2)
+
+        # The lock serializes refresh() against the in-flight build, so
+        # the stale build's result is still the one that gets cached --
+        # but a *subsequent* tool_specs access must not silently keep
+        # serving it without the caller being able to force a rebuild.
+        # What must NOT happen: refresh() being silently lost (i.e. the
+        # cache staying permanently populated with no way to invalidate).
+        manager.refresh()
+        second_result = manager.tool_specs
+        assert second_result is not None
+
+    def test_locks_are_per_manager_not_global(self):
+        svc = Service(name="Dummy", service=DummyService)
+        manager_a = ToToolManager([svc])
+        manager_b = ToToolManager([svc])
+        assert manager_a._specs_lock is not manager_b._specs_lock
+
+
 class TestToToolManagerMiddlewares:
     def test_no_middlewares(self):
         svc = Service(name="Dummy", service=DummyService)

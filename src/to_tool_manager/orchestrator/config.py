@@ -19,7 +19,7 @@ class OrchestratorConfig:
             on_shutdown=my_shutdown_hook,
         )
     """
-    model: models.KnownModelName
+    model: models.Model | models.KnownModelName | str
     name: str = "orchestrator"
     description: str = ""
 

@@ -79,7 +79,7 @@ class AgentOrchestrator:
 
     def init_app(
         self,
-        model: models.KnownModelName,
+        model: models.Model | models.KnownModelName | str,
     ) -> None:
         """Initializes the orchestrator by building all registered agents."""
         sub_agents: List[SubAgent] = []

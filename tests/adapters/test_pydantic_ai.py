@@ -184,4 +184,106 @@ class TestToFunctionToolset:
         assert toolset is not None
 
 
+class TestBuildAgent:
+    """No prior test in this file actually called build_agent() -- these
+    close that gap with real (no-mock) Agent construction against
+    pydantic-ai's own TestModel. Doubles as regression coverage for:
+    - the constructor bug (dynamic system_prompt callable crashing
+      Agent.__init__, fixed in this same effort);
+    - D5 (Fase 0.4): build_agent() must not build Module.build_tool_spec()
+      for Modules it's about to discard from the flat tool list.
+    """
+
+    def _service_only_manager(self):
+        from to_tool_manager.core.manager import ToToolManager
+        from to_tool_manager.core.service import Service
+
+        class Greeter:
+            def hello(self, name: str) -> str:
+                """Say hello."""
+                return f"Hello {name}"
+
+        return ToToolManager([Service(name="greeter", service=Greeter)])
+
+    def test_builds_real_agent_with_service_only_manager(self):
+        from pydantic_ai.models.test import TestModel
+        from to_tool_manager.adapters.pydantic_ai import build_agent
+
+        manager = self._service_only_manager()
+        agent = build_agent(TestModel(), manager)
+        assert agent is not None
+
+    def test_built_agent_runs_end_to_end(self):
+        from pydantic_ai.models.test import TestModel
+        from to_tool_manager.adapters.pydantic_ai import build_agent
+
+        manager = self._service_only_manager()
+        agent = build_agent(TestModel(call_tools=[]), manager)
+
+        result = asyncio.run(agent.run("say hi"))
+        assert result.output is not None
+
+    def test_build_agent_does_not_build_module_tool_spec(self, monkeypatch):
+        """D5 regression guard: registering a Module must not trigger
+        Module.build_tool_spec() from build_agent() -- Modules go through
+        SubAgentCapability (manager.modules directly), never the flat
+        tool list, so building their batched ToolSpec here is pure waste
+        that gets thrown away."""
+        from pydantic_ai.models.test import TestModel
+        from to_tool_manager.adapters.pydantic_ai import build_agent
+        from to_tool_manager.core.manager import ToToolManager
+        from to_tool_manager.core.module import Module
+        from to_tool_manager.core.service import Service
+
+        class Greeter:
+            def hello(self, name: str) -> str:
+                """Say hello."""
+                return f"Hello {name}"
+
+        module_service = Service(name="greeter_in_module", service=Greeter)
+        module = Module(name="GreeterModule", services=[module_service])
+        manager = ToToolManager([module])
+
+        calls = {"count": 0}
+        original = Module.build_tool_spec
+
+        def tracking_build_tool_spec(self, *args, **kwargs):
+            calls["count"] += 1
+            return original(self, *args, **kwargs)
+
+        monkeypatch.setattr(Module, "build_tool_spec", tracking_build_tool_spec)
+
+        build_agent(TestModel(), manager)
+
+        assert calls["count"] == 0, (
+            "build_agent() built a Module's batched ToolSpec even though "
+            "Modules are handled via SubAgentCapability, not the flat "
+            "tool list -- this is exactly the wasted work D5 flagged."
+        )
+
+    def test_build_agent_uses_service_specs_not_tool_specs_cache(self):
+        """Confirms build_agent() populates manager.service_specs (the
+        narrow, Module-free cache) without forcing manager.tool_specs
+        (the full cache, which would have built Module specs too) to be
+        populated as a side effect."""
+        from pydantic_ai.models.test import TestModel
+        from to_tool_manager.adapters.pydantic_ai import build_agent
+        from to_tool_manager.core.manager import ToToolManager
+        from to_tool_manager.core.module import Module
+        from to_tool_manager.core.service import Service
+
+        class Greeter:
+            def hello(self, name: str) -> str:
+                """Say hello."""
+                return f"Hello {name}"
+
+        module = Module(name="GreeterModule", services=[Service(name="g", service=Greeter)])
+        manager = ToToolManager([module])
+
+        build_agent(TestModel(), manager)
+
+        assert manager._service_specs is not None
+        assert manager._specs is None
+
+
 from unittest.mock import MagicMock

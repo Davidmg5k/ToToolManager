@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Sequence
+from typing import Any, Sequence
 
 from pydantic_ai import models
 
@@ -15,25 +15,31 @@ class AgentInterface(ABC):
     """
 
     def __init__(self, 
-        model: models.KnownModelName, 
+        model: models.Model | models.KnownModelName | str, 
         middleware: Sequence[Middleware] | None = None,
-        *,
-        capabilities: list | None = None,
+        capabilities: Sequence[Any] | None = None,
+        name: str | None = None,
     ):
         """Initializes the agent with the given model and middlewares.
 
         Args:
-            model: Model name to use (e.g., 'openai:gpt-4o').
+            model: Model to use. Either a model name (e.g. 'openai:gpt-4o')
+                or a `pydantic_ai.models.Model` instance -- including
+                `pydantic_ai.models.test.TestModel`, so a concrete
+                `AgentInterface` can be built and run in tests without a
+                real provider/API key.
             middleware: Optional sequence of middlewares to intercept calls.
-            capabilities: Optional list of pydantic-ai capabilities (e.g.
-                `Planning(...)` from `pydantic_ai_harness.planning` for
-                task planning) passed through to the underlying
-                `build_agent()` call. `None` (the default) preserves the
-                exact behavior this class had before this parameter
-                existed. Capabilities can also be added later, before
-                `build_agent()` is called, via `self.agent.add_capability(...)`.
+            capabilities: Optional sequence of pydantic-ai agent capabilities
+                (e.g. `Planning()` from `pydantic_ai_harness.planning`),
+                forwarded to the underlying `AgentSupport`. To add more after
+                construction, use `self.agent.add_capability(...)` -- there
+                is deliberately no separate capability list kept here.
+            name: Optional name for the underlying `Agent`, forwarded to
+                `AgentSupport`. Required if this agent will be registered
+                with `AgentOrchestrator` (`SubAgents` needs each sub-agent's
+                `Agent` to have a name -- see `AgentOrchestrator.init_app()`).
         """
-        self.__agent_support = AgentSupport(model, middleware, capabilities=capabilities)
+        self.__agent_support = AgentSupport(model, middleware, capabilities, name)
 
     @property
     def agent(self) -> AgentSupport:

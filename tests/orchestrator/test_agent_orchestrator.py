@@ -35,6 +35,52 @@ class EventCollector:
         self.events.append(event)
 
 
+class SubAgentForTests(AgentInterface):
+    """Like DummyAgent, but lets model/name be injected (e.g. TestModel).
+    Not named `Test*` so pytest doesn't try to collect it as a test class."""
+
+    def __init__(self, model, name: str = "sub_agent"):
+        super().__init__(model=model, name=name)
+
+    def _create_services(self):
+        pass
+
+    def _create_modules(self):
+        pass
+
+    def _create_plan(self):
+        pass
+
+
+class TestAgentOrchestratorInitApp:
+    """init_app() end-to-end against pydantic-ai's TestModel -- no mocks,
+    no real provider/API key needed. Regression guard for two things:
+    1. the `model` type hint, which used to be narrowed to `KnownModelName`
+       (str) only, even though the underlying `Agent(model=...)` already
+       accepted a real `models.Model` instance;
+    2. `AgentSupport`/`AgentInterface` never forwarding `name` to
+       `build_agent()`, which meant `init_app()` always raised
+       ("Sub-agent has no name") for any agent built the standard way --
+       this test would have caught it."""
+
+    def test_init_app_accepts_test_model_instance(self):
+        from pydantic_ai.models.test import TestModel
+
+        orchestrator = AgentOrchestrator([SubAgentForTests(model=TestModel(call_tools=[]))])
+        orchestrator.init_app(model=TestModel(call_tools=[]))
+        assert orchestrator.agent is not None
+
+    def test_init_app_with_test_model_runs_end_to_end(self):
+        import asyncio
+        from pydantic_ai.models.test import TestModel
+
+        orchestrator = AgentOrchestrator([SubAgentForTests(model=TestModel(call_tools=[]), name="sub1")])
+        orchestrator.init_app(model=TestModel(call_tools=[]))
+
+        result = asyncio.run(orchestrator.agent.run("hello"))
+        assert result.output is not None
+
+
 class TestAgentOrchestratorInit:
     def test_init_empty(self):
         orchestrator = AgentOrchestrator()
