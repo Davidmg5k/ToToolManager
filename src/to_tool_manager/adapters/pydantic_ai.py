@@ -231,7 +231,7 @@ class _AutoDepsAgent(Agent):
         locals()[_name] = _with_default_deps_keyword(getattr(Agent, _name))
     for _name in _LEADING_POSITIONAL_DEPS_METHODS:
         locals()[_name] = _with_default_deps_leading_positional(getattr(Agent, _name))
-    del _name
+    del _name  # pyright: ignore[reportPossiblyUnboundVariable] -- both tuples above are non-empty constants
 
 
 _EFFICIENCY_APPENDIX = """
@@ -324,7 +324,7 @@ def _build_subagent_capability(
             "    pip install subagents-pydantic-ai\n"
         )
     configs = [_build_subagent_config(m, default_model=default_model) for m in modules]
-    return SubAgentCapability(
+    return SubAgentCapability(  # pyright: ignore[reportPossiblyUnboundVariable]
         subagents=configs,
         default_model=default_model,
         include_general_purpose=include_general_purpose,
@@ -639,6 +639,13 @@ def build_agent(
     skills_toolset = build_skills_toolset(skills=ALWAYS_ON_SKILLS)
 
     base_system_prompt = system_prompt if system_prompt is not None else build_system_prompt(all_services_and_modules)
+    if not isinstance(base_system_prompt, str):
+        # `system_prompt` accepts `str | Sequence[str]` (matching Agent's own
+        # constructor), but `_make_gated_system_prompt` needs a single string
+        # to concatenate the conditional-skills annex onto -- normalize here,
+        # the same join pydantic-ai itself uses to render multiple static
+        # system_prompt entries as one string.
+        base_system_prompt = "\n\n".join(base_system_prompt)
 
     resolved_system_prompt: Any = _make_gated_system_prompt(base_system_prompt, manager)
 
@@ -661,7 +668,7 @@ def build_agent(
     )
     agent.system_prompt(resolved_system_prompt)
     if agent_cls is _AutoDepsAgent:
-        agent._to_tool_manager_default_deps = SubAgentDeps()
+        agent._to_tool_manager_default_deps = SubAgentDeps()  # pyright: ignore[reportAttributeAccessIssue] -- guarded by the identity check above
     return agent
 
 

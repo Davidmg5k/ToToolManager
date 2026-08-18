@@ -238,7 +238,7 @@ class Module:
             if not isinstance(operations, list) or not operations:
                 return ToolResponse(
                     error=ToolError(
-                        category=frozenset("validation_error"),
+                        category=frozenset({"validation_error"}),
                         message=(
                             "`operations` must be a non-empty list of "
                             '{"method": ..., "args": {...}} objects.'
@@ -351,7 +351,7 @@ class Module:
         )
 
 
-async def _dispatch_to_services(manager: Any, method_name: str, op_args: dict) -> ToolResponse:
+async def _dispatch_to_services(manager: Any, method_name: str | None, op_args: dict) -> ToolResponse:
     for spec in manager.tool_specs:
         for op in spec.operations:
             if op.name == method_name:
@@ -364,7 +364,7 @@ async def _dispatch_to_services(manager: Any, method_name: str, op_args: dict) -
 
     return ToolResponse(
         error=ToolError(
-            category=frozenset("unknown_operation"),
+            category=frozenset({"unknown_operation"}),
             message=f"Unknown operation '{method_name}'. Available: {', '.join(sorted(available))}.",
             exception_type="ValueError",
             retryable=False,

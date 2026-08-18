@@ -16,7 +16,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 try:
-    from ag_ui.core import EventType, StateDeltaEvent, StateSnapshotEvent
+    from ag_ui.core import EventType, StateDeltaEvent, StateSnapshotEvent  # pyright: ignore[reportMissingImports]
 except ImportError as exc:  # pragma: no cover
     raise ImportError(
         "The ag_ui adapter requires the 'ag-ui-core' package. "

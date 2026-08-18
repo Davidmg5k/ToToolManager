@@ -50,15 +50,23 @@ class AgentInterface(ABC):
         """Builds the agent with its services, modules, and planning.
 
         This method:
-        1. Builds the base agent with the manager
-        2. Calls _create_plan() to configure planning
-        3. Calls _create_services() to register services
-        4. Calls _create_modules() to register modules
+        1. Calls _create_plan() to configure planning
+        2. Calls _create_services() to register services
+        3. Calls _create_modules() to register modules
+        4. Builds the underlying Agent from everything registered above
+
+        Note: the underlying `AgentSupport.build_agent()` snapshots the
+        registered services/modules into the `ToToolManager` (and from
+        there into the pydantic-ai `Agent`'s tool list) at the moment it
+        runs -- so it must run LAST, after `_create_services()` /
+        `_create_modules()` have populated `self.agent`'s services/modules
+        list, or the built `Agent` ends up with no tools regardless of
+        what those hooks register (hallazgo 1.1).
         """
-        self.__agent_support.build_agent()
         self._create_plan()
         self._create_services()
         self._create_modules()
+        self.__agent_support.build_agent()
 
     @abstractmethod
     def _create_services(self) -> None:

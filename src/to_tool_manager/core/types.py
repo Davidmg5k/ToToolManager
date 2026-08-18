@@ -8,11 +8,9 @@ that every adapter consumes and produces.
 from __future__ import annotations
 
 import typing
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Mapping
-
-if TYPE_CHECKING:
-    from collections.abc import Sequence
 
 # Sentinel used when a parameter has no default value.
 _MISSING = object()
@@ -46,7 +44,13 @@ def _is_complex_type(annotation: Any) -> bool:
     return False
 
 
-def _normalize_category(cat: str | Sequence[str] | None) -> frozenset[str]:
+# Accepted shapes for a category argument on the public API: a single
+# string, any sequence of strings, an already-normalized frozenset, or
+# None. Internally everything is normalized to frozenset[str].
+_CategoryInput = str | Sequence[str] | frozenset[str] | None
+
+
+def _normalize_category(cat: _CategoryInput) -> frozenset[str]:
     """Normalizes a category value into a frozenset for internal use.
 
     Accepts:
@@ -137,13 +141,15 @@ class ErrorMap:
 
     def __init__(self) -> None:
         self._type_map: dict[type[BaseException], ErrorEntry | Callable[..., Any]] = {}
-        self._predicates: list[tuple[Callable[[Exception], bool], str, bool, str | None]] = []
+        self._predicates: list[
+            tuple[Callable[[Exception], bool], frozenset[str], bool, str | None]
+        ] = []
 
     def map(
         self,
         exc_type: type[BaseException],
         /,
-        category: str | Sequence[str] | None = None,
+        category: _CategoryInput = None,
         *,
         retryable: bool = False,
         message: str | None = None,
@@ -184,7 +190,7 @@ class ErrorMap:
         self,
         predicate: Callable[[Exception], bool],
         /,
-        category: str | Sequence[str] | None = None,
+        category: _CategoryInput = None,
         *,
         retryable: bool = False,
         message: str | None = None,
@@ -308,7 +314,7 @@ class ToolError:
         cls,
         exc: Exception,
         *,
-        category: str | Sequence[str] | None = None,
+        category: _CategoryInput = None,
         retryable: bool = False,
         handled: bool = True,
         message: str | None = None,

@@ -106,3 +106,68 @@ class TestAgentInterfaceCapabilities:
     def test_no_name_defaults_to_none(self):
         agent = self._concrete_agent_cls()(model="openai:gpt-4o")
         assert agent.agent.name is None
+
+
+class TestAgentInterfaceBuildAgentOrder:
+    """Regression coverage for hallazgo 1.1 (handoff doc, section 1.1):
+    `AgentInterface.build_agent()` used to call
+    `self.__agent_support.build_agent()` BEFORE `_create_services()` /
+    `_create_modules()` -- the abstract hooks a concrete subclass
+    implements to register services/modules via
+    `self.agent.add_service(...)` / `self.agent.add_module(...)`. Since
+    `AgentSupport.build_agent()` snapshots `self.__services` /
+    `self.__modules` into a `ToToolManager` (and from there into the
+    pydantic-ai `Agent`'s tool list) at the moment it runs, calling it
+    first meant the manager -- and the resulting `Agent` -- was always
+    built with zero tools, no matter what a concrete subclass registered
+    afterwards. This is a real, no-mocks, end-to-end test (TestModel),
+    matching the precedent in
+    `tests/orchestrator/test_agent_orchestrator.py::TestAgentOrchestratorInitApp`.
+    """
+
+    def _agent_with_one_service(self):
+        from pydantic_ai.models.test import TestModel
+
+        class Greeter:
+            def hello(self, name: str) -> str:
+                """Say hello."""
+                return f"Hello {name}"
+
+        class ConcreteAgent(AgentInterface):
+            def _create_services(self):
+                self.agent.add_service("greeter", Greeter)
+
+            def _create_modules(self):
+                pass
+
+            def _create_plan(self):
+                pass
+
+        return ConcreteAgent(model=TestModel(call_tools=[]))
+
+    def test_build_agent_registers_service_added_in_create_services(self):
+        agent = self._agent_with_one_service()
+        agent.build_agent()
+
+        # The concrete assertions that matter: the service registered in
+        # _create_services() must actually reach the manager the Agent was
+        # built from (not just AgentSupport's own bookkeeping list).
+        assert len(agent.agent.services) == 1
+        assert agent.agent.services[0].name == "greeter"
+        assert len(agent.agent._manager.tool_specs) == 1, (
+            "the manager the Agent was built from has no tool_specs for "
+            "the service registered in _create_services() -- build_agent() "
+            "built the Agent before _create_services() ran"
+        )
+
+    def test_built_agent_can_run_and_use_the_registered_service(self):
+        """End-to-end: the built Agent must actually be able to invoke the
+        tool for a service registered in _create_services()."""
+        import asyncio
+        from pydantic_ai.models.test import TestModel
+
+        agent = self._agent_with_one_service()
+        agent.build_agent()
+
+        result = asyncio.run(agent.agent.agent.run("say hi to Ada"))
+        assert result.output is not None

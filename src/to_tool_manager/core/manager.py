@@ -253,7 +253,7 @@ class ToToolManager:
             if not isinstance(operations, list) or not operations:
                 return ToolResponse(
                     error=ToolError(
-                        category=frozenset("validation_error"),
+                        category=frozenset({"validation_error"}),
                         message=(
                             "`operations` must be a non-empty list of "
                             '{"method": ..., "args": {...}} objects.'
@@ -338,7 +338,7 @@ class ToToolManager:
                     # the dict check above at the Python call boundary.
                     response = ToolResponse(
                         error=ToolError(
-                            category=frozenset("validation_error"),
+                            category=frozenset({"validation_error"}),
                             message=str(exc),
                             exception_type="TypeError",
                             retryable=True,

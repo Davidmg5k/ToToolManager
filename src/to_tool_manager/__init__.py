@@ -22,8 +22,14 @@ dependency on any agent framework::
     from to_tool_manager.adapters.fastmcp import register_on_mcp
     from to_tool_manager.adapters.raw import to_openai_tool_schemas, dispatch
 """
-from to_tool_manager.adapters.fastmcp import build_mcp_agent, build_mcp_server
+from typing import TYPE_CHECKING
+
 from to_tool_manager.adapters.pydantic_ai import build_agent
+
+if TYPE_CHECKING:
+    # Only for static analysis -- see the module-level __getattr__ below
+    # for why this isn't a real, unconditional runtime import.
+    from to_tool_manager.adapters.fastmcp import build_mcp_agent, build_mcp_server
 from to_tool_manager.core import (
     ErrorEntry,
     ErrorMap,
@@ -93,3 +99,27 @@ __all__ = [
 ]
 
 __version__ = "0.3.9"
+
+
+def __getattr__(name: str):
+    """Lazily loads the fastmcp adapter's public names.
+
+    `build_mcp_agent`/`build_mcp_server` are listed in `__all__` (and thus
+    part of the public API accessible as `to_tool_manager.build_mcp_agent`
+    / `from to_tool_manager import build_mcp_agent`) but the fastmcp
+    adapter itself -- and only that adapter -- requires the optional
+    `fastmcp` package. Importing it lazily here (PEP 562), instead of at
+    module load time, means `import to_tool_manager` never fails just
+    because `fastmcp` isn't installed; the adapter's own friendly
+    `ImportError` (see `adapters/fastmcp.py`) still fires, just at first
+    use of one of these two names instead of at package import time --
+    matching the package-level promise ("ZERO hard dependency on any
+    agent framework") stated in this module's own docstring.
+    """
+    if name in ("build_mcp_agent", "build_mcp_server"):
+        from to_tool_manager.adapters.fastmcp import build_mcp_agent, build_mcp_server
+
+        globals()["build_mcp_agent"] = build_mcp_agent
+        globals()["build_mcp_server"] = build_mcp_server
+        return globals()[name]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -223,6 +223,30 @@ class TestBuildAgent:
         result = asyncio.run(agent.run("say hi"))
         assert result.output is not None
 
+    def test_build_agent_accepts_sequence_system_prompt_in_gated_branch(self, monkeypatch):
+        """Regression guard (pyright reportArgumentType, hallazgo 1.2 #4):
+        `system_prompt` is documented to accept `str | Sequence[str]`
+        (matching Agent's own constructor), but `_make_gated_system_prompt`
+        used to concatenate `base_prompt + "\\n\\n" + ...` directly, which
+        raises `TypeError: can only concatenate list (not "str") to list`
+        the moment the gated heuristic decides a turn "looks complex" and a
+        caller passed a Sequence[str] system_prompt. Force the heuristic to
+        fire and confirm no crash."""
+        import to_tool_manager.adapters.pydantic_ai as pydantic_ai_adapter
+        from pydantic_ai.models.test import TestModel
+
+        monkeypatch.setattr(pydantic_ai_adapter, "request_looks_complex", lambda text, names: True)
+
+        manager = self._service_only_manager()
+        agent = pydantic_ai_adapter.build_agent(
+            TestModel(call_tools=[]),
+            manager,
+            system_prompt=["You are helpful.", "Be concise."],
+        )
+
+        result = asyncio.run(agent.run("anything"))
+        assert result.output is not None
+
     def test_build_agent_does_not_build_module_tool_spec(self, monkeypatch):
         """D5 regression guard: registering a Module must not trigger
         Module.build_tool_spec() from build_agent() -- Modules go through

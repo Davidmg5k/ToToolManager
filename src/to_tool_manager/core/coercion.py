@@ -64,7 +64,11 @@ except ImportError:  # pragma: no cover - pydantic is a de-facto hard dependency
     _HAS_PYDANTIC = False
     _PydanticValidationError = ()  # type: ignore[assignment]
 
-_ARBITRARY_CONFIG = ConfigDict(arbitrary_types_allowed=True) if _HAS_PYDANTIC else None
+_ARBITRARY_CONFIG = (
+    ConfigDict(arbitrary_types_allowed=True)  # type: ignore[reportPossiblyUnboundVariable]
+    if _HAS_PYDANTIC
+    else None
+)
 
 
 class CoercionError(Exception):
@@ -101,11 +105,11 @@ def _adapter_for(annotation: Any) -> "TypeAdapter[Any] | None":
     if not _HAS_PYDANTIC:
         return None
     try:
-        return TypeAdapter(annotation, config=_ARBITRARY_CONFIG)
+        return TypeAdapter(annotation, config=_ARBITRARY_CONFIG)  # type: ignore[reportPossiblyUnboundVariable]
     except Exception:
         pass
     try:
-        return TypeAdapter(annotation)
+        return TypeAdapter(annotation)  # type: ignore[reportPossiblyUnboundVariable]
     except Exception:
         return None
 
