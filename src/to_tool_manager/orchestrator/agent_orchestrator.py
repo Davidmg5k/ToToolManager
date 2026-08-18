@@ -1,6 +1,11 @@
-from typing import List, Sequence
+from typing import Any, List, Sequence
 
-from pydantic_ai import Agent, ModelSettings, models
+from pydantic_ai import Agent, models
+from pydantic_ai.agent.abstract import AgentMetadata, AgentModelSettings, AgentRetries
+from pydantic_ai._instructions import AgentInstructions
+from pydantic_ai._agent_graph import EndStrategy
+from pydantic_ai.concurrency import AnyConcurrencyLimit
+from pydantic_ai.template import TemplateStr
 from pydantic_ai_harness.subagents import SubAgent, SubAgents
 
 from to_tool_manager.adapters.fastmcp import build_mcp_server
@@ -80,17 +85,84 @@ class AgentOrchestrator:
     def init_app(
         self,
         model: models.Model | models.KnownModelName | str,
+        *,
+        output_type: Any = str,
+        instructions: AgentInstructions = None,
+        system_prompt: str | Sequence[str] = (),
+        deps_type: type | None = None,
+        name: str | None = None,
+        description: TemplateStr | str | None = None,
+        model_settings: AgentModelSettings | None = None,
+        retries: int | AgentRetries | None = None,
+        validation_context: Any = None,
+        defer_model_check: bool = False,
+        end_strategy: EndStrategy = "graceful",
+        metadata: AgentMetadata | None = None,
+        tool_timeout: float | None = None,
+        max_concurrency: AnyConcurrencyLimit = None,
     ) -> None:
-        """Initializes the orchestrator by building all registered agents."""
+        """Initializes the orchestrator by building all registered agents.
+
+        Args:
+            model: LLM model (e.g. ``"openai:gpt-4o"`` or a
+                ``pydantic_ai.models.Model`` instance).
+            output_type: Pydantic BaseModel / dataclass / TypedDict /
+                ``str`` for structured output.
+            instructions: Dynamic instructions (str or callable).
+            system_prompt: Static system prompt(s).
+            deps_type: Dependency injection type for static typing.
+            name: Agent name for logging and tracing.
+            description: Human-readable description attached to OTel spans.
+            model_settings: Static model settings (temperature, max_tokens,
+                etc.).
+            retries: Per-category retry budget. ``None`` uses Agent defaults.
+            validation_context: Validation context.
+            defer_model_check: Defer model evaluation until first run.
+            end_strategy: How to handle tool calls alongside final result.
+            metadata: Agent metadata.
+            tool_timeout: Default timeout in seconds for tool execution.
+            max_concurrency: Limit on concurrent agent runs.
+        """
         sub_agents: List[SubAgent] = []
 
         for agent in self.__agents:
             agent.build_agent()
             sub_agents.append(SubAgent(agent.agent.agent))
 
+        agent_kwargs: dict[str, Any] = {}
+        if output_type is not str:
+            agent_kwargs["output_type"] = output_type
+        if instructions is not None:
+            agent_kwargs["instructions"] = instructions
+        if system_prompt != ():
+            agent_kwargs["system_prompt"] = system_prompt
+        if deps_type is not None:
+            agent_kwargs["deps_type"] = deps_type
+        if name is not None:
+            agent_kwargs["name"] = name
+        if description is not None:
+            agent_kwargs["description"] = description
+        if model_settings is not None:
+            agent_kwargs["model_settings"] = model_settings
+        if retries is not None:
+            agent_kwargs["retries"] = retries
+        if validation_context is not None:
+            agent_kwargs["validation_context"] = validation_context
+        if defer_model_check:
+            agent_kwargs["defer_model_check"] = defer_model_check
+        if end_strategy != "graceful":
+            agent_kwargs["end_strategy"] = end_strategy
+        if metadata is not None:
+            agent_kwargs["metadata"] = metadata
+        if tool_timeout is not None:
+            agent_kwargs["tool_timeout"] = tool_timeout
+        if max_concurrency is not None:
+            agent_kwargs["max_concurrency"] = max_concurrency
+
         self.__agent = Agent(
             model=model,
-            capabilities=[SubAgents(agents=sub_agents)]
+            capabilities=[SubAgents(agents=sub_agents)],
+            **agent_kwargs,
         )
 
     def add_agent(self, agent: AgentInterface) -> None:
@@ -181,12 +253,3 @@ class AgentOrchestrator:
             agent.build_agent()
             sub_agents.extend(agent.agent._manager.tool_specs)
         return build_mcp_server(name, sub_agents)
-
-    # -------------------------------------------------------------------
-    # Execution
-    # -------------------------------------------------------------------
-
-    async def run(self, message: str):
-        """Runs the main agent with the given message."""
-        response = await self.agent.run(message)
-        return response
