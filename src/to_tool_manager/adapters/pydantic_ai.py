@@ -249,7 +249,8 @@ def _get_conditional_skills_content() -> str:
     """Returns the content of conditional skills as a single string."""
     parts = []
     for skill in CONDITIONAL_SKILLS:
-        parts.append(skill.content)
+        if skill is not None:
+            parts.append(skill.content)
     return "\n\n".join(parts)
 
 

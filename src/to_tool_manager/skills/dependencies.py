@@ -10,7 +10,10 @@ propagation, the other two own ordering and batching.
 Contains no business logic, only a generic checklist applicable to any
 domain.
 """
-from pydantic_ai_skills import Skill
+try:
+    from pydantic_ai_skills import Skill
+except ImportError:
+    Skill = None  # type: ignore[assignment,misc]
 
 
 DEPENDENCIES_CONTENT = """
@@ -54,4 +57,4 @@ dependencies_skill = Skill(
     name="dependencies",
     description="Analyzes side-effect propagation of write operations before executing them",
     content=DEPENDENCIES_CONTENT,
-)
+) if Skill is not None else None

@@ -4,7 +4,10 @@ Validation Skill — Patterns for validation before execution.
 Influences HOW the agent validates data and preconditions.
 Contains no specific business rules, only general patterns.
 """
-from pydantic_ai_skills import Skill
+try:
+    from pydantic_ai_skills import Skill
+except ImportError:
+    Skill = None  # type: ignore[assignment,misc]
 
 
 VALIDATION_CONTENT = """
@@ -40,4 +43,4 @@ validation_skill = Skill(
     name="validation",
     description="Patterns for validating data and preconditions before executing operations",
     content=VALIDATION_CONTENT,
-)
+) if Skill is not None else None

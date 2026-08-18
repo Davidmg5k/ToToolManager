@@ -23,7 +23,14 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any, Literal, Protocol, Sequence
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+if TYPE_CHECKING:
+    from pydantic import BaseModel, Field
+else:
+    try:
+        from pydantic import BaseModel, Field
+    except ImportError:  # pragma: no cover - pydantic is a de-facto hard dependency
+        BaseModel = None  # type: ignore[assignment,misc]
+        Field = None  # type: ignore[assignment,misc]
 
 from to_tool_manager.core.conditions import _evaluate_when
 

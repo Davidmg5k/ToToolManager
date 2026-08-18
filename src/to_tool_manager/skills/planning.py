@@ -4,7 +4,10 @@ Planning Skill — Cross-service planning patterns.
 Influences HOW the agent plans and organizes multi-service operations.
 Contains no business logic, only orchestration guidance.
 """
-from pydantic_ai_skills import Skill
+try:
+    from pydantic_ai_skills import Skill
+except ImportError:
+    Skill = None  # type: ignore[assignment,misc]
 
 
 PLANNING_CONTENT = """
@@ -119,4 +122,4 @@ planning_skill = Skill(
     name="planning",
     description="Cross-service planning patterns for complex multi-service operations",
     content=PLANNING_CONTENT,
-)
+) if Skill is not None else None

@@ -107,7 +107,7 @@ class ToToolManager:
     @property
     def middlewares(self):
         if self.__middlewares is None:
-            raise ValueError("The middelware isn't initialized")
+            raise ValueError("The middleware isn't initialized")
         return self.__middlewares
 
     def get_service(self, name: str) -> Service | Module:

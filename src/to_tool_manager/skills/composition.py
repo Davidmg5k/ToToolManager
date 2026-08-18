@@ -4,7 +4,10 @@ Composition Skill — Patterns for composing operations.
 Influences HOW the agent groups and chains operations.
 Contains no business logic, only orchestration patterns.
 """
-from pydantic_ai_skills import Skill
+try:
+    from pydantic_ai_skills import Skill
+except ImportError:
+    Skill = None  # type: ignore[assignment,misc]
 
 
 COMPOSITION_CONTENT = """
@@ -48,4 +51,4 @@ composition_skill = Skill(
     name="composition",
     description="Patterns for grouping and chaining operations optimally",
     content=COMPOSITION_CONTENT,
-)
+) if Skill is not None else None

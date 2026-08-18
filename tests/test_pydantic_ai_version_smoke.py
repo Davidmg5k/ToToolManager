@@ -23,7 +23,7 @@ def test_resolved_versions_are_within_declared_ranges():
     pinned in pyproject.toml's `pydantic-ai` optional-dependency group,
     so a resolver picking something outside the tested range is caught
     here instead of silently in production."""
-    from importlib.metadata import version
+    from importlib.metadata import version, PackageNotFoundError
 
     from packaging.specifiers import SpecifierSet
     from packaging.version import Version
@@ -35,7 +35,10 @@ def test_resolved_versions_are_within_declared_ranges():
         "subagents-pydantic-ai": ">=0.2.10,<0.3.0",
     }
     for package, spec in declared.items():
-        installed = Version(version(package))
+        try:
+            installed = Version(version(package))
+        except PackageNotFoundError:
+            pytest.skip(f"{package} is not installed")
         assert installed in SpecifierSet(spec), (
             f"{package}=={installed} is outside the range declared in "
             f"pyproject.toml ({spec}) -- pyproject.toml and this smoke "
@@ -70,6 +73,7 @@ def test_build_agent_smoke_with_capabilities_and_module():
     """Same as above, but exercises the two riskiest surfaces at once:
     a dynamic (callable) system_prompt via a real Planning() capability,
     and a Module (real sub-agent wiring via subagents-pydantic-ai)."""
+    pytest.importorskip("subagents_pydantic_ai")
     from pydantic_ai.models.test import TestModel
     from pydantic_ai_harness.planning import Planning
 

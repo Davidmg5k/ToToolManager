@@ -253,6 +253,7 @@ class TestBuildAgent:
         SubAgentCapability (manager.modules directly), never the flat
         tool list, so building their batched ToolSpec here is pure waste
         that gets thrown away."""
+        pytest.importorskip("subagents_pydantic_ai")
         from pydantic_ai.models.test import TestModel
         from to_tool_manager.adapters.pydantic_ai import build_agent
         from to_tool_manager.core.manager import ToToolManager
@@ -290,6 +291,7 @@ class TestBuildAgent:
         narrow, Module-free cache) without forcing manager.tool_specs
         (the full cache, which would have built Module specs too) to be
         populated as a side effect."""
+        pytest.importorskip("subagents_pydantic_ai")
         from pydantic_ai.models.test import TestModel
         from to_tool_manager.adapters.pydantic_ai import build_agent
         from to_tool_manager.core.manager import ToToolManager

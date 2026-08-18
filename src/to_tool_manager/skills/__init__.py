@@ -4,7 +4,10 @@ Agnostic Skills -- Behavioral patterns for agents.
 These skills contain no business logic.
 They are guidelines that influence HOW the agent thinks and executes.
 """
-from pydantic_ai_skills import SkillsToolset
+try:
+    from pydantic_ai_skills import SkillsToolset
+except ImportError:
+    SkillsToolset = None  # type: ignore[assignment,misc]
 
 from to_tool_manager.skills.composition import composition_skill
 from to_tool_manager.skills.dependencies import dependencies_skill
@@ -57,8 +60,16 @@ def build_skills_toolset(
 
     Returns:
         Configured SkillsToolset.
+
+    Raises:
+        ImportError: If pydantic-ai-skills is not installed.
     """
+    if SkillsToolset is None:
+        raise ImportError(
+            "pydantic-ai-skills is required for build_skills_toolset(). "
+            "Install it with: pip install 'to-tool-manager[pydantic-ai]'"
+        )
     return SkillsToolset(
-        skills=skills or default_skills,
+        skills=skills or default_skills,  # type: ignore[arg-type]
         directories=directories or [],
     )

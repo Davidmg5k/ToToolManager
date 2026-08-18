@@ -4,7 +4,10 @@ Reasoning Skill — Patterns for reasoning and strategy.
 Influences HOW the agent thinks and plans before executing.
 Contains no business logic, only behavioral guidelines.
 """
-from pydantic_ai_skills import Skill
+try:
+    from pydantic_ai_skills import Skill
+except ImportError:
+    Skill = None  # type: ignore[assignment,misc]
 
 
 REASONING_CONTENT = """
@@ -39,4 +42,4 @@ reasoning_skill = Skill(
     name="reasoning",
     description="Patterns for reasoning and strategy to execute tasks optimally",
     content=REASONING_CONTENT,
-)
+) if Skill is not None else None

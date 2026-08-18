@@ -1,8 +1,8 @@
 [project]
 name = "to-tool-manager"
-version = "0.4.2"
+version = "0.4.5"
 description = "Convert Python service classes into AI tool specifications for LLM integration"
-readme = "README.md"
+readme = {file = "README.md", content-type = "text/markdown"}
 authors = [
     { name = "Conectar Wali SAS", email = "conectarwalisas@gmail.com" }
 ]
@@ -18,6 +18,11 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/Davidmg5k/ToToolManager"
+Repository = "https://github.com/Davidmg5k/ToToolManager"
+Changelog = "https://github.com/Davidmg5k/ToToolManager/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 pydantic-ai = [
@@ -38,4 +43,13 @@ dev = [
     "pydantic-ai-slim[groq]>=2.10.0",
     "pytest>=9.1.1",
     "httpx>=0.28.1",
+    "pytest-cov>=6.0.0",
 ]
+
+[tool.coverage.run]
+source = ["to_tool_manager"]
+omit = ["tests/*", "example/*"]
+
+[tool.coverage.report]
+fail_under = 79
+show_missing = true

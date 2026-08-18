@@ -4,7 +4,10 @@ Error Handling Skill — Patterns for error handling.
 Influences HOW the agent reacts to errors.
 Contains no specific recovery logic, only general strategies.
 """
-from pydantic_ai_skills import Skill
+try:
+    from pydantic_ai_skills import Skill
+except ImportError:
+    Skill = None  # type: ignore[assignment,misc]
 
 
 ERROR_HANDLING_CONTENT = """
@@ -43,4 +46,4 @@ error_handling_skill = Skill(
     name="error-handling",
     description="Strategies for reacting to errors effectively",
     content=ERROR_HANDLING_CONTENT,
-)
+) if Skill is not None else None

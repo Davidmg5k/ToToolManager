@@ -28,11 +28,10 @@ separados:
 ```
 tu clase de servicio  →  Service(...)  →  ToToolManager  →  tool_specs (1 por servicio, agnóstico)
                                                                    │
-                                        ┌──────────────────────────┼──────────────────────┐
-                                        ▼                          ▼                       ▼
-                            adapters.pydantic_ai        adapters.fastmcp           adapters.raw
-                            (Agent / FunctionToolset)    (servidor MCP)            (OpenAI/Anthropic
-                                                                                     tools JSON a mano)
+                                        ┌──────────────────────────┴──────────────────────┐
+                                        ▼                                                  ▼
+                            adapters.pydantic_ai                                adapters.fastmcp
+                            (Agent / FunctionToolset)                            (servidor MCP)
 ```
 
 El paquete base (`to_tool_manager`) **no tiene ninguna dependencia dura**
@@ -53,7 +52,6 @@ pip install "to-tool-manager[pydantic-ai]"
 # Adaptadores de terceros (instalar aparte)
 pip install fastmcp          # para adapters.fastmcp
 pip install ag-ui-core       # para adapters.ag_ui
-# adapters.raw no necesita nada extra
 ```
 
 ---
@@ -70,7 +68,7 @@ pip install ag-ui-core       # para adapters.ag_ui
 | [Nivel 1 - Lo minimo](#nivel-1--lo-minimo-un-servicio-con-una-operacion) | Un servicio, una operacion |
 | [Nivel 2 - Multiples operaciones](#nivel-2--servicio-con-multiples-operaciones-y-excepciones-propias) | Batch de ops, error handling |
 | [Nivel 3 - Dos servicios](#nivel-3--dos-servicios-dos-tools-el-patron-tipico) | Patron tipico multi-tool |
-| [Nivel 4 - Raw (sin framework)](#nivel-4--ejecutar-operaciones-directamente-sin-framework) | to_openai_tool_schemas, dispatch |
+| [Nivel 4 - Sin framework](#nivel-4--ejecutar-operaciones-directamente-sin-framework) | Uso directo del core sin adapter |
 | [Nivel 5 - pydantic-ai](#nivel-5--integracion-con-pydantic-ai-agent) | build_agent, run_streaming, iter_agent |
 | [Nivel 6 - FastMCP](#nivel-6--integracion-con-fastmcp-servidor-mcp) | build_mcp_server, build_mcp_agent |
 | [Nivel 7 - Visibilidad](#nivel-7--opciones-de-visibilidad-y-filtrado-de-metodos) | public, protected, include, exclude |
@@ -425,19 +423,25 @@ assert [s.name for s in manager.tool_specs] == ["Order", "User"]
 
 ```python
 import asyncio
-from to_tool_manager.adapters.raw import to_openai_tool_schemas, dispatch
+from to_tool_manager import ToToolManager, Service
 
-# Genera schemas compatibles con OpenAI/Anthropic
-tool_schemas = to_openai_tool_schemas(manager.tool_specs)
+class OrderService:
+    def create(self, product_name: str) -> dict:
+        return {"id": 1, "product": product_name}
+    def get_orders(self) -> list:
+        return [{"id": 1, "product": "laptop"}]
 
-# Ejecuta una tool por nombre
+manager = ToToolManager([
+    Service(name="Order", service=OrderService, description="Gestión de órdenes"),
+])
+
+# Ejecuta operaciones directamente vía tool_specs
 async def main():
-    response = await dispatch("Order", {
-        "operations": [
-            {"method": "create", "args": {"product_name": "laptop"}},
-            {"method": "get_orders", "args": {}},
-        ]
-    }, manager.tool_specs)
+    spec = manager.tool_specs[0]  # El ToolSpec de Order
+    response = await spec.call(operations=[
+        {"method": "create", "args": {"product_name": "laptop"}},
+        {"method": "get_orders", "args": {}},
+    ])
     print(response.content)
 
 asyncio.run(main())
