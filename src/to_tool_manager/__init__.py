@@ -98,7 +98,7 @@ __all__ = [
     "build_mcp_server",
 ]
 
-__version__ = "0.3.9"
+__version__ = "0.4.2"
 
 
 def __getattr__(name: str):
