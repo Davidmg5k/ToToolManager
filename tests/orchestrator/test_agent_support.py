@@ -170,3 +170,100 @@ class TestAgentSupportCapabilities:
             if getattr(m, "instructions", None) and "write_plan" in m.instructions
         ]
         assert planning_msgs, "Planning capability guidance not found in agent instructions"
+
+
+class TestAgentSupportAdvancedInitKwargs:
+    """Coverage for the ~17 optional kwargs added to AgentSupport.__init__
+    (alongside hallazgo 1.1's build_agent() reorder fix), which
+    build_agent() only forwards to the underlying `build_agent()` call
+    when explicitly set (Principio 1: no default-behavior change for
+    existing callers)."""
+
+    def test_build_agent_with_no_optional_kwargs_matches_pre_existing_behavior(self):
+        """Baseline: omitting every new kwarg must build exactly the same
+        Agent as before these kwargs existed."""
+        from pydantic_ai.models.test import TestModel
+
+        support = AgentSupport(model=TestModel(call_tools=[]))
+        support.add_service("Dummy", DummyService)
+        support.build_agent()
+
+        assert support.agent.name is None
+
+    def test_build_agent_forwards_name(self):
+        from pydantic_ai.models.test import TestModel
+
+        support = AgentSupport(model=TestModel(call_tools=[]), name="my_support_agent")
+        support.add_service("Dummy", DummyService)
+        support.build_agent()
+
+        assert support.agent.name == "my_support_agent"
+
+    def test_build_agent_forwards_system_prompt_end_to_end(self):
+        """Real Agent construction with an explicit system_prompt --
+        confirms the kwarg actually reaches Agent.__init__ and the agent
+        still runs (also exercises the Sequence[str] normalization fix
+        from hallazgo 1.2 #4)."""
+        import asyncio
+        from pydantic_ai.models.test import TestModel
+
+        support = AgentSupport(
+            model=TestModel(call_tools=[]),
+            system_prompt=["You are terse.", "Never explain yourself."],
+        )
+        support.add_service("Dummy", DummyService)
+        support.build_agent()
+
+        result = asyncio.run(support.agent.run("hello"))
+        assert result.output is not None
+
+    def test_build_agent_forwards_output_type(self):
+        from dataclasses import dataclass
+
+        from pydantic_ai.models.test import TestModel
+
+        @dataclass
+        class Answer:
+            text: str
+
+        support = AgentSupport(model=TestModel(call_tools=[]), output_type=Answer)
+        support.add_service("Dummy", DummyService)
+        support.build_agent()
+
+        assert support.agent.output_type is Answer
+
+    def test_build_agent_forwards_remaining_optional_kwargs(self):
+        """Exercises every other `kw[...] = ...` branch in
+        AgentSupport.build_agent() not already covered by a more targeted
+        test above -- instructions, description, model_settings, retries,
+        deps_type, validation_context, tool_timeout, max_concurrency,
+        end_strategy, defer_model_check, metadata, planning_mode,
+        include_general_purpose_subagent, subagent_usage_limits. One
+        combined construction (rather than one test per kwarg) since the
+        only thing at risk per-kwarg is a typo'd dict key or an argument
+        pydantic-ai's own Agent.__init__ rejects -- both of which surface
+        as an exception from build_agent() either way."""
+        from pydantic_ai.models.test import TestModel
+        from pydantic_ai.usage import UsageLimits
+
+        support = AgentSupport(
+            model=TestModel(call_tools=[]),
+            instructions="be helpful",
+            description="A test agent",
+            model_settings={"temperature": 0.1},
+            retries=2,
+            deps_type=dict,
+            validation_context={"env": "test"},
+            tool_timeout=5.0,
+            max_concurrency=2,
+            end_strategy="early",
+            defer_model_check=True,
+            metadata={"team": "test"},
+            planning_mode="off",
+            include_general_purpose_subagent=True,
+            subagent_usage_limits=UsageLimits(),
+        )
+        support.add_service("Dummy", DummyService)
+        support.build_agent()
+
+        assert support.agent is not None

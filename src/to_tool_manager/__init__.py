@@ -60,6 +60,8 @@ from to_tool_manager.core.planner import (
     StepStatus,
 )
 from to_tool_manager.security.middleware import Middleware, ToolMiddleware
+from to_tool_manager.observability import LoggingMiddleware
+from to_tool_manager.resilience import TimeoutMiddleware
 
 
 __all__ = [
@@ -92,6 +94,10 @@ __all__ = [
     # Security
     "Middleware",
     "ToolMiddleware",
+    # Observability
+    "LoggingMiddleware",
+    # Resilience
+    "TimeoutMiddleware",
     # Builders
     "build_agent",
     "build_mcp_agent",

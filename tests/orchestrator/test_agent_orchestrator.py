@@ -80,6 +80,62 @@ class TestAgentOrchestratorInitApp:
         result = asyncio.run(orchestrator.agent.run("hello"))
         assert result.output is not None
 
+    def test_init_app_forwards_optional_kwargs_to_agent(self):
+        """init_app()'s new optional kwargs (added alongside hallazgo 1.1's
+        build_agent() reorder fix) must actually reach the built
+        pydantic-ai Agent, not just be accepted and dropped."""
+        from pydantic_ai.models.test import TestModel
+
+        orchestrator = AgentOrchestrator([SubAgentForTests(model=TestModel(call_tools=[]), name="sub1")])
+        orchestrator.init_app(
+            model=TestModel(call_tools=[]),
+            name="orchestrator_agent",
+            retries=5,
+            tool_timeout=12.5,
+        )
+
+        assert orchestrator.agent.name == "orchestrator_agent"
+
+    def test_init_app_default_kwargs_do_not_change_built_agent(self):
+        """Omitting the new optional kwargs must behave exactly like
+        before they existed (Principio 1: no default-behavior change)."""
+        from pydantic_ai.models.test import TestModel
+
+        orchestrator = AgentOrchestrator([SubAgentForTests(model=TestModel(call_tools=[]), name="sub1")])
+        orchestrator.init_app(model=TestModel(call_tools=[]))
+
+        assert orchestrator.agent.name is None
+
+    def test_init_app_forwards_remaining_optional_kwargs(self):
+        """Exercises every other `agent_kwargs[...] = ...` branch in
+        init_app() not already covered above -- output_type, instructions,
+        system_prompt, deps_type, description, model_settings, retries,
+        validation_context, defer_model_check, end_strategy, metadata,
+        max_concurrency. Combined into one construction since these are
+        pass-throughs to pydantic-ai's own Agent.__init__; the risk is a
+        typo'd dict key or a value Agent.__init__ rejects, either of
+        which surfaces as an exception either way."""
+        from pydantic_ai.models.test import TestModel
+
+        orchestrator = AgentOrchestrator([SubAgentForTests(model=TestModel(call_tools=[]), name="sub1")])
+        orchestrator.init_app(
+            model=TestModel(call_tools=[]),
+            output_type=str,
+            instructions="be helpful",
+            system_prompt=("You are terse.",),
+            deps_type=dict,
+            description="A test orchestrator agent",
+            model_settings={"temperature": 0.1},
+            retries=2,
+            validation_context={"env": "test"},
+            defer_model_check=True,
+            end_strategy="early",
+            metadata={"team": "test"},
+            max_concurrency=2,
+        )
+
+        assert orchestrator.agent is not None
+
 
 class TestAgentOrchestratorInit:
     def test_init_empty(self):

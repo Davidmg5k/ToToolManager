@@ -108,3 +108,75 @@ class TestOrchestratorBuilder:
             .build()
         )
         assert len(orchestrator.agents) == 2
+
+
+class TestOrchestratorBuilderAdvancedInitKwargs:
+    """Coverage for the fluent setters added alongside hallazgo 1.1's
+    build_agent() reorder fix -- each just stashes a value into
+    `_init_kwargs` for `build_and_init()` to forward to
+    `AgentOrchestrator.init_app()`. Table-driven since every setter
+    follows the exact same one-line pattern."""
+
+    @pytest.mark.parametrize(
+        "method_name, value",
+        [
+            ("output_type", str),
+            ("instructions", "be helpful"),
+            ("system_prompt", "You are a helpful assistant."),
+            ("name", "my_agent"),
+            ("description", "A test agent"),
+            ("model_settings", {"temperature": 0.2}),
+            ("retries", 3),
+            ("end_strategy", "early"),
+            ("metadata", {"team": "test"}),
+            ("tool_timeout", 30.0),
+            ("max_concurrency", 5),
+        ],
+    )
+    def test_setter_stores_value_in_init_kwargs(self, method_name, value):
+        builder = OrchestratorBuilder()
+        result = getattr(builder, method_name)(value)
+
+        assert result is builder, f"{method_name}() must return self for chaining"
+        assert builder._init_kwargs[method_name] == value
+
+    def test_multiple_setters_accumulate_in_init_kwargs(self):
+        builder = (
+            OrchestratorBuilder()
+            .output_type(str)
+            .name("my_agent")
+            .retries(2)
+            .tool_timeout(10.0)
+        )
+        assert builder._init_kwargs == {
+            "output_type": str,
+            "name": "my_agent",
+            "retries": 2,
+            "tool_timeout": 10.0,
+        }
+
+    def test_build_and_init_forwards_init_kwargs_to_orchestrator(self, monkeypatch):
+        """build_and_init() must actually pass what the fluent setters
+        accumulated through to AgentOrchestrator.init_app() -- not just
+        store them."""
+        agent = DummyAgent()
+        captured: dict = {}
+
+        def fake_init_app(self_, model, **kwargs):
+            captured["model"] = model
+            captured.update(kwargs)
+
+        monkeypatch.setattr(AgentOrchestrator, "init_app", fake_init_app)
+
+        (
+            OrchestratorBuilder()
+            .model("openai:gpt-4o")
+            .agent(agent)
+            .name("my_agent")
+            .retries(3)
+            .build_and_init()
+        )
+
+        assert captured["model"] == "openai:gpt-4o"
+        assert captured["name"] == "my_agent"
+        assert captured["retries"] == 3

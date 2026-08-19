@@ -75,9 +75,18 @@ class Service:
     singleton: bool = True
     """If True (default), one instance of `service` is created lazily and
     reused for all tool calls. Set False if the underlying class is not
-    safe to share (e.g. holds per-request state) — a fresh instance will
-    be created for the manager's lifetime is still just one instance;
-    for true per-call isolation, instantiate the Service per request.
+    safe to share (e.g. holds per-request state) -- but note the scope
+    this actually applies at: `get_instance()` is called exactly ONCE
+    per `ToToolManager` (when that manager's `tool_specs` is first built
+    and cached -- see `ToToolManager.tool_specs`), not once per
+    individual dispatch call. So within a single already-built manager,
+    every tool call reuses the same instance regardless of `singleton`
+    -- `singleton=False` only means a DIFFERENT `ToToolManager` built
+    from this same `Service` object gets its own fresh instance instead
+    of sharing this one. For true per-call isolation, instantiate the
+    `Service`/`ToToolManager` fresh per request (as
+    `example/app/router/api/chat.py::_get_manager()` does) -- `singleton`
+    alone does not provide that within one manager's lifetime.
 
     Concurrency/isolation note: `get_instance()` is safe under concurrent
     callers -- exactly one instance is ever constructed, guarded by a
