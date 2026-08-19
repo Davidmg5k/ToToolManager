@@ -1,7 +1,7 @@
 ﻿import json
 import asyncio
 
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlmodel import Session
 
@@ -9,11 +9,6 @@ from app import engine
 from app.controller import (
     build_communication_module,
     build_user_service,
-    build_order_service,
-    build_auth_service,
-    build_inventory_service,
-    build_payment_service,
-    build_notification_service,
     build_commerce_module,
     ChatController,
 )
