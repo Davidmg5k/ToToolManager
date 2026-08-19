@@ -46,11 +46,6 @@ def _get_manager():
     session = Session(engine)
     manager = ToToolManager([
             build_user_service(session),
-            build_order_service(session),
-            build_auth_service(session),
-            build_inventory_service(session),
-            build_payment_service(session),
-            build_notification_service(session),
             build_commerce_module(session),
             build_communication_module(session),
         ],
@@ -104,7 +99,7 @@ async def create_session(request: Request):
 
 
 @chat_router.get("/sessions")
-async def list_sessions(request: Request):
+async def list_sessions():
     controller, db = _get_chat_controller()
     try:
         sessions = await controller.list_sessions()
