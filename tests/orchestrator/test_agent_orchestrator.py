@@ -35,6 +35,17 @@ class EventCollector:
         self.events.append(event)
 
 
+class FailingEventHandler:
+    """Stands in for a shutdown/startup hook whose own cleanup logic
+    raises (e.g. closing a DB connection that itself errors)."""
+
+    def __init__(self, message: str = "handler failed"):
+        self.message = message
+
+    async def on_event(self, event: OrchestratorEvent) -> None:
+        raise RuntimeError(self.message)
+
+
 class SubAgentForTests(AgentInterface):
     """Like DummyAgent, but lets model/name be injected (e.g. TestModel).
     Not named `Test*` so pytest doesn't try to collect it as a test class."""
@@ -275,3 +286,63 @@ class TestAgentOrchestratorEvents:
 
         assert len(handler1.events) == 1
         assert len(handler2.events) == 1
+
+
+class TestAgentOrchestratorShutdownIsBestEffort:
+    """Bloque 7 audit finding: a failing shutdown handler must not
+    prevent OTHER handlers from getting their chance to clean up.
+    startup() intentionally keeps the opposite (fail-fast) behavior --
+    covered by the dedicated test below so this file also guards
+    against the two silently converging in a future change."""
+
+    @pytest.mark.anyio
+    async def test_shutdown_runs_every_handler_even_if_one_raises(self):
+        orchestrator = AgentOrchestrator()
+        healthy_before = EventCollector()
+        broken = FailingEventHandler()
+        healthy_after = EventCollector()
+        orchestrator.add_event_handler(healthy_before)
+        orchestrator.add_event_handler(broken)
+        orchestrator.add_event_handler(healthy_after)
+
+        with pytest.raises(ExceptionGroup):
+            await orchestrator.shutdown()
+
+        assert len(healthy_before.events) == 1
+        assert len(healthy_after.events) == 1  # ran despite `broken` raising first
+
+    @pytest.mark.anyio
+    async def test_shutdown_reraises_all_handler_failures_as_exception_group(self):
+        orchestrator = AgentOrchestrator()
+        orchestrator.add_event_handler(FailingEventHandler("first failure"))
+        orchestrator.add_event_handler(FailingEventHandler("second failure"))
+
+        with pytest.raises(ExceptionGroup) as exc_info:
+            await orchestrator.shutdown()
+
+        messages = {str(e) for e in exc_info.value.exceptions}
+        assert messages == {"first failure", "second failure"}
+
+    @pytest.mark.anyio
+    async def test_shutdown_with_no_failures_does_not_raise(self):
+        orchestrator = AgentOrchestrator()
+        orchestrator.add_event_handler(EventCollector())
+
+        await orchestrator.shutdown()  # must not raise
+
+    @pytest.mark.anyio
+    async def test_startup_still_fails_fast_unlike_shutdown(self):
+        """Confirms the asymmetry is intentional and unchanged: a
+        startup handler raising still aborts immediately, and later
+        handlers do NOT run -- the opposite of shutdown()'s new
+        best-effort behavior."""
+        orchestrator = AgentOrchestrator()
+        broken = FailingEventHandler()
+        never_called = EventCollector()
+        orchestrator.add_event_handler(broken)
+        orchestrator.add_event_handler(never_called)
+
+        with pytest.raises(RuntimeError):
+            await orchestrator.startup()
+
+        assert len(never_called.events) == 0

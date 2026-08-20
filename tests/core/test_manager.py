@@ -245,3 +245,141 @@ class TestToToolManagerDispatch:
         assert len(result.content) == 2
         assert result.content[0]["result"] == "Hello, Alice!"
         assert result.content[1]["result"] == "Hello, Bob!"
+
+
+class TestToolDescriptionComplexTypeExpansion:
+    """Regression coverage for a real bug found and fixed live in this
+    session: `_is_complex_type`'s own docstring promises the tool
+    description shows a complex parameter's "full signature", but
+    `_format_param` (in both core/manager.py and core/module.py) only
+    ever printed the bare class name (`data: CreateUserSchema`) -- an
+    LLM has no way to know what fields a nested schema needs from that
+    alone, so it can't reliably construct valid `args`. Fixed via
+    `core.types.describe_complex_type`, shared by both `_format_param`
+    copies so they can't silently drift apart again."""
+
+    def test_dataclass_field_names_and_types_are_expanded(self):
+        from dataclasses import dataclass
+
+        @dataclass
+        class CreateUserSchema:
+            name: str
+            email: str
+
+        class UserService:
+            def create_user(self, data: CreateUserSchema) -> str:
+                """Create a user."""
+                return "ok"
+
+        manager = ToToolManager([Service(name="Users", service=UserService)])
+        description = manager.tool_specs[0].description
+
+        assert "data: CreateUserSchema{name: str, email: str}" in description
+
+    def test_pydantic_basemodel_fields_are_expanded(self):
+        from pydantic import BaseModel
+
+        class CreateUserSchema(BaseModel):
+            name: str
+            age: int
+
+        class UserService:
+            def create_user(self, data: CreateUserSchema) -> str:
+                """Create a user."""
+                return "ok"
+
+        manager = ToToolManager([Service(name="Users", service=UserService)])
+        description = manager.tool_specs[0].description
+
+        assert "data: CreateUserSchema{name: str, age: int}" in description
+
+    def test_namedtuple_fields_are_expanded(self):
+        from typing import NamedTuple
+
+        class Point(NamedTuple):
+            x: float
+            y: float
+
+        class GeoService:
+            def locate(self, point: Point) -> str:
+                """Locate a point."""
+                return "ok"
+
+        manager = ToToolManager([Service(name="Geo", service=GeoService)])
+        description = manager.tool_specs[0].description
+
+        assert "point: Point{x: float, y: float}" in description
+
+    def test_typeddict_fields_are_expanded(self):
+        from typing import TypedDict
+
+        class Coordinates(TypedDict):
+            lat: float
+            lon: float
+
+        class GeoService:
+            def locate(self, coords: Coordinates) -> str:
+                """Locate coordinates."""
+                return "ok"
+
+        manager = ToToolManager([Service(name="Geo", service=GeoService)])
+        description = manager.tool_specs[0].description
+
+        assert "coords: Coordinates{lat: float, lon: float}" in description
+
+    def test_generic_container_keeps_its_type_parameter(self):
+        """Companion fix caught while fixing the above: `list[str]` has
+        `__name__ == "list"` in current Python (dropping the type
+        parameter) unless str(annotation) is used instead for
+        parameterized generics."""
+
+        class TagService:
+            def set_tags(self, tags: list[str]) -> str:
+                """Set tags."""
+                return "ok"
+
+        manager = ToToolManager([Service(name="Tags", service=TagService)])
+        description = manager.tool_specs[0].description
+
+        assert "tags: list[str]" in description
+        assert "tags: list)" not in description  # the pre-fix, parameter-dropped form
+
+    def test_plain_builtin_params_are_unaffected(self):
+        """Confirms this fix doesn't change formatting for the common
+        case (str/int/etc params), which never went through the buggy
+        branch to begin with."""
+
+        class GreetService:
+            def greet(self, name: str, age: int = 5) -> str:
+                """Greet."""
+                return "ok"
+
+        manager = ToToolManager([Service(name="Greet", service=GreetService)])
+        description = manager.tool_specs[0].description
+
+        assert "name: str" in description
+        assert "age?" in description
+
+    def test_same_fix_applies_inside_a_module(self):
+        """core/module.py has its own, separately-defined _format_param
+        -- confirms the module-nested path was fixed too, not just the
+        top-level Service path."""
+        from dataclasses import dataclass
+
+        from to_tool_manager.core.module import Module
+
+        @dataclass
+        class CreateUserSchema:
+            name: str
+            email: str
+
+        class UserService:
+            def create_user(self, data: CreateUserSchema) -> str:
+                """Create a user."""
+                return "ok"
+
+        module = Module(name="Ops", services=[Service(name="Users", service=UserService)])
+        manager = ToToolManager([module])
+        description = manager.tool_specs[0].description
+
+        assert "data: CreateUserSchema{name: str, email: str}" in description

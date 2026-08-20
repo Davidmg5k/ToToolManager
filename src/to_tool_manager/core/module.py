@@ -34,6 +34,7 @@ from to_tool_manager.core.types import (
     ToolResponse,
     ToolSpec,
     _is_complex_type,
+    describe_complex_type,
 )
 
 if TYPE_CHECKING:
@@ -47,39 +48,11 @@ _MODULE_OPERATIONS_CONTRACT_REF = (
 )
 
 
-def _get_model_fields(annotation: Any) -> dict[str, str] | None:
-    """Extract field names and types from a Pydantic BaseModel or dataclass."""
-    if hasattr(annotation, "model_fields"):
-        fields = {}
-        for name, field in annotation.model_fields.items():
-            type_name = getattr(field.annotation, "__name__", str(field.annotation))
-            if field.is_required():
-                fields[name] = type_name
-            else:
-                fields[name] = f"{type_name} (optional)"
-        return fields
-    if hasattr(annotation, "__dataclass_fields__"):
-        import dataclasses
-        fields = {}
-        for f in dataclasses.fields(annotation):
-            type_name = getattr(f.type, "__name__", str(f.type)) if f.type is not None else "Any"
-            fields[f.name] = type_name
-        return fields
-    return None
-
-
 def _format_param(p: ParamSpec) -> str:
     type_name = getattr(p.annotation, "__name__", str(p.annotation))
     marker = "" if p.required else "?"
     if _is_complex_type(p.annotation):
-        fields = _get_model_fields(p.annotation)
-        if fields:
-            field_strs = []
-            for fname, ftype in fields.items():
-                field_strs.append(f"{fname}: {ftype}")
-            fields_detail = ", ".join(field_strs)
-            return f"{p.name}{marker}: {{{fields_detail}}}"
-        return f"{p.name}{marker}: {type_name}"
+        return f"{p.name}{marker}: {describe_complex_type(p.annotation)}"
     if p.required:
         return f"{p.name}: {type_name}"
     return f"{p.name}?"

@@ -1,7 +1,7 @@
 ﻿import json
 import asyncio
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlmodel import Session
 
@@ -9,6 +9,11 @@ from app import engine
 from app.controller import (
     build_communication_module,
     build_user_service,
+    build_order_service,
+    build_auth_service,
+    build_inventory_service,
+    build_payment_service,
+    build_notification_service,
     build_commerce_module,
     ChatController,
 )
@@ -41,6 +46,11 @@ def _get_manager():
     session = Session(engine)
     manager = ToToolManager([
             build_user_service(session),
+            build_order_service(session),
+            build_auth_service(session),
+            build_inventory_service(session),
+            build_payment_service(session),
+            build_notification_service(session),
             build_commerce_module(session),
             build_communication_module(session),
         ],
@@ -94,7 +104,7 @@ async def create_session(request: Request):
 
 
 @chat_router.get("/sessions")
-async def list_sessions():
+async def list_sessions(request: Request):
     controller, db = _get_chat_controller()
     try:
         sessions = await controller.list_sessions()

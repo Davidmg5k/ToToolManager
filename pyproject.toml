@@ -9,13 +9,26 @@ authors = [
 requires-python = ">=3.12"
 license = "MIT"
 repository = "https://github.com/Davidmg5k/ToToolManager"
+keywords = [
+    "llm",
+    "agents",
+    "tool-calling",
+    "function-calling",
+    "pydantic-ai",
+    "mcp",
+    "ai-agents",
+]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+    "Typing :: Typed",
 ]
 dependencies = []
 
@@ -23,18 +36,28 @@ dependencies = []
 Homepage = "https://github.com/Davidmg5k/ToToolManager"
 Repository = "https://github.com/Davidmg5k/ToToolManager"
 Changelog = "https://github.com/Davidmg5k/ToToolManager/blob/main/CHANGELOG.md"
+"Bug Tracker" = "https://github.com/Davidmg5k/ToToolManager/issues"
 
 [project.optional-dependencies]
 pydantic-ai = [
-    "pydantic-ai>=2.10.0",
-    "pydantic-ai-harness>=0.7.0",
-    "pydantic-ai-skills>=1.2.0",
-    "subagents-pydantic-ai>=0.2.10",
+    "pydantic-ai>=2.10.0,<3.0.0",
+    "pydantic-ai-harness>=0.7.0,<1.0.0",
+    "pydantic-ai-skills>=1.2.0,<2.0.0",
+    "subagents-pydantic-ai>=0.2.10,<0.3.0",
 ]
 
 [build-system]
 requires = ["uv_build>=0.8.15,<0.9.0"]
 build-backend = "uv_build"
+
+[tool.uv]
+# Transitive dependency of the fastmcp/pydantic-ai-harness auth stack
+# (authlib, google-auth, joserfc, pyjwt all pull it in). Forces a floor
+# on cryptography specifically -- rather than adding it as a direct
+# project dependency, which would misrepresent the actual dependency
+# graph -- to pull in the fix for PYSEC-2026-3552 (Bleichenbacher oracle,
+# fixed in 50.0.0) regardless of what any transitive dependency pins.
+override-dependencies = ["cryptography>=50.0.0"]
 
 [dependency-groups]
 dev = [

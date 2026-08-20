@@ -44,6 +44,74 @@ def _is_complex_type(annotation: Any) -> bool:
     return False
 
 
+def _complex_type_field_names(annotation: Any) -> list[str] | None:
+    """Returns the field names of `annotation` if it's a shape we know
+    how to introspect (dataclass, Pydantic BaseModel, NamedTuple,
+    TypedDict), or None otherwise (generic containers like list[X],
+    Optional[X], or an arbitrary non-introspectable class)."""
+    if hasattr(annotation, '__dataclass_fields__'):
+        return list(annotation.__dataclass_fields__.keys())
+    if hasattr(annotation, 'model_fields'):
+        return list(annotation.model_fields.keys())
+    if hasattr(annotation, '_fields') and hasattr(annotation, '_field_defaults'):
+        return list(annotation._fields)
+    is_typeddict = getattr(typing, 'is_typeddict', None)
+    if is_typeddict is not None and is_typeddict(annotation):
+        return list(getattr(annotation, '__annotations__', {}).keys())
+    return None
+
+
+def describe_complex_type(annotation: Any) -> str:
+    """Renders `annotation` for a tool description: the bare type name
+    for anything `_complex_type_field_names` can't introspect (e.g.
+    `list[str]`, `Optional[int]`, an arbitrary opaque class), or
+    `TypeName{field: type, ...}` for a dataclass / Pydantic BaseModel /
+    NamedTuple / TypedDict -- so an LLM constructing `args` for a tool
+    call actually sees what shape a nested object needs, instead of
+    just an opaque class name it has no way to expand on its own.
+
+    This is what `_is_complex_type`'s own docstring ("needs its full
+    signature displayed in tool descriptions") describes; the field
+    expansion itself lives here so both `core/manager.py` and
+    `core/module.py` -- which each format an operation's parameter list
+    into a tool description -- share one implementation instead of two
+    copies that could silently drift apart.
+    """
+    type_name = _type_display_name(annotation)
+    field_names = _complex_type_field_names(annotation)
+    if not field_names:
+        return type_name
+
+    try:
+        hints = typing.get_type_hints(annotation)
+    except Exception:
+        # Unresolvable forward references, missing imports in the
+        # annotation's own module, etc. -- fall back to the bare name
+        # rather than raising out of what's meant to be best-effort
+        # prompt text.
+        hints = {}
+
+    field_strs = []
+    for name in field_names:
+        field_type = hints.get(name)
+        type_str = _type_display_name(field_type) if field_type is not None else 'Any'
+        field_strs.append(f"{name}: {type_str}")
+    return f"{type_name}{{{', '.join(field_strs)}}}"
+
+
+def _type_display_name(annotation: Any) -> str:
+    """`getattr(annotation, "__name__", str(annotation))`, but correct
+    for parameterized generics: `list[str].__name__` is `"list"` in
+    current Python (the `__name__` attribute a generic alias exposes is
+    its unparameterized origin's), which would silently drop the type
+    parameter from tool descriptions (`list[str]` -> `list`). Preferring
+    `str(annotation)` whenever the annotation has a generic origin
+    keeps `list[str]`, `dict[str, int]`, `Optional[int]` etc. intact."""
+    if typing.get_origin(annotation) is not None:
+        return str(annotation)
+    return getattr(annotation, '__name__', str(annotation))
+
+
 # Accepted shapes for a category argument on the public API: a single
 # string, any sequence of strings, an already-normalized frozenset, or
 # None. Internally everything is normalized to frozenset[str].

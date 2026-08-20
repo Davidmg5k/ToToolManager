@@ -60,8 +60,15 @@ from to_tool_manager.core.planner import (
     StepStatus,
 )
 from to_tool_manager.security.middleware import Middleware, ToolMiddleware
-from to_tool_manager.observability import LoggingMiddleware
-from to_tool_manager.resilience import TimeoutMiddleware
+from to_tool_manager.observability import (
+    InMemoryMetricsCollector,
+    LoggingMiddleware,
+    MetricsCollector,
+    MetricsMiddleware,
+    TracingMiddleware,
+)
+from to_tool_manager.resilience import CircuitBreakerMiddleware, CircuitState, RetryMiddleware, TimeoutMiddleware
+from to_tool_manager.operations import HealthReport, ProbeHealth, ServiceHealth, check_manager_health
 
 
 __all__ = [
@@ -96,8 +103,20 @@ __all__ = [
     "ToolMiddleware",
     # Observability
     "LoggingMiddleware",
+    "MetricsCollector",
+    "InMemoryMetricsCollector",
+    "MetricsMiddleware",
+    "TracingMiddleware",
     # Resilience
     "TimeoutMiddleware",
+    "RetryMiddleware",
+    "CircuitBreakerMiddleware",
+    "CircuitState",
+    # Operations
+    "HealthReport",
+    "ServiceHealth",
+    "ProbeHealth",
+    "check_manager_health",
     # Builders
     "build_agent",
     "build_mcp_agent",

@@ -66,17 +66,52 @@ class AgentOrchestrator:
     # -------------------------------------------------------------------
 
     async def startup(self) -> None:
-        """Executes startup hooks and emits ORCHESTRATOR_STARTED event."""
+        """Executes startup hooks and emits ORCHESTRATOR_STARTED event.
+
+        Fail-fast: if a handler raises, remaining handlers do NOT run
+        and the exception propagates immediately -- appropriate for
+        startup, where a failed hook (e.g. a dependency that didn't
+        come up) should generally abort the rest of startup rather than
+        silently continue. Contrast with `shutdown()`, which is
+        best-effort for the opposite reason.
+        """
         await self._emit_event(OrchestratorEvent(
             type=OrchestratorEventType.ORCHESTRATOR_STARTED,
             data={"agents_count": len(self.__agents)},
         ))
 
     async def shutdown(self) -> None:
-        """Executes shutdown hooks and emits ORCHESTRATOR_STOPPED event."""
-        await self._emit_event(OrchestratorEvent(
-            type=OrchestratorEventType.ORCHESTRATOR_STOPPED,
-        ))
+        """Executes shutdown hooks and emits ORCHESTRATOR_STOPPED event.
+
+        Best-effort, unlike `startup()`: EVERY registered handler gets a
+        chance to run its cleanup, even if an earlier handler raises.
+        Bloque 7 audit finding -- the previous implementation used the
+        same fail-fast `_emit_event` as `startup()`, so one handler
+        raising during shutdown (e.g. closing a DB connection that
+        itself errors) silently skipped every handler registered after
+        it, leaking whatever THEY were meant to clean up. If one or more
+        handlers raised, this re-raises as an `ExceptionGroup` after
+        every handler has had its turn, so the failure is still visible
+        to the caller without it having cost the other handlers their
+        chance to clean up first.
+
+        Note on `PlanStore`: the roadmap this audit follows from
+        mentions auditing shutdown "incluyendo PlanStore persistentes"
+        -- no `PlanStore` (or any other persistent, closeable resource)
+        currently exists anywhere in this codebase to audit; `Plan` is a
+        plain Pydantic model with no storage layer of its own. Nothing
+        was found to fix on that front because there is currently
+        nothing there.
+        """
+        event = OrchestratorEvent(type=OrchestratorEventType.ORCHESTRATOR_STOPPED)
+        errors: list[Exception] = []
+        for handler in self.__event_handlers:
+            try:
+                await handler.on_event(event)
+            except Exception as exc:
+                errors.append(exc)
+        if errors:
+            raise ExceptionGroup("one or more shutdown handlers failed", errors)
 
     # -------------------------------------------------------------------
     # Agent management
