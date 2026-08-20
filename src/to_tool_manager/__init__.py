@@ -123,7 +123,7 @@ __all__ = [
     "build_mcp_server",
 ]
 
-__version__ = "0.4.5"
+__version__ = "0.4.8"
 
 
 def __getattr__(name: str):
