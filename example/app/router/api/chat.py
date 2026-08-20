@@ -1,4 +1,4 @@
-﻿import json
+import json
 import asyncio
 
 from fastapi import APIRouter, Request, HTTPException
@@ -9,11 +9,6 @@ from app import engine
 from app.controller import (
     build_communication_module,
     build_user_service,
-    build_order_service,
-    build_auth_service,
-    build_inventory_service,
-    build_payment_service,
-    build_notification_service,
     build_commerce_module,
     ChatController,
 )
@@ -42,15 +37,10 @@ SYSTEM_PROMPT = (
 )
 
 
-def _get_manager():
+def _build_manager():
     session = Session(engine)
     manager = ToToolManager([
             build_user_service(session),
-            build_order_service(session),
-            build_auth_service(session),
-            build_inventory_service(session),
-            build_payment_service(session),
-            build_notification_service(session),
             build_commerce_module(session),
             build_communication_module(session),
         ],
@@ -203,20 +193,16 @@ async def chat_send(chat_id: str, request: Request):
 
         await controller.add_message(CreateChatMessage(chat_id=uid, role="user", content=message))
 
-        manager, tools_session = _get_manager()
-        agent = build_agent(model=MODEL, manager=manager, system_prompt=SYSTEM_PROMPT)
-
         try:
             task_id = await chat_task_manager.start(
                 chat_id=uid,
                 message=message,
-                agent=agent,
+                model=MODEL,
+                system_prompt=SYSTEM_PROMPT,
                 title=new_title,
             )
         except ValueError as e:
             return error(str(e), status=409)
-        finally:
-            tools_session.close()
 
         return ok({"task_id": task_id, "status": "started"})
     finally:
@@ -274,7 +260,7 @@ async def chat_events(chat_id: str):
 async def chat(request: Request):
     form = await request.form()
     message = form.get("message", "")
-    manager, tools_session = _get_manager()
+    manager, tools_session = _build_manager()
     try:
         agent = build_agent(
             model=MODEL,

@@ -28,9 +28,9 @@ window.API = (function () {
         var fetchOpts = { method: method, headers: headers };
 
         if (body !== undefined && body !== null) {
-            if (body instanceof FormData) {
+            if (body instanceof FormData || body instanceof URLSearchParams) {
                 fetchOpts.body = body;
-                // Let browser set Content-Type with boundary for FormData
+                // Let browser set Content-Type (boundary for FormData, urlencoded for URLSearchParams)
             } else if (typeof body === 'object') {
                 headers['Content-Type'] = 'application/json';
                 fetchOpts.body = JSON.stringify(body);

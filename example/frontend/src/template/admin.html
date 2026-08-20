@@ -1,8 +1,8 @@
-{% extends 'layout/layout.html' %}
+﻿{% extends 'layout/layout.html' %}
 
 {#
     Admin pages get their sidebar and no-footer layout automatically from
-    layout.html based on the `admin` context flag — nothing to duplicate here.
+    layout.html based on the `admin` context flag â€” nothing to duplicate here.
     This template adds:
       - {% block page_config %}  inside <head> for page-level configuration scripts
       - {% block admin_scripts %} at end of <body> for page-level runtime scripts
@@ -13,6 +13,6 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="/static/js/crud.js"></script>
+<script src="/static/js/crud.js?v=2"></script>
 {% block admin_scripts %}{% endblock %}
 {% endblock %}

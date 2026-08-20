@@ -42,7 +42,8 @@ plus a "when": {{"op": <id>, "outcome": "success"|"error",
 on an earlier item's result in this same call -- unmet conditions are
 skipped (reported, not executed), no extra request needed to decide.
 Example: {{"operations": [{{"id": "step1", "method": "create_user",
-"args": {{"name": "..."}}}}, {{"method": "list_users", "args": {{}},
+"args": {{"data": {{"user_name": "...", "email": "...",
+"password": "..."}}}}}}, {{"method": "list_users", "args": {{}},
 "when": {{"op": "step1", "outcome": "error"}}}}]}}
 
 Available tools:

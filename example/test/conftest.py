@@ -1,6 +1,5 @@
 ﻿import sys
 import os
-from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -18,16 +17,12 @@ from app.types.inventory import CreateProduct
 from app.types.payment import CreatePayment
 from app.types.notification import CreateNotification
 
-TEST_DB_DIR = Path(__file__).parent.parent / "data" / "test"
-TEST_DB_PATH = TEST_DB_DIR / "test.db"
-TEST_DATABASE_URL = f"sqlite:///{TEST_DB_PATH}"
-
 
 @pytest.fixture(name="engine", autouse=True)
-def engine_fixture():
-    TEST_DB_DIR.mkdir(parents=True, exist_ok=True)
+def engine_fixture(tmp_path):
+    db_path = tmp_path / "test.db"
     eng = create_engine(
-        TEST_DATABASE_URL,
+        f"sqlite:///{db_path}",
         connect_args={"check_same_thread": False},
     )
     SQLModel.metadata.create_all(eng)

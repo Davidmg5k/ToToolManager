@@ -30,8 +30,10 @@ from to_tool_manager.core.types import (
 from to_tool_manager.security.middleware import Middleware, ToolMiddleware
 
 _OPERATIONS_CONTRACT_REF = (
-    "See operations contract above. "
-    "Each item: {{\"method\": <name>, \"args\": {{...}}}}. "
+    "Each operation: {{\"method\": <name>, \"args\": {{\"<param_name>\": <value>, ...}}}}. "
+    "The \"args\" keys MUST match the parameter names listed above "
+    "(e.g. a method showing \"data: SomeType\" expects "
+    "{{\"data\": {{...}}}}, NOT the individual fields flattened). "
     "Optional \"id\" and \"when\" for sequencing."
 )
 

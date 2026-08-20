@@ -77,8 +77,9 @@ class ChatTaskManager:
         self,
         chat_id: UUID,
         message: str,
-        agent: Any,
         *,
+        model: str,
+        system_prompt: str,
         deps: Any = None,
         title: str | None = None,
     ) -> str:
@@ -97,7 +98,11 @@ class ChatTaskManager:
         self._active[key] = task
 
         task._async_task = asyncio.create_task(
-            self._run(task, chat_id, message, agent, deps=deps, title=title)
+            self._run(
+                task, chat_id, message,
+                model=model, system_prompt=system_prompt,
+                deps=deps, title=title,
+            )
         )
         return task_id
 
@@ -124,8 +129,9 @@ class ChatTaskManager:
         task: _ChatTask,
         chat_id: UUID,
         message: str,
-        agent: Any,
         *,
+        model: str,
+        system_prompt: str,
         deps: Any = None,
         title: str | None = None,
     ) -> None:
@@ -142,6 +148,24 @@ class ChatTaskManager:
                 from app.service.resource.repository import ChatSessionRepository
                 session_repo = ChatSessionRepository(chat_session)
                 session_repo.update(chat_id, {"title": title, "updated_at": datetime.utcnow()})
+
+            from app.controller import (
+                build_user_service,
+                build_commerce_module,
+                build_communication_module,
+            )
+            from app.security.middleware_ai.sanitize import SensitiveFieldMiddlewareAI
+            from to_tool_manager import ToToolManager
+            from to_tool_manager.adapters.pydantic_ai import build_agent
+
+            manager = ToToolManager([
+                    build_user_service(tools_session),
+                    build_commerce_module(tools_session),
+                    build_communication_module(tools_session),
+                ],
+                middlewares=[SensitiveFieldMiddlewareAI()]
+            )
+            agent = build_agent(model=model, manager=manager, system_prompt=system_prompt)
 
             stream = agent.run_stream(message, deps=deps)
             async with stream as result:

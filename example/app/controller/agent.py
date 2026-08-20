@@ -1,4 +1,5 @@
-﻿from app.security.middleware_ai.sanitize import RemoverPasswordsMiddlewareAI
+from pydantic import ValidationError
+from app.security.middleware_ai.sanitize import RemoverPasswordsMiddlewareAI
 from to_tool_manager import Service, Module, ErrorMap
 
 from app.service import (
@@ -36,6 +37,7 @@ def build_user_service(session) -> Service:
             .map(NotFoundException, category="not_found")
             .map(AlreadyExistsException, category="already_exists")
             .map(ValidationException, category="validation_error", retryable=True)
+            .map(ValidationError, category="validation_error", retryable=True)
         ),
         args=(repo,),
         singleton=True,
