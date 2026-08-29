@@ -1,3 +1,4 @@
+import threading
 from typing import Any, List, Sequence
 
 from pydantic_ai import Agent, models
@@ -35,6 +36,7 @@ class AgentOrchestrator:
 
     def __init__(self, agents: List[AgentInterface] | None = None) -> None:
         self.__agents: List[AgentInterface] = agents or []
+        self.__agents_lock = threading.Lock()
         self.__agent: Agent | None = None
         self.__event_handlers: List[OrchestratorEventHandler] = []
 
@@ -160,7 +162,9 @@ class AgentOrchestrator:
         """
         sub_agents: List[SubAgent] = []
 
-        for agent in self.__agents:
+        with self.__agents_lock:
+            agents_snapshot = list(self.__agents)
+        for agent in agents_snapshot:
             agent.build_agent()
             sub_agents.append(SubAgent(agent.agent.agent))
 
@@ -206,9 +210,10 @@ class AgentOrchestrator:
         Raises:
             ValueError: If the agent is already registered.
         """
-        if agent in self.__agents:
-            raise ValueError("Agent already registered.")
-        self.__agents.append(agent)
+        with self.__agents_lock:
+            if agent in self.__agents:
+                raise ValueError("Agent already registered.")
+            self.__agents.append(agent)
 
     def add_agents(self, agents: List[AgentInterface]) -> None:
         """Adds multiple agents to the orchestrator.
@@ -216,15 +221,18 @@ class AgentOrchestrator:
         Raises:
             ValueError: If any of the agents is already registered.
         """
-        existing = set(id(a) for a in self.__agents)
-        for agent in agents:
-            if id(agent) in existing:
-                raise ValueError("Agent already registered.")
-        self.__agents.extend(agents)
+        with self.__agents_lock:
+            existing = set(id(a) for a in self.__agents)
+            for agent in agents:
+                if id(agent) in existing:
+                    raise ValueError("Agent already registered.")
+            self.__agents.extend(agents)
 
     def has_agent(self, name: str) -> bool:
         """Checks if an agent with the given name is registered."""
-        for agent in self.__agents:
+        with self.__agents_lock:
+            snapshot = list(self.__agents)
+        for agent in snapshot:
             agent_name = getattr(agent, 'name', None)
             if agent_name and agent_name == name:
                 return True
@@ -232,7 +240,9 @@ class AgentOrchestrator:
 
     def get_agent(self, name: str) -> AgentInterface | None:
         """Retrieves an agent by name. Returns None if not found."""
-        for agent in self.__agents:
+        with self.__agents_lock:
+            snapshot = list(self.__agents)
+        for agent in snapshot:
             agent_name = getattr(agent, 'name', None)
             if agent_name and agent_name == name:
                 return agent
@@ -244,15 +254,17 @@ class AgentOrchestrator:
         Raises:
             ValueError: If the agent is not found.
         """
-        if agent not in self.__agents:
-            raise ValueError("Agent not found.")
-        self.__agents.remove(agent)
-        self.__agent = None
+        with self.__agents_lock:
+            if agent not in self.__agents:
+                raise ValueError("Agent not found.")
+            self.__agents.remove(agent)
+            self.__agent = None
 
     def clear_agents(self) -> None:
         """Removes all registered agents and invalidates the main agent."""
-        self.__agents.clear()
-        self.__agent = None
+        with self.__agents_lock:
+            self.__agents.clear()
+            self.__agent = None
 
     # -------------------------------------------------------------------
     # Events
@@ -284,7 +296,9 @@ class AgentOrchestrator:
     def expose_as_mcp_server(self, name: str):
         """Exposes the agents as an MCP server."""
         sub_agents = []
-        for agent in self.__agents:
+        with self.__agents_lock:
+            agents_snapshot = list(self.__agents)
+        for agent in agents_snapshot:
             agent.build_agent()
             sub_agents.extend(agent.agent.manager.tool_specs)
         return build_mcp_server(name, sub_agents)

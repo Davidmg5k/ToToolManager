@@ -34,6 +34,10 @@ else:
 
 from to_tool_manager.core.conditions import _evaluate_when
 
+_LIST_MARKER_RE = re.compile(r"(^|\n)\s*(-|\*|\d+[.)])\s")
+_SENTENCE_SPLIT_RE = re.compile(r"[.;\n]")
+
+
 if TYPE_CHECKING:
     from to_tool_manager.orchestrator import ToToolManager
     from to_tool_manager.core.types import ToolSpec
@@ -480,7 +484,11 @@ class Planner:
     whichever steps completed — a typed, ergonomic snapshot for code that
     consumes the finished plan. It doesn't change how steps read each
     other's data *during* execution — that's still `$from` (R1).
-    """
+    
+
+    Request-scoped invariant: Planner instances are created per-request
+    (e.g. in chat router). Do NOT cache or share across requests --
+    internal state (plan history, tool results) is request-specific."""
 
     def __init__(
         self,
@@ -1104,14 +1112,14 @@ class PlanBuilder:
 # R8 — complexity heuristic for planning_mode="gated"
 # ---------------------------------------------------------------------------
 
-_MULTI_STEP_CONNECTORS = (
+_MULTI_STEP_CONNECTORS = frozenset((
     # Spanish
     "y luego", "y despues", "y tambien", "y ademas", "despues de",
     "una vez que", "si falla", "si no", "en caso de", "antes de",
     # English
     "and then", "after that", "once done", "also", "as well as",
     "if it fails", "in case", "before that",
-)
+))
 
 
 def _normalize_for_heuristic(text: str) -> str:
@@ -1164,8 +1172,8 @@ def request_looks_complex(
         score += 1
 
     words = normalized.split()
-    has_list_markers = bool(re.search(r"(^|\n)\s*(-|\*|\d+[.)])\s", prompt))
-    sentence_count = len([s for s in re.split(r"[.;\n]", prompt) if s.strip()])
+    has_list_markers = bool(_LIST_MARKER_RE.search(prompt))
+    sentence_count = len([s for s in _SENTENCE_SPLIT_RE.split(prompt) if s.strip()])
     if len(words) >= word_threshold or has_list_markers or sentence_count >= 3:
         score += 1
 

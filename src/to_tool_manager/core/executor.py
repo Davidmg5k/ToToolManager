@@ -97,6 +97,7 @@ def make_safe_caller(
     error_map: Mapping[type[BaseException], Any] | ErrorMap | None = None,
     error_rules: Sequence[ErrorRule] = (),
     sanitize_system_errors: bool = True,
+    skip_coercion: bool = False,
 ) -> Callable[..., "Any"]:
     """
     Wraps `func` (sync or async, bound method) so calling it always
@@ -113,23 +114,24 @@ def make_safe_caller(
     is_coroutine = inspect.iscoroutinefunction(func)
 
     async def caller(**kwargs) -> ToolResponse:
-        try:
-            kwargs = coerce_kwargs(func, kwargs)
-        except CoercionError as exc:
-            # Structurally unrecoverable coercion failure (e.g. a nested
-            # object is missing a required field) -- reported as a
-            # retryable validation error rather than falling through to
-            # the generic/unclassified path below, so the LLM gets a
-            # specific, actionable message about which argument is wrong.
-            return ToolResponse(
-                error=ToolError(
-                    category=frozenset({"validation_error"}),
-                    message=str(exc),
-                    exception_type="CoercionError",
-                    retryable=True,
-                    handled=True,
+        if not skip_coercion:
+            try:
+                kwargs = coerce_kwargs(func, kwargs)
+            except CoercionError as exc:
+                # Structurally unrecoverable coercion failure (e.g. a nested
+                # object is missing a required field) -- reported as a
+                # retryable validation error rather than falling through to
+                # the generic/unclassified path below, so the LLM gets a
+                # specific, actionable message about which argument is wrong.
+                return ToolResponse(
+                    error=ToolError(
+                        category=frozenset({"validation_error"}),
+                        message=str(exc),
+                        exception_type="CoercionError",
+                        retryable=True,
+                        handled=True,
+                    )
                 )
-            )
         try:
             result = await func(**kwargs) if is_coroutine else func(**kwargs)
             return ToolResponse(content=result)

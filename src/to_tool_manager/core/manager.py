@@ -1,4 +1,4 @@
-﻿"""
+"""
 ToToolManager: the single agnostic entry point.
 
 Core design: ONE tool per Service. Give it a list of `Service` and get
@@ -106,6 +106,8 @@ class ToToolManager:
         self._specs_lock = threading.Lock()
         self._service_specs: list[ToolSpec] | None = None
         self._service_specs_lock = threading.Lock()
+        # GIL assumption: Lock acquisition/release provides the necessary
+        # happens-before edges for _service_specs visibility across threads.
 
     @property
     def middlewares(self):
@@ -212,6 +214,7 @@ class ToToolManager:
                     error_map=service.error_map,
                     error_rules=service.error_rules,
                     sanitize_system_errors=service.sanitize_system_errors,
+                    skip_coercion=service.skip_coercion,
                 )
             else:
                 bound_method = getattr(instance, method_info.name)
@@ -220,6 +223,7 @@ class ToToolManager:
                     error_map=service.error_map,
                     error_rules=service.error_rules,
                     sanitize_system_errors=service.sanitize_system_errors,
+                    skip_coercion=service.skip_coercion,
                 )
 
             for tmw in tool_mws:
@@ -442,10 +446,20 @@ class ToToolManager:
                 self._specs = built
             return self._specs
 
+    def _invalidate_cache_unlocked(self) -> None:
+        """Invalidate cached specs. Caller must hold both locks."""
+        """Precondition: both _service_specs_lock and _specs_lock are held.
+        Postcondition: _specs and _service_specs are None.
+        """
+        self._specs = None
+        self._service_specs = None
+
     def refresh(self) -> None:
-        with self._specs_lock, self._service_specs_lock:
-            self._specs = None
-            self._service_specs = None
+        """Invalidate cached tool specs so they are rebuilt on next access."""
+        """Precondition: none.
+        Postcondition: next tool_specs/service_specs access triggers a full rebuild."""
+        with self._service_specs_lock, self._specs_lock:
+            self._invalidate_cache_unlocked()
 
     def with_planner(
         self,
@@ -490,11 +504,22 @@ class ToToolManager:
         return Planner(self, dependency_graph=graph, state_type=state_type)
 
     def register_middleware(self, middlewares: Sequence[Middleware] | Middleware) -> None:
-        """Register middleware at runtime (appends to global list)."""
+        """Register middleware at runtime (appends to global list).
+
+        Thread-safe: acquires both cache locks before mutating __middlewares
+        and invalidating caches, preventing races with concurrent tool_specs
+        reads.
+
+        Precondition: middlewares is a Middleware or sequence of Middleware.
+        Postcondition: __middlewares is extended; cached specs are invalidated.
+        """
         if isinstance(middlewares, Middleware):
             middlewares = [middlewares]
-        if self.__middlewares is None:
-            self.__middlewares = list(middlewares)
-        else:
-            self.__middlewares = list(self.__middlewares) + list(middlewares)
-        self.refresh()
+        # Acquire both locks in the same order as tool_specs
+        # (_service_specs_lock first, then _specs_lock) to prevent deadlocks.
+        with self._service_specs_lock, self._specs_lock:
+            if self.__middlewares is None:
+                self.__middlewares = list(middlewares)
+            else:
+                self.__middlewares = list(self.__middlewares) + list(middlewares)
+            self._invalidate_cache_unlocked()

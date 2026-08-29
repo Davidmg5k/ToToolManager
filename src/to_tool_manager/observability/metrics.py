@@ -31,9 +31,13 @@ class MetricsCollector(Protocol):
     (OpenTelemetry) -- this module stays agnostic about which.
     """
 
-    def record_duration(self, name: str, seconds: float, tags: Mapping[str, str]) -> None: ...
+    def record_duration(self, name: str, seconds: float, tags: Mapping[str, str]) -> None:
+        """Record a timing measurement for the given operation name."""
+        ...
 
-    def increment(self, name: str, tags: Mapping[str, str], value: int = 1) -> None: ...
+    def increment(self, name: str, tags: Mapping[str, str], value: int = 1) -> None:
+        """Increment a counter by the given value (default 1)."""
+        ...
 
 
 @dataclass
@@ -75,9 +79,14 @@ class InMemoryMetricsCollector:
         with self._lock:
             if tags is not None:
                 return list(self._durations.get(self._key(name, tags), []))
-            return [v for (n, _), values in self._durations.items() if n == name for v in values]
+            result: list[float] = []
+        for (n, _), values in self._durations.items():
+            if n == name:
+                result.extend(values)
+        return result
 
     def get_count(self, name: str, tags: Mapping[str, str] | None = None) -> int:
+        """Return the current counter value for the given name."""
         with self._lock:
             if tags is not None:
                 return self._counters.get(self._key(name, tags), 0)

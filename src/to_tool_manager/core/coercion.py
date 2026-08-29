@@ -209,6 +209,25 @@ def coerce_value(annotation: Any, value: Any) -> Any:
     return value
 
 
+@lru_cache(maxsize=256)
+def _get_signature_hints(func: Callable[..., Any]) -> tuple[inspect.Signature, dict[str, Any]]:
+    """Cache inspect.signature and get_type_hints for a callable.
+
+    Called once per unique func object; subsequent calls return the
+    cached result. Avoids repeated introspection overhead on hot paths
+    (every tool call goes through coerce_kwargs).
+    """
+    try:
+        sig = inspect.signature(func)
+    except (ValueError, TypeError):
+        sig = inspect.Signature.empty
+    try:
+        hints = get_type_hints(func)
+    except Exception:
+        hints = {}
+    return sig, hints
+
+
 def coerce_kwargs(func: Callable[..., Any], kwargs: dict[str, Any]) -> dict[str, Any]:
     """Coerces every argument in `kwargs` to match `func`'s resolved
     annotations (via `get_type_hints`, so forward references and
@@ -220,15 +239,9 @@ def coerce_kwargs(func: Callable[..., Any], kwargs: dict[str, Any]) -> dict[str,
     underlying call still happens and can raise its own, more specific
     error if genuinely incompatible.
     """
-    try:
-        sig = inspect.signature(func)
-    except (ValueError, TypeError):
+    sig, hints = _get_signature_hints(func)
+    if sig is inspect.Signature.empty:
         return kwargs
-
-    try:
-        hints = get_type_hints(func)
-    except Exception:
-        hints = {}
 
     for name, param in sig.parameters.items():
         if name == "self" or name not in kwargs:

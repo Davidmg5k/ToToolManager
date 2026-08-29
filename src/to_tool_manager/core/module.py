@@ -353,20 +353,26 @@ class Module:
 
 
 async def _dispatch_to_services(manager: Any, method_name: str | None, op_args: dict) -> ToolResponse:
-    for spec in manager.tool_specs:
-        for op in spec.operations:
-            if op.name == method_name:
-                return await spec.call(operations=[{"method": method_name, "args": op_args}])
+    """Dispatch a tool call to the matching service by method name.
 
-    available = []
+    GIL assumption: The method_index dict built from tool_specs
+    is safe to read without a lock because CPython's GIL ensures
+    dict reads see the complete state from the last write. The
+    specs are rebuilt atomically (all-or-nothing) under both locks.
+    """
+    method_index: dict[str, Any] = {}
     for spec in manager.tool_specs:
         for op in spec.operations:
-            available.append(op.name)
+            method_index[op.name] = spec
+
+    if method_name in method_index:
+        spec = method_index[method_name]
+        return await spec.call(operations=[{"method": method_name, "args": op_args}])
 
     return ToolResponse(
         error=ToolError(
             category=frozenset({"unknown_operation"}),
-            message=f"Unknown operation '{method_name}'. Available: {', '.join(sorted(available))}.",
+            message=f"Unknown operation '{method_name}'. Available: {', '.join(sorted(method_index))}.",
             exception_type="ValueError",
             retryable=False,
         )

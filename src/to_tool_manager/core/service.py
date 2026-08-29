@@ -117,6 +117,14 @@ class Service:
     the manager level; module- or service-level middlewares cannot be
     disabled this way."""
 
+    skip_coercion: bool = False
+    """If True, skip argument coercion (type conversion) for this service.
+
+    Set True when the service is already fully typed and coercion adds
+    overhead with no benefit (e.g. pydantic-ai adapter which handles
+    its own argument validation). This avoids redundant introspection
+    of type hints on every call."""
+
     args: tuple = ()
     kwargs: dict = field(default_factory=dict)
 
@@ -144,6 +152,12 @@ class Service:
         the first call are guaranteed to observe exactly one constructed
         instance, never more. The lock is per-`Service` (not global), so
         unrelated `Service`s never contend with each other.
+
+        GIL assumption: CPython's GIL ensures that attribute writes
+        (self._instance) made inside the lock are visible to subsequent
+        readers without an explicit memory barrier. On free-threaded
+        builds (PEP 703) or alternative runtimes, the Lock's release
+        provides the necessary happens-before edge anyway.
         """
         if not self.singleton:
             return self.service(*self.args, **self.kwargs)

@@ -69,6 +69,12 @@ class CircuitBreakerMiddleware(Middleware):
             to trip to OPEN. Must be >= 1.
         reset_timeout: Seconds to stay OPEN before allowing one probe
             call through (HALF_OPEN). Must be positive.
+            Race condition: two concurrent failures could both see
+            state==CLOSED and both increment _failures. Under CPython's GIL
+            this is safe (increment is atomic at the bytecode level for
+            simple counters), but on free-threaded builds the _failures
+            counter should use threading.Lock for correctness.
+
 
     Example::
 

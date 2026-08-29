@@ -47,7 +47,7 @@ class AgentInterface(ABC):
         planning_mode: str = "manual",
         include_general_purpose_subagent: bool = False,
         subagent_usage_limits: Any = _UNSET,
-        skills: Sequence[Skill] | None = None,
+        skills: list[Skill] | None = None,
         tools: list[Any] | None = None,
         toolsets: list[Any] | None = None,
     ):
