@@ -119,7 +119,7 @@ class AgentOrchestrator:
 
     def init_app(
         self,
-        model: models.Model | models.KnownModelName | str,
+        model: models.Model | models.KnownModelName | str | None = None,
         *,
         output_type: Any = str,
         instructions: AgentInstructions = None,
@@ -286,5 +286,5 @@ class AgentOrchestrator:
         sub_agents = []
         for agent in self.__agents:
             agent.build_agent()
-            sub_agents.extend(agent.agent._manager.tool_specs)
+            sub_agents.extend(agent.agent.manager.tool_specs)
         return build_mcp_server(name, sub_agents)

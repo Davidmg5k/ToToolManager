@@ -13,6 +13,7 @@ from to_tool_manager.adapters.pydantic_ai import (
     EndStrategy,
     TemplateStr,
 )
+from pydantic_ai_skills import Skill
 from to_tool_manager.orchestrator.shared.agent_support import AgentSupport, _UNSET
 
 
@@ -46,6 +47,9 @@ class AgentInterface(ABC):
         planning_mode: str = "manual",
         include_general_purpose_subagent: bool = False,
         subagent_usage_limits: Any = _UNSET,
+        skills: Sequence[Skill] | None = None,
+        tools: list[Any] | None = None,
+        toolsets: list[Any] | None = None,
     ):
         """Initializes the agent with the given model and middlewares.
 
@@ -89,6 +93,12 @@ class AgentInterface(ABC):
                 fallback sub-agent alongside Module-derived ones.
             subagent_usage_limits: ``UsageLimits`` applied to every
                 delegated Module run. Uses framework default if not provided.
+            skills: Additional pydantic-ai Skills to include.
+                Forwarded to ``AgentSupport``.
+            tools: Additional tools to include beyond the auto-registered
+                services. Forwarded to ``AgentSupport``.
+            toolsets: Additional toolsets to merge with the built-in skills
+                toolset. Forwarded to ``AgentSupport``.
         """
         self.__agent_support = AgentSupport(
             model, middleware, capabilities, name,
@@ -109,6 +119,9 @@ class AgentInterface(ABC):
             planning_mode=planning_mode,
             include_general_purpose_subagent=include_general_purpose_subagent,
             subagent_usage_limits=subagent_usage_limits,
+            skills=skills,
+            tools=tools,
+            toolsets=toolsets,
         )
 
     @property

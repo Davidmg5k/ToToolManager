@@ -154,7 +154,7 @@ class TestAgentInterfaceBuildAgentOrder:
         # built from (not just AgentSupport's own bookkeeping list).
         assert len(agent.agent.services) == 1
         assert agent.agent.services[0].name == "greeter"
-        assert len(agent.agent._manager.tool_specs) == 1, (
+        assert len(agent.agent.manager.tool_specs) == 1, (
             "the manager the Agent was built from has no tool_specs for "
             "the service registered in _create_services() -- build_agent() "
             "built the Agent before _create_services() ran"

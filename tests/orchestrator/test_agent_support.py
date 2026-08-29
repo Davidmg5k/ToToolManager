@@ -32,7 +32,7 @@ class TestAgentSupport:
     def test_manager_property_not_initialized(self):
         support = AgentSupport(model="openai:gpt-4o")
         with pytest.raises(RuntimeError, match="Manager not initialized"):
-            _ = support._manager
+            _ = support.manager
 
     def test_agent_property_not_initialized(self):
         support = AgentSupport(model="openai:gpt-4o")

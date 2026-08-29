@@ -1,8 +1,11 @@
-from typing import Any, List, Sequence
+from typing import Any, List, Literal, Sequence
 
 from pydantic_ai import Agent, models
 
 from to_tool_manager import Middleware, Planner, Service, ServiceDependencyGraph, Step, build_agent
+from to_tool_manager.core.discovery import Visibility
+from to_tool_manager.core.service import ErrorRule
+from to_tool_manager.core.types import ErrorMap
 from to_tool_manager.adapters.pydantic_ai import (
     AgentInstructions,
     AgentMetadata,
@@ -14,6 +17,8 @@ from to_tool_manager.adapters.pydantic_ai import (
 )
 from to_tool_manager.core.manager import ToToolManager
 from to_tool_manager.core.module import Module
+from to_tool_manager.skills import build_skills_toolset
+from pydantic_ai_skills import Skill
 
 _UNSET: Any = object()
 
@@ -48,6 +53,9 @@ class AgentSupport:
         planning_mode: str = "manual",
         include_general_purpose_subagent: bool = False,
         subagent_usage_limits: Any = _UNSET,
+        skills: list[Skill] | None = None,
+        tools: list[Any] | None = None,
+        toolsets: list[Any] | None = None,
     ) -> None:
         """Initializes the agent support.
 
@@ -94,6 +102,13 @@ class AgentSupport:
                 fallback sub-agent alongside Module-derived ones.
             subagent_usage_limits: ``UsageLimits`` applied to every
                 delegated Module run. ``_UNSET`` uses framework default.
+            skills: Additional pydantic-ai Skills to include. These are
+                built into a separate ``SkillsToolset`` and merged with the
+                built-in skills.
+            tools: Additional tools to include beyond the auto-registered services.
+                Forwarded to ``build_agent()``.
+            toolsets: Additional toolsets to merge with the built-in skills toolset.
+                Forwarded to ``build_agent()``.
         """
         self.__model: models.Model | models.KnownModelName | str = model
         self.__middleware: Sequence[Middleware] | None = middleware
@@ -116,6 +131,9 @@ class AgentSupport:
         self.__planning_mode: str = planning_mode
         self.__include_general_purpose_subagent: bool = include_general_purpose_subagent
         self.__subagent_usage_limits: Any = subagent_usage_limits
+        self.__skills: List[Skill] = list(skills or [])
+        self.__tools: list[Any] | None = tools
+        self.__toolsets: list[Any] | None = toolsets
 
         self.__manager: ToToolManager | None = None
         self.__agent: Agent | None = None
@@ -123,7 +141,7 @@ class AgentSupport:
         self.__modules: List[Module] = []
 
     @property
-    def _manager(self) -> ToToolManager:
+    def manager(self) -> ToToolManager:
         """The underlying manager. Raises RuntimeError if build_agent() has not been called."""
         if self.__manager is None:
             raise RuntimeError(
@@ -160,7 +178,7 @@ class AgentSupport:
         """Name configured for the underlying `Agent`, if any."""
         return self.__name
 
-    def add_capability(self, capability: Any) -> "AgentSupport":
+    def add_capability(self, capability: Any):
         """Adds an agent capability (e.g. `Planning()`), fluent-style.
 
         Same pattern as `add_service`/`add_module`: purely additive,
@@ -169,36 +187,144 @@ class AgentSupport:
 
         Args:
             capability: A pydantic-ai agent capability instance.
-
-        Returns:
-            self, to allow chaining (`support.add_capability(a).add_capability(b)`).
         """
         self.__capabilities.append(capability)
-        return self
 
-    def add_service(self, name: str, service: type) -> None:
+    @property
+    def skills(self) -> List[Skill]:
+        """List of registered skills."""
+        return list(self.__skills)
+
+    def add_skill(self, skill: Skill) -> None:
+        """Adds a pydantic-ai Skill instance.
+
+        Must be called before ``build_agent()``. The skill will be built
+        into a ``SkillsToolset`` and merged with the built-in skills.
+
+        Args:
+            skill: A ``pydantic_ai_skills.Skill`` instance.
+        """
+        self.__skills.append(skill)
+
+    def add_skills(self, skills: Sequence[Skill]) -> None:
+        """Adds multiple Skills at once.
+
+        Must be called before ``build_agent()``.
+
+        Args:
+            skills: Sequence of ``pydantic_ai_skills.Skill`` instances.
+        """
+        self.__skills.extend(skills)
+
+    def add_service(self,
+        name: str,
+        service: type,
+        *,
+        description: str = "",
+        visibility: frozenset[Visibility] | None = None,
+        include: frozenset[str] | None = None,
+        exclude: frozenset[str] | None = None,
+        expose_properties: bool = False,
+        error_map: ErrorMap | dict[type[BaseException], Any] | None = None,
+        error_rules: Sequence[ErrorRule] | None = None,
+        sanitize_system_errors: bool = True,
+        singleton: bool = True,
+        middlewares: Sequence[Middleware] | None = None,
+        disable_middlewares: Sequence[str] | None = None,
+        args: tuple = (),
+        kwargs: dict | None = None,
+    ) -> None:
         """Adds a service to the agent.
+
+        All keyword arguments beyond ``name`` and ``service`` are forwarded
+        to the ``Service`` dataclass.  Omitted ``None``-defaulted params
+        use the ``Service`` dataclass defaults.
 
         Args:
             name: Unique name for the service.
             service: Service class to register.
+            description: Group-level description for this service.
+            visibility: Which method-visibility buckets to expose.
+            include: If set, ONLY these method names are exposed.
+            exclude: Method names to exclude even if otherwise eligible.
+            expose_properties: Expose read-only @property members.
+            error_map: Exception classification rules.
+            error_rules: Ordered list of exception classifiers.
+            sanitize_system_errors: Hide raw exception text from callers.
+            singleton: Share one instance across all tool calls.
+            middlewares: Middlewares applied at the method level.
+            disable_middlewares: Names of global middlewares to disable.
+            args: Positional args passed to the service constructor.
+            kwargs: Keyword args passed to the service constructor.
         """
-        self.__services.append(Service(
-            name=name, 
-            service=service
-        ))
+        svc_kwargs: dict[str, Any] = {
+            "name": name, "service": service,
+            "description": description,
+            "expose_properties": expose_properties,
+            "sanitize_system_errors": sanitize_system_errors,
+            "singleton": singleton,
+            "args": args, "kwargs": kwargs or {},
+        }
+        if visibility is not None:
+            svc_kwargs["visibility"] = visibility
+        if include is not None:
+            svc_kwargs["include"] = include
+        if exclude is not None:
+            svc_kwargs["exclude"] = exclude
+        if error_map is not None:
+            svc_kwargs["error_map"] = error_map
+        if error_rules is not None:
+            svc_kwargs["error_rules"] = error_rules
+        if middlewares is not None:
+            svc_kwargs["middlewares"] = middlewares
+        if disable_middlewares is not None:
+            svc_kwargs["disable_middlewares"] = disable_middlewares
+        self.__services.append(Service(**svc_kwargs))
 
-    def add_module(self, name: str, services: List[Service]) -> None:
+    def add_module(self,
+        name: str,
+        services: List[Service],
+        *,
+        description: str = "",
+        system_prompt: str | None = None,
+        instructions: str | None = None,
+        model: str | None = None,
+        subagent_mode: Literal["sync", "async", "auto"] = "sync",
+        include_efficiency_appendix: bool = True,
+        middlewares: Sequence[Middleware] | None = None,
+        disable_middlewares: Sequence[str] | None = None,
+    ) -> None:
         """Adds a module to the agent.
+
+        All keyword arguments beyond ``name`` and ``services`` are forwarded
+        to the ``Module`` dataclass.
 
         Args:
             name: Unique name for the module.
             services: List of services composing the module.
+            description: Group-level description for this module.
+            system_prompt: Independent system prompt for this module.
+            instructions: Dynamic instructions for this module.
+            model: Optional model override for this module's sub-agent.
+            subagent_mode: Preferred execution mode (sync/async/auto).
+            include_efficiency_appendix: Append batch-efficiency appendix.
+            middlewares: Middlewares applied at the tool level.
+            disable_middlewares: Names of global middlewares to disable.
         """
-        self.__modules.append(Module(
-            name=name,
-            services=services
-        ))
+        mod_kwargs: dict[str, Any] = {
+            "name": name, "services": services,
+            "description": description,
+            "system_prompt": system_prompt,
+            "instructions": instructions,
+            "model": model,
+            "subagent_mode": subagent_mode,
+            "include_efficiency_appendix": include_efficiency_appendix,
+        }
+        if middlewares is not None:
+            mod_kwargs["middlewares"] = middlewares
+        if disable_middlewares is not None:
+            mod_kwargs["disable_middlewares"] = disable_middlewares
+        self.__modules.append(Module(**mod_kwargs))
 
     def add_services_to_module(self, module_name: str, services: List[Service]) -> None:
         """Adds services to an existing module.
@@ -235,7 +361,7 @@ class AgentSupport:
         Returns:
             Plan created with the configured steps and dependencies.
         """
-        planner = self._manager.with_planner(dependency_graph)
+        planner = self.manager.with_planner(dependency_graph)
         plan = await planner.create_plan(steps)
         return plan        
 
@@ -284,10 +410,16 @@ class AgentSupport:
             kw["include_general_purpose_subagent"] = self.__include_general_purpose_subagent
         if self.__subagent_usage_limits is not _UNSET:
             kw["subagent_usage_limits"] = self.__subagent_usage_limits
+        if self.__skills:
+            kw["skills"] = self.__skills
+        if self.__tools is not None:
+            kw["tools"] = self.__tools
+        if self.__toolsets is not None:
+            kw["toolsets"] = self.__toolsets
 
         self.__agent = build_agent(
             self.__model, 
-            self.__manager,
+            self.__manager, 
             capabilities=self.__capabilities or None,
             **kw,
         )

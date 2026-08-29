@@ -466,6 +466,9 @@ def build_agent(
     defer_model_check: bool = False,
     metadata: AgentMetadata | None = None,
     capabilities: list | None = None,
+    tools: list[Any] | None = None,
+    toolsets: list[Any] | None = None,
+    skills: list[Any] | None = None,
     include_general_purpose_subagent: bool = False,
     subagent_usage_limits: Any = _UNSET,
     planner: Planner | None = None,
@@ -517,6 +520,14 @@ def build_agent(
         ``Module`` is automatically turned into its own sub-agent and
         appended here as part of a single ``SubAgentCapability`` -- no
         manual wiring needed, this list is only for EXTRA capabilities.
+    tools:
+        Additional tools to include beyond the auto-registered services.
+        These are appended after service tools and planner tools.
+    toolsets:
+        Additional toolsets to merge with the built-in skills toolset.
+    skills:
+        Additional pydantic-ai Skills to include. These are built into
+        a separate ``SkillsToolset`` and merged with the built-in skills.
     include_general_purpose_subagent:
         Passed straight through to ``SubAgentCapability``. If ``True``,
         adds a generic fallback sub-agent alongside the ones derived
@@ -565,7 +576,7 @@ def build_agent(
     # visit) just to immediately discard it -- that spec was never used
     # on this path in the first place (D5).
     service_specs = manager.service_specs
-    tools = to_pydantic_ai_tools(service_specs)
+    service_tools = to_pydantic_ai_tools(service_specs)
 
     # R9 — Planner integration. No `planner` passed => this block is a
     # no-op and behaves exactly as it did before Fase 4.
@@ -577,7 +588,7 @@ def build_agent(
         if planning_mode == "gated" and isinstance(resolved_instructions, str):
             service_names = list(manager.services) + list(manager.modules)
             resolved_instructions = _make_gated_instructions(resolved_instructions, service_names)
-    tools = tools + planner_tools
+    all_tools = service_tools + planner_tools + (tools or [])
 
     default_settings: ModelSettings = ModelSettings(parallel_tool_calls=True)
     merged_settings: ModelSettings = {**default_settings, **(model_settings or {})}  # type: ignore[typeddict-item]
@@ -660,10 +671,10 @@ def build_agent(
     agent = agent_cls(
         model,
         instructions=resolved_instructions,
-        tools=tools,
+        tools=all_tools,
         output_type=output_type,
         model_settings=merged_settings,
-        toolsets=[skills_toolset],
+        toolsets=[skills_toolset] + ([build_skills_toolset(skills=skills)] if skills else []) + (toolsets or []),
         capabilities=resolved_capabilities or None,
         **agent_kwargs,
     )

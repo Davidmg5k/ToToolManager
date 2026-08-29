@@ -1,7 +1,7 @@
 import json
 import asyncio
 
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlmodel import Session
 
