@@ -274,7 +274,7 @@ class TestToolDescriptionComplexTypeExpansion:
         manager = ToToolManager([Service(name="Users", service=UserService)])
         description = manager.tool_specs[0].description
 
-        assert "data: CreateUserSchema{name: str, email: str}" in description
+        assert "data: {\"name\": str, \"email\": str}" in description
 
     def test_pydantic_basemodel_fields_are_expanded(self):
         from pydantic import BaseModel
@@ -291,7 +291,7 @@ class TestToolDescriptionComplexTypeExpansion:
         manager = ToToolManager([Service(name="Users", service=UserService)])
         description = manager.tool_specs[0].description
 
-        assert "data: CreateUserSchema{name: str, age: int}" in description
+        assert "data: {\"name\": str, \"age\": int}" in description
 
     def test_namedtuple_fields_are_expanded(self):
         from typing import NamedTuple
@@ -308,7 +308,7 @@ class TestToolDescriptionComplexTypeExpansion:
         manager = ToToolManager([Service(name="Geo", service=GeoService)])
         description = manager.tool_specs[0].description
 
-        assert "point: Point{x: float, y: float}" in description
+        assert "point: {\"x\": float, \"y\": float}" in description
 
     def test_typeddict_fields_are_expanded(self):
         from typing import TypedDict
@@ -325,7 +325,7 @@ class TestToolDescriptionComplexTypeExpansion:
         manager = ToToolManager([Service(name="Geo", service=GeoService)])
         description = manager.tool_specs[0].description
 
-        assert "coords: Coordinates{lat: float, lon: float}" in description
+        assert "coords: {\"lat\": float, \"lon\": float}" in description
 
     def test_generic_container_keeps_its_type_parameter(self):
         """Companion fix caught while fixing the above: `list[str]` has
@@ -382,4 +382,4 @@ class TestToolDescriptionComplexTypeExpansion:
         manager = ToToolManager([module])
         description = manager.tool_specs[0].description
 
-        assert "data: CreateUserSchema{name: str, email: str}" in description
+        assert "data: {\"name\": str, \"email\": str}" in description

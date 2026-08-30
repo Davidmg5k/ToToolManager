@@ -31,12 +31,31 @@ from to_tool_manager.core.types import (
     ToolError,
     ToolResponse,
     ToolSpec,
+    _complex_type_field_names,
 )
 from to_tool_manager.security.middleware import Middleware, ToolMiddleware
 
 
 def _build_operations_contract(operations: Sequence[OperationSpec]) -> str:
     return OPERATIONS_CONTRACT
+
+def _maybe_wrap_flat_args(op_args: dict, params: tuple) -> dict:
+    """If a method expects a single complex-typed parameter (e.g.
+    ``data: CreateUser``) but the caller sent the fields flat (e.g.
+    ``{"user_name": "...", "email": "..."}``), wrap them under the
+    parameter name automatically."""
+    if len(params) != 1:
+        return op_args
+    param = params[0]
+    field_names = _complex_type_field_names(param.annotation)
+    if not field_names:
+        return op_args
+    if param.name in op_args:
+        return op_args
+    if set(op_args.keys()) == set(field_names):
+        return {param.name: op_args}
+    return op_args
+
 
 def _build_tool_description(
     service: Service,
@@ -241,6 +260,7 @@ class ToToolManager:
     def _build_spec_for_service(self, service: Service) -> ToolSpec:
         instance = service.get_instance()
         dispatch_table, operations = self._build_dispatch_table(service, instance)
+        op_specs_by_name = {op.name: op for op in operations}  # captured before parameter shadowing
 
         async def dispatch_call(operations: Any = None, **_ignored) -> ToolResponse:
             if not isinstance(operations, list) or not operations:
@@ -323,6 +343,7 @@ class ToToolManager:
                     continue
 
                 safe_call = dispatch_table[method_name]
+                op_args = _maybe_wrap_flat_args(op_args, op_specs_by_name[method_name].parameters) if method_name in op_specs_by_name else op_args
 
                 try:
                     response = await safe_call(**op_args)

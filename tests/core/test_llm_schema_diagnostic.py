@@ -76,16 +76,15 @@ class TestLLMArgPatterns:
         print("\n=== WRAPPED ===", r.content or r.error)
         assert r.error is None
 
-    def test_flat_args_fails(self):
+    def test_flat_args_auto_wrapped(self):
+        """Flat args are auto-wrapped under the param name when they
+        match the complex type's field names."""
         ops = [{"method": "create_user", "args": {"user_name": "u", "email": "u@e.com", "password": "p"}}]
         r = asyncio.run(self._d(ops))
-        print("\n=== FLAT ===", r.content)
-        # Error is in content (nested operations), not top-level
+        print("\n=== FLAT (auto-wrapped) ===", r.content)
         assert r.error is None
         entry = r.content[0]
-        assert entry["success"] is False
-        assert "validation_error" in entry["error"]["category"]
-        assert "unexpected keyword argument" in entry["error"]["message"]
+        assert entry["success"] is True
 
     def test_empty_args_fails(self):
         r = asyncio.run(self._d([{"method": "create_user", "args": {}}]))
