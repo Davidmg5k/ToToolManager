@@ -25,8 +25,6 @@ from typing import Any, Callable, Mapping, Sequence
 
 from to_tool_manager.core.coercion import CoercionError, coerce_kwargs
 from to_tool_manager.core.types import (
-    ErrorClassification,
-    ErrorEntry,
     ErrorMap,
     ToolError,
     ToolResponse,

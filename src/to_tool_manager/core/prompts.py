@@ -1,4 +1,4 @@
-"""
+﻿"""
 Layered prompt building. Every default block is generic (mentions no
 concrete domain like "Order" or "User") and is generated dynamically
 from whatever Services and Modules are actually registered. A programmer
@@ -11,6 +11,8 @@ callers can pass their own `custom` text in any language).
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Literal, Sequence
+from to_tool_manager.core.contracts import OPERATIONS_CONTRACT
+
 
 if TYPE_CHECKING:
     from to_tool_manager.core.module import Module
@@ -32,12 +34,8 @@ argument: a list of {{"method": <name>, "args": {{...}}}} objects.
 Call a tool ONCE with every operation you need -- never call it
 multiple times.
 
-Operations contract (ALL tools):
-Each item: {{"method": <name>, "args": {{...}}}}. Optional per-item
-"id" (else referenced by position "op0", "op1", ...) plus a "when":
-{{"op": <id>, "outcome": "success"|"error", "category"?: <str|list>}}
-on a LATER item makes it run only if an earlier item's result matches.
-Unmet conditions are skipped (reported, not executed), no extra request.
+{operations_contract}
+
 Example: {{"operations": [{{"id": "s1", "method": "create_user",
 "args": {{"user_name": "...", "email": "..."}}}},
 {{"method": "list_users", "args": {{}},
@@ -60,7 +58,6 @@ Guidelines:
   ambiguous.
 - Never expose internal implementation details.
 {DEFAULT_END}"""
-
 
 DEFAULT_INSTRUCTIONS_TEMPLATE = """\
 {DEFAULT_BEGIN}
@@ -121,6 +118,7 @@ def build_system_prompt(
         DEFAULT_BEGIN=_DEFAULT_BEGIN,
         DEFAULT_END=_DEFAULT_END,
         services_overview=_services_overview(services),
+        operations_contract=OPERATIONS_CONTRACT,
     )
     return _merge(default_block, custom, mode)
 

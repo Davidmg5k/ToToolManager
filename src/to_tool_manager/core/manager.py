@@ -1,4 +1,4 @@
-"""
+﻿"""
 ToToolManager: the single agnostic entry point.
 
 Core design: ONE tool per Service. Give it a list of `Service` and get
@@ -13,8 +13,15 @@ import threading
 from typing import Any, Sequence
 
 from to_tool_manager.core.conditions import _evaluate_when
+from to_tool_manager.core.contracts import (
+    EMPTY_OPERATIONS_ERROR,
+    INVALID_ARGS_ERROR,
+    INVALID_OPERATION_ERROR,
+    OPERATIONS_CONTRACT,
+)
 from to_tool_manager.core.discovery import class_summary, discover_methods
 from to_tool_manager.core.executor import make_safe_caller
+from to_tool_manager.core.formatters import format_param
 from to_tool_manager.core.module import Module
 from to_tool_manager.core.planner import Planner, ServiceDependencyGraph
 from to_tool_manager.core.service import Service
@@ -24,33 +31,12 @@ from to_tool_manager.core.types import (
     ToolError,
     ToolResponse,
     ToolSpec,
-    _is_complex_type,
-    describe_complex_type,
 )
 from to_tool_manager.security.middleware import Middleware, ToolMiddleware
 
-_OPERATIONS_CONTRACT_REF = (
-    "Each operation: {{\"method\": <name>, \"args\": {{\"<param_name>\": <value>, ...}}}}. "
-    "The \"args\" keys MUST match the parameter names listed above "
-    "(e.g. a method showing \"data: SomeType\" expects "
-    "{{\"data\": {{...}}}}, NOT the individual fields flattened). "
-    "Optional \"id\" and \"when\" for sequencing."
-)
-
-
-def _format_param(p: ParamSpec) -> str:
-    type_name = getattr(p.annotation, "__name__", str(p.annotation))
-    marker = "" if p.required else "?"
-    if _is_complex_type(p.annotation):
-        return f"{p.name}{marker}: {describe_complex_type(p.annotation)}"
-    if p.required:
-        return f"{p.name}: {type_name}"
-    return f"{p.name}?"
-
 
 def _build_operations_contract(operations: Sequence[OperationSpec]) -> str:
-    return _OPERATIONS_CONTRACT_REF
-
+    return OPERATIONS_CONTRACT
 
 def _build_tool_description(
     service: Service,
@@ -74,7 +60,7 @@ def _build_tool_description(
         )
     lines = [header, "", "Available operations (use as the `method` value):"]
     for op in operations:
-        params = ", ".join(_format_param(p) for p in op.parameters) or "no arguments"
+        params = ", ".join(format_param(p) for p in op.parameters) or "no arguments"
         lines.append(f"- {op.name}({params}): {op.description}")
     lines.append("")
     lines.append(contract)
@@ -285,7 +271,7 @@ class ToToolManager:
                         "success": False,
                         "error": {
                             "category": "validation_error",
-                            "message": "Each operation must be an object with 'method' and 'args'.",
+                            "message": INVALID_OPERATION_ERROR,
                         },
                     }
                     results.append(entry)
@@ -302,7 +288,7 @@ class ToToolManager:
                     entry = {
                         "method": method_name,
                         "success": False,
-                        "error": {"category": "validation_error", "message": "'args' must be an object."},
+                        "error": {"category": "validation_error", "message": INVALID_ARGS_ERROR},
                     }
                     results.append(entry)
                     resolved_by_ref[position_ref] = entry
@@ -423,7 +409,7 @@ class ToToolManager:
 
     @property
     def tool_specs(self) -> list[ToolSpec]:
-        """Builds (and caches) the full, framework-agnostic tool list —
+        """Builds (and caches) the full, framework-agnostic tool list â€”
         exactly ONE ToolSpec per registered Service or Module.
 
         Thread-safe double-checked locking (same pattern as
@@ -483,7 +469,7 @@ class ToToolManager:
             Optional Pydantic model class. When provided, steps can set
             `state_field` and `planner.get_state(plan_id)` returns a
             validated instance built from completed steps. Purely
-            additive — omit it and nothing changes.
+            additive â€” omit it and nothing changes.
 
         Returns
         -------

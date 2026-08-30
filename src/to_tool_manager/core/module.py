@@ -1,4 +1,4 @@
-"""
+﻿"""
 `Module` groups related Services under a single sub-agent boundary.
 
 A Module is a self-contained unit of functionality: it has its own
@@ -27,40 +27,28 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, Sequence
 
 from to_tool_manager.core.conditions import _evaluate_when
+from to_tool_manager.core.contracts import (
+    EMPTY_OPERATIONS_ERROR,
+    INVALID_ARGS_ERROR,
+    INVALID_OPERATION_ERROR,
+    OPERATIONS_CONTRACT,
+)
+from to_tool_manager.core.formatters import format_param
 from to_tool_manager.core.types import (
     OperationSpec,
     ParamSpec,
     ToolError,
     ToolResponse,
     ToolSpec,
-    _is_complex_type,
-    describe_complex_type,
 )
 
 if TYPE_CHECKING:
     from to_tool_manager.core.service import Service
     from to_tool_manager.security.middleware import Middleware
 
-_MODULE_OPERATIONS_CONTRACT_REF = (
-    "See operations contract above. "
-    "Each item: {{\"method\": <name>, \"args\": {{...}}}}. "
-    "Optional \"id\" and \"when\" for sequencing."
-)
-
-
-def _format_param(p: ParamSpec) -> str:
-    type_name = getattr(p.annotation, "__name__", str(p.annotation))
-    marker = "" if p.required else "?"
-    if _is_complex_type(p.annotation):
-        return f"{p.name}{marker}: {describe_complex_type(p.annotation)}"
-    if p.required:
-        return f"{p.name}: {type_name}"
-    return f"{p.name}?"
-
 
 def _build_module_operations_contract(operations: Sequence[OperationSpec]) -> str:
-    return _MODULE_OPERATIONS_CONTRACT_REF
-
+    return OPERATIONS_CONTRACT
 
 def _build_module_description(
     module_name: str,
@@ -84,7 +72,7 @@ def _build_module_description(
 
     lines = [header, "", services_overview, "", "Available operations (use as the `method` value):"]
     for op in operations:
-        params = ", ".join(_format_param(p) for p in op.parameters) or "no arguments"
+        params = ", ".join(format_param(p) for p in op.parameters) or "no arguments"
         lines.append(f"- {op.name}({params}): {op.description}")
     lines.append("")
     lines.append(contract)
@@ -240,10 +228,10 @@ class Module:
                 return ToolResponse(
                     error=ToolError(
                         category=frozenset({"validation_error"}),
-                        message=(
-                            "`operations` must be a non-empty list of "
-                            '{"method": ..., "args": {...}} objects.'
-                        ),
+                        message=EMPTY_OPERATIONS_ERROR,
+
+
+
                         exception_type="ValueError",
                         retryable=True,
                     )
@@ -261,7 +249,7 @@ class Module:
                         "success": False,
                         "error": {
                             "category": "validation_error",
-                            "message": "Each operation must be an object with 'method' and 'args'.",
+                            "message": INVALID_OPERATION_ERROR,
                         },
                     }
                     results.append(entry)
@@ -278,7 +266,7 @@ class Module:
                     entry = {
                         "method": method_name,
                         "success": False,
-                        "error": {"category": "validation_error", "message": "'args' must be an object."},
+                        "error": {"category": "validation_error", "message": INVALID_ARGS_ERROR},
                     }
                     results.append(entry)
                     resolved_by_ref[position_ref] = entry

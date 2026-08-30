@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import inspect
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Literal
 
 from to_tool_manager.core.types import ParamSpec, _MISSING
