@@ -81,13 +81,6 @@ def _format_error(spec: ToolSpec, error) -> str:
 # ---------------------------------------------------------------------------
 
 def _serialize_content(content: Any) -> str:
-    if isinstance(content, list) and content and isinstance(content[0], dict):
-        headers = list(content[0].keys())
-        lines = ["| " + " | ".join(str(h) for h in headers) + " |"]
-        lines.append("| " + " | ".join(["---"] * len(headers)) + " |")
-        for row in content:
-            lines.append("| " + " | ".join(str(row.get(h, "")) for h in headers) + " |")
-        return "\n".join(lines)
     if isinstance(content, (list, dict)):
         return json.dumps(content, default=str)
     return str(content)
@@ -463,6 +456,7 @@ def build_agent(
     tool_timeout: float | None = None,
     max_concurrency: AnyConcurrencyLimit = None,
     end_strategy: EndStrategy = "graceful",
+    cache: bool = False,
     defer_model_check: bool = False,
     metadata: AgentMetadata | None = None,
     capabilities: list | None = None,
@@ -597,6 +591,12 @@ def build_agent(
     default_settings: ModelSettings = ModelSettings(parallel_tool_calls=True)
     merged_settings: ModelSettings = {**default_settings, **(model_settings or {})}  # type: ignore[typeddict-item]
 
+    if cache:
+        # Merge unified cache setting if the installed pydantic-ai
+        # version supports it (>= unified cache PR). Silently ignored
+        # by providers that don't support caching (Groq, Mistral, etc.).
+        merged_settings["cache"] = True  # type: ignore[typeddict-item]
+
     agent_kwargs: dict[str, Any] = {}
     if name is not None:
         agent_kwargs["name"] = name
@@ -654,24 +654,30 @@ def build_agent(
     all_services_and_modules = list(manager.services.values()) + list(manager.modules.values())
     skills_toolset = build_skills_toolset(skills=ALWAYS_ON_SKILLS)
 
-    base_system_prompt = system_prompt if system_prompt is not None else build_system_prompt(all_services_and_modules)
-    if not isinstance(base_system_prompt, str):
-        # `system_prompt` accepts `str | Sequence[str]` (matching Agent's own
-        # constructor), but `_make_gated_system_prompt` needs a single string
-        # to concatenate the conditional-skills annex onto -- normalize here,
-        # the same join pydantic-ai itself uses to render multiple static
-        # system_prompt entries as one string.
-        base_system_prompt = "\n\n".join(base_system_prompt)
+    # --- Instructions resolution (not persisted in history) ---
+    # When no custom instructions are provided, use the auto-generated
+    # default. This content is NOT persisted across conversation turns,
+    # reducing token cost in multi-turn conversations.
+    if instructions is None:
+        resolved_instructions = build_instructions()
+    # else: resolved_instructions was already set from the `instructions` param
 
-    resolved_system_prompt: Any = _make_gated_system_prompt(base_system_prompt, manager)
+    # --- System prompt resolution (persisted in history) ---
+    # The system prompt carries the operations contract and the list of
+    # available tools. pydantic-ai persists it in message history, which
+    # is correct: the LLM must see it at least once per conversation to
+    # know how to call tools. When the user provides an explicit
+    # system_prompt, use it directly; otherwise build the default.
+    if system_prompt is not None:
+        resolved_system_prompt: Any = system_prompt
+        if not isinstance(resolved_system_prompt, str):
+            resolved_system_prompt = "\n\n".join(resolved_system_prompt)
+    else:
+        resolved_system_prompt = build_system_prompt(all_services_and_modules)
+    # Wrap with gated conditional skills if the manager has conditional
+    # skills registered (e.g. planning for complex multi-step requests).
+    resolved_system_prompt = _make_gated_system_prompt(resolved_system_prompt, manager)
 
-    # NOTE: `Agent.__init__`'s `system_prompt` parameter only accepts a
-    # `str | Sequence[str]` -- passing a callable directly raises
-    # `TypeError: 'function' object is not iterable` (pydantic-ai>=2.10.0,
-    # resolves today to 2.21.0), on EVERY call to build_agent(), since
-    # `_make_gated_system_prompt` always returns a callable. Dynamic system
-    # prompts must instead be registered post-construction via the
-    # `agent.system_prompt(fn)` decorator/method.
     agent = agent_cls(
         model,
         instructions=resolved_instructions,
@@ -682,6 +688,9 @@ def build_agent(
         capabilities=resolved_capabilities or None,
         **agent_kwargs,
     )
+
+    # Register dynamic system prompt (must be post-construction because
+    # Agent.__init__ only accepts str | Sequence[str], not callables).
     agent.system_prompt(resolved_system_prompt)
     if agent_cls is _AutoDepsAgent:
         agent._to_tool_manager_default_deps = SubAgentDeps()  # pyright: ignore[reportAttributeAccessIssue] -- guarded by the identity check above

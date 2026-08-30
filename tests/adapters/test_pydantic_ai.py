@@ -108,8 +108,9 @@ class TestSerializeContent:
         from to_tool_manager.adapters.pydantic_ai import _serialize_content
         content = [{"name": "Alice", "age": 30}, {"name": "Bob", "age": 25}]
         result = _serialize_content(content)
-        assert "|" in result
         assert "Alice" in result
+        # JSON format is more compact than markdown tables
+        assert "[{" in result
 
     def test_dict(self):
         from to_tool_manager.adapters.pydantic_ai import _serialize_content

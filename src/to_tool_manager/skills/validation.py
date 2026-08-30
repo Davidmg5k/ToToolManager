@@ -1,5 +1,5 @@
 """
-Validation Skill — Patterns for validation before execution.
+Validation Skill -- Patterns for validation before execution.
 
 Influences HOW the agent validates data and preconditions.
 Contains no specific business rules, only general patterns.
@@ -13,26 +13,20 @@ except ImportError:
 VALIDATION_CONTENT = """
 ## Validation Patterns
 
-### 1. Input Validation
-Always validate before executing:
-- Required parameters present
-- Correct data types
-- Values within acceptable ranges
+### 1. Input & State Validation
+Before executing:
+- Required parameters present, correct types, values in range
 - Non-empty strings when content is expected
+- Resources exist (for modification) or don't (for creation)
+- Detect concurrent state conflicts and respect system invariants
 
-### 2. State Validation
-Before modifying data:
-- Verify resources exist (for creation: must not exist; for modification: must exist)
-- Detect concurrent state conflicts
-- Respect system invariants
-
-### 3. Dependency Validation
+### 2. Dependency Validation
 When one operation depends on another:
 - Execute the dependent operation first
 - Verify the result is valid before continuing
 - If it fails, report dependency_not_satisfied error
 
-### 4. Security Validation
+### 3. Security Validation
 Before sensitive operations:
 - Verify permissions (if applicable)
 - Detect potentially destructive operations

@@ -1,4 +1,6 @@
-﻿from to_tool_manager.core.prompts import (
+﻿import re
+
+from to_tool_manager.core.prompts import (
     build_system_prompt,
     build_instructions,
     build_service_description,
@@ -113,3 +115,37 @@ class TestBuildServiceDescription:
         svc = Service(name="Order", service=DummyService)
         desc = build_service_description(svc, custom="My desc", mode="override")
         assert desc == "My desc"
+
+
+
+class TestSystemPromptExample:
+    """Regression: the example in the system prompt must show flat args
+    (no "data" wrapper) so the LLM constructs valid tool calls."""
+
+    def test_example_has_no_data_wrapper(self):
+        prompt = build_system_prompt([])
+        assert '"data"' not in prompt, (
+            "System prompt example must not contain a data wrapper. "
+            "Tool params are flat: user_name, email"
+        )
+
+    def test_example_contains_expected_structure(self):
+        prompt = build_system_prompt([])
+        assert "Example:" in prompt, "No example found in system prompt"
+        assert '"operations"' in prompt, "Example must reference operations"
+        assert '"method"' in prompt, "Example must reference method"
+        assert '"args"' in prompt, "Example must reference args"
+        assert '"user_name"' in prompt, "Example must show user_name param"
+        assert '"email"' in prompt, "Example must show email param"
+
+    def test_example_args_are_flat_not_wrapped(self):
+        prompt = build_system_prompt([])
+        assert '"user_name": "..."' in prompt or '"user_name":"..."' in prompt, (
+            "Example must show user_name as a flat arg"
+        )
+        assert '"email": "..."' in prompt or '"email":"..."' in prompt, (
+            "Example must show email as a flat arg"
+        )
+        assert '"data":' not in prompt, (
+            "Example must not wrap args in a data key"
+        )

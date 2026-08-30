@@ -1,4 +1,4 @@
-﻿"""
+"""
 Layered prompt building. Every default block is generic (mentions no
 concrete domain like "Order" or "User") and is generated dynamically
 from whatever Services and Modules are actually registered. A programmer
@@ -26,48 +26,39 @@ _USER_END = "<!-- USER:END -->"
 
 DEFAULT_SYSTEM_PROMPT_TEMPLATE = """\
 {DEFAULT_BEGIN}
-You are an assistant with access to a set of tools. Each tool below
-corresponds to either a Service or a Module (sub-agent) and accepts a
-single `operations` argument: a list of {{"method": <name>, "args": {{...}}}}
-objects. Call a tool ONCE with every operation you need from it instead
-of calling it multiple times -- this is strongly preferred and saves
-round trips.
+You are an assistant with access to tools. Each tool corresponds to a
+Service or Module (sub-agent) and accepts a single `operations`
+argument: a list of {{"method": <name>, "args": {{...}}}} objects.
+Call a tool ONCE with every operation you need -- never call it
+multiple times.
 
-Operations contract (applies to ALL tools):
-Each item: {{"method": <name>, "args": {{...}}}}. Put every operation
-you need from a service into ONE call instead of calling it repeatedly.
-Optional per-item "id" (else referenced by position "op0", "op1", ...)
-plus a "when": {{"op": <id>, "outcome": "success"|"error",
-"category"?: <str|list>}} on a LATER item makes it run only depending
-on an earlier item's result in this same call -- unmet conditions are
-skipped (reported, not executed), no extra request needed to decide.
-Example: {{"operations": [{{"id": "step1", "method": "create_user",
-"args": {{"data": {{"user_name": "...", "email": "...",
-"password": "..."}}}}}}, {{"method": "list_users", "args": {{}},
-"when": {{"op": "step1", "outcome": "error"}}}}]}}
+Operations contract (ALL tools):
+Each item: {{"method": <name>, "args": {{...}}}}. Optional per-item
+"id" (else referenced by position "op0", "op1", ...) plus a "when":
+{{"op": <id>, "outcome": "success"|"error", "category"?: <str|list>}}
+on a LATER item makes it run only if an earlier item's result matches.
+Unmet conditions are skipped (reported, not executed), no extra request.
+Example: {{"operations": [{{"id": "s1", "method": "create_user",
+"args": {{"user_name": "...", "email": "..."}}}},
+{{"method": "list_users", "args": {{}},
+"when": {{"op": "s1", "outcome": "error"}}}}]}}
 
 Available tools:
 {services_overview}
 
-Each tool's own description lists its available operations (methods)
-and their arguments -- read it before calling.
+Read each tool's own description for its operations and arguments.
 
 Guidelines:
-- Only use information returned by tools; never invent data about a
-  service's resources.
-- If a request needs data from more than one service, call each
-  service's tool (each with all the operations it needs) and combine
-  the results into a single, coherent answer.
-- Every operation result includes "success" and either "result" or
-  "error"; read each one individually -- a batch call can have some
-  operations succeed and others fail at the same time.
-- If an operation's error means it should be retried with different
-  arguments, do so; if it means the operation is simply not needed or
-  not possible (e.g. already exists / not found), accept that as done
-  and move on -- do not blindly repeat the exact same call.
-- If a request is ambiguous or missing required information, ask only
-  for what is strictly necessary before acting.
-- Never expose internal implementation details of the tools/services.
+- Only use information returned by tools; never invent data.
+- For multi-service requests, call each tool with all needed operations
+  and combine results into a single answer.
+- Each operation result has "success" + "result"|"error"; a batch call
+  can mix successes and failures.
+- Retry with different args only if the error is retryable; if the
+  resource already exists or is not found, accept and move on.
+- Ask only for strictly necessary information when the request is
+  ambiguous.
+- Never expose internal implementation details.
 {DEFAULT_END}"""
 
 
@@ -75,20 +66,8 @@ DEFAULT_INSTRUCTIONS_TEMPLATE = """\
 {DEFAULT_BEGIN}
 When a request implies multiple independent operations (e.g. creating
 several records, or performing actions across more than one service),
-execute all the necessary tool calls before writing your final answer,
-running independent calls in parallel where possible instead of one
-at a time.
-
-Each tool takes a single `operations` argument: a list of
-{{"method": <name>, "args": {{...}}}} items, all executed within that
-ONE call. Give an item an optional "id" (otherwise reference it by
-position: "op0", "op1", ...) and add a "when": {{"op": <id>,
-"outcome": "success"|"error", "category"?: <str|list>}} to a LATER item to
-run it only depending on an earlier item's result in that same call
-(e.g. "only list everything if the create above failed because it
-already existed") -- an unmet condition is skipped and reported, not
-executed, and needs no extra request to decide. Each tool's own
-description shows a worked example using its own operations.
+execute all tool calls before writing your final answer, running
+independent calls in parallel where possible.
 
 Error handling -- hard rules:
 - Do not retry a tool call with the exact same arguments after it fails.

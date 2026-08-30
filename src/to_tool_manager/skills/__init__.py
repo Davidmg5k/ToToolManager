@@ -1,4 +1,4 @@
-﻿"""
+"""
 Agnostic Skills -- Behavioral patterns for agents.
 
 These skills contain no business logic.
@@ -9,19 +9,23 @@ try:
 except ImportError:
     SkillsToolset = None  # type: ignore[assignment,misc]
 
-from to_tool_manager.skills.composition import composition_skill
+from to_tool_manager.skills.strategy import strategy_skill
 from to_tool_manager.skills.dependencies import dependencies_skill
+from to_tool_manager.skills.validation import validation_skill
 from to_tool_manager.skills.error_handling import error_handling_skill
 from to_tool_manager.skills.planning import planning_skill
-from to_tool_manager.skills.reasoning import reasoning_skill
-from to_tool_manager.skills.validation import validation_skill
+
+# Backward-compatible aliases
+from to_tool_manager.skills.strategy import strategy_skill as reasoning_skill
+from to_tool_manager.skills.strategy import strategy_skill as composition_skill
 
 __all__ = [
+    "strategy_skill",
     "reasoning_skill",
+    "composition_skill",
     "dependencies_skill",
     "validation_skill",
     "error_handling_skill",
-    "composition_skill",
     "planning_skill",
     "default_skills",
     "ALWAYS_ON_SKILLS",
@@ -31,10 +35,9 @@ __all__ = [
 
 # Skills always present in every LLM call.
 ALWAYS_ON_SKILLS = [
-    reasoning_skill,
+    strategy_skill,
     validation_skill,
     error_handling_skill,
-    composition_skill,
 ]
 
 # Skills included only when the request looks complex (gated by R8 heuristic).
