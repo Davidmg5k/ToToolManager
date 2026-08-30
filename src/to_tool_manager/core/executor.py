@@ -133,6 +133,20 @@ def make_safe_caller(
         try:
             result = await func(**kwargs) if is_coroutine else func(**kwargs)
             return ToolResponse(content=result)
+        except TypeError as exc:
+            # TypeError at the call boundary almost always means the caller
+            # (typically the LLM) supplied wrong keyword arguments (extra
+            # keys, wrong names, or missing a wrapper like {"data": ...}).
+            # Classify as a retryable validation_error so the LLM receives
+            # a specific, actionable message and can attempt corrected args.
+            return ToolResponse(
+                error=ToolError.from_exception(
+                    exc,
+                    category=frozenset({"validation_error"}),
+                    retryable=True,
+                    handled=True,
+                )
+            )
         except Exception as exc:  # noqa: BLE001 - intentional broad catch at the boundary
             category, retryable, handled = _classify(exc, em, error_rules)
             return ToolResponse(

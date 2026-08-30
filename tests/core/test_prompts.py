@@ -119,14 +119,14 @@ class TestBuildServiceDescription:
 
 
 class TestSystemPromptExample:
-    """Regression: the example in the system prompt must show flat args
-    (no "data" wrapper) so the LLM constructs valid tool calls."""
+    """Regression: the example in the system prompt must show the correct
+    args structure matching the tool's actual parameter names."""
 
-    def test_example_has_no_data_wrapper(self):
+    def test_example_has_data_wrapper(self):
         prompt = build_system_prompt([])
-        assert '"data"' not in prompt, (
-            "System prompt example must not contain a data wrapper. "
-            "Tool params are flat: user_name, email"
+        assert '"data"' in prompt, (
+            "System prompt example must contain a data wrapper. "
+            "Tool params use a single 'data' parameter wrapping the fields."
         )
 
     def test_example_contains_expected_structure(self):
@@ -138,14 +138,11 @@ class TestSystemPromptExample:
         assert '"user_name"' in prompt, "Example must show user_name param"
         assert '"email"' in prompt, "Example must show email param"
 
-    def test_example_args_are_flat_not_wrapped(self):
+    def test_example_args_are_wrapped_in_data(self):
         prompt = build_system_prompt([])
+        assert '"data":' in prompt, (
+            "Example must wrap args in a data key matching the parameter name"
+        )
         assert '"user_name": "..."' in prompt or '"user_name":"..."' in prompt, (
-            "Example must show user_name as a flat arg"
-        )
-        assert '"email": "..."' in prompt or '"email":"..."' in prompt, (
-            "Example must show email as a flat arg"
-        )
-        assert '"data":' not in prompt, (
-            "Example must not wrap args in a data key"
+            "Example must show user_name inside the data wrapper"
         )

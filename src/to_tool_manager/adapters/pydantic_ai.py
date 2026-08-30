@@ -569,10 +569,6 @@ def build_agent(
     # ToolSpec (dispatch closure, description, recursive sub-manager
     # visit) just to immediately discard it -- that spec was never used
     # on this path in the first place (D5).
-    # Set skip_coercion on all services: pydantic-ai handles its own
-    # argument validation, so redundant coercion adds latency for no benefit.
-    for svc in manager.services.values():
-        svc.skip_coercion = True
     service_specs = manager.service_specs
     service_tools = to_pydantic_ai_tools(service_specs)
 

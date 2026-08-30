@@ -37,7 +37,7 @@ multiple times.
 {operations_contract}
 
 Example: {{"operations": [{{"id": "s1", "method": "create_user",
-"args": {{"user_name": "...", "email": "..."}}}},
+"args": {{"data": {{"user_name": "...", "email": "..."}}}}}},
 {{"method": "list_users", "args": {{}},
 "when": {{"op": "s1", "outcome": "error"}}}}]}}
 
