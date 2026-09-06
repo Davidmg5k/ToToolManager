@@ -1,1492 +1,941 @@
-﻿# to_tool_manager
+﻿# to-tool-manager
 
-Convierte clases Python normales (tu capa de servicios) en **tools**
-para agentes, sin atarte a ningún framework de agentes.
+> Convert plain Python service classes into AI tool specifications for LLM integration.
 
-## La idea central: un SERVICIO = una TOOL
-
-**Cada `Service` que registrás produce exactamente UNA tool** — nunca
-una tool por método. Esa tool acepta una lista de *operaciones*
-(`{"method": ..., "args": {...}}`) y las ejecuta todas en una sola
-llamada. Así, con dos servicios (`Order`, `User`) el LLM ve **dos
-tools**, y puede hacer algo como:
-
-> "Creá al usuario David y de paso listá todos los usuarios"
-
-en **una sola tool call** al tool `User`, en vez de dos round-trips
-separados:
-
-```json
-{
-  "operations": [
-    {"method": "create_user", "args": {"user_name": "David"}},
-    {"method": "get_users", "args": {}}
-  ]
-}
-```
-
-```
-tu clase de servicio  →  Service(...)  →  ToToolManager  →  tool_specs (1 por servicio, agnóstico)
-                                                                   │
-                                        ┌──────────────────────────┴──────────────────────┐
-                                        ▼                                                  ▼
-                            adapters.pydantic_ai                                adapters.fastmcp
-                            (Agent / FunctionToolset)                            (servidor MCP)
-```
-
-El paquete base (`to_tool_manager`) **no tiene ninguna dependencia dura**
-de frameworks de agentes. Cada adapter importa su framework solo cuando
-vos importás ese adapter.
+**Version:** 0.4.8 | **Python:** >=3.12 | **License:** MIT
 
 ---
 
-## Instalación
+## What is it?
+
+`to-tool-manager` is a framework that lets you write ordinary Python classes (services) and automatically exposes their public methods as **tools** that LLMs can call via [pydantic-ai](https://github.com/pydantic/pydantic-ai).
+
+## What problem does it solve?
+
+When building LLM-powered applications you need to:
+
+1. Write business logic (Python classes).
+2. Manually define JSON schemas or tool decorators for every method the LLM should call.
+3. Wire each tool into an agent.
+4. Add cross-cutting concerns (auth, logging, rate limiting, human-in-the-loop) without polluting business code.
+
+`to_tool_manager` eliminates all that boilerplate. You write a plain class, wrap it in a `Service`, and the framework **auto-discovers** its public methods, generates the tool schemas, and assembles a pydantic-ai `Agent` ready to use. Middlewares can be stacked at the service, module, or global level — including human-in-the-loop flows — without touching business logic.
+
+### Architecture at a glance
+
+```
+Python class  ──>  Service  ──>  Module (optional)  ──>  ToToolManager / TTMBuilder  ──>  Agent
+                     │                                                        │
+                     └── ToolMiddleware (per-method)              Global Middleware (per-call)
+                                                                  NodeMiddleware (graph transitions)
+```
+
+---
+
+## Installation
 
 ```bash
-# Solo el core (agnóstico de framework)
 pip install to-tool-manager
+```
 
-# Con adapters para pydantic-ai
-pip install "to-tool-manager[pydantic-ai]"
+Or with `uv`:
 
-# Adaptadores de terceros (instalar aparte)
-pip install fastmcp          # para adapters.fastmcp
-pip install ag-ui-core       # para adapters.ag_ui
+```bash
+uv add to-tool-manager
 ```
 
 ---
 
+## Core Classes
 
+### 1. Service
 
-## Indice
+Wraps a Python class and auto-discovers its public methods as LLM tools.
 
-| Seccion | Descripcion |
-|---------|-------------|
-| [Instalacion](#instalacion) | Dependencias por adapter |
-| [Uso rapido](#uso-rapido) | 3 pasos: clase -> registrar -> agente |
-| [Referencia de la API](#referencia-de-la-api) | Service, Module, ToToolManager, ErrorMap, ToolSpec, ToolResponse |
-| [Nivel 1 - Lo minimo](#nivel-1--lo-minimo-un-servicio-con-una-operacion) | Un servicio, una operacion |
-| [Nivel 2 - Multiples operaciones](#nivel-2--servicio-con-multiples-operaciones-y-excepciones-propias) | Batch de ops, error handling |
-| [Nivel 3 - Dos servicios](#nivel-3--dos-servicios-dos-tools-el-patron-tipico) | Patron tipico multi-tool |
-| [Nivel 4 - Sin framework](#nivel-4--ejecutar-operaciones-directamente-sin-framework) | Uso directo del core sin adapter |
-| [Nivel 5 - pydantic-ai](#nivel-5--integracion-con-pydantic-ai-agent) | build_agent, run_streaming, iter_agent |
-| [Nivel 6 - FastMCP](#nivel-6--integracion-con-fastmcp-servidor-mcp) | build_mcp_server, build_mcp_agent |
-| [Nivel 7 - Visibilidad](#nivel-7--opciones-de-visibilidad-y-filtrado-de-metodos) | public, protected, include, exclude |
-| [Nivel 8 - Properties](#nivel-8--exponer-propiedades-como-operaciones) | @property como ops de 0 args |
-| [Nivel 9 - ErrorMap](#nivel-9--sistema-de-errores-avanzado-con-errormap) | map, map_callable, when, message |
-| [Nivel 10 - Prompts](#nivel-10--prompts-personalizados) | build_system_prompt, build_instructions |
-| [Nivel 11 - Modulos](#nivel-11--modulos-sub-agentes-aislados) | Module con sub-agentes |
-| [Nivel 12 - Planner](#nivel-12--planner-planificacion-cross-service) | Step, StepOperation, build_agent con planning_mode |
-| [Nivel 13 - ag_ui](#nivel-13--integracion-con-ag_ui-streaming-de-estado-a-uis) | AGUIPlanHandler |
-| [Nivel 14 - Skills](#nivel-14--skills-patrones-de-comportamiento-para-agentes) | reasoning, validation, etc. |
-| [Nivel 15 - build_agent completo](#nivel-15--build_agent-con-todas-las-opciones) | Todas las opciones de build_agent |
-| [Nivel 16 - Condicionales when](#nivel-16--operaciones-condicionales-con-when) | when clauses en batches |
-| [Nivel 17 - Singleton](#nivel-17--clase-como-singleton-vs-instancias-frescas) | singleton=True/False |
-| [Nivel 18 - Middleware](#nivel-18--middleware) | Middleware vs ToolMiddleware, secuencias, por que van en capas |
-| [Nivel 19 - Caso completo](#nivel-19--caso-completo-pydantic-ai--planner--streaming) | Planner + agent + streaming con diagrama |
-| [Ejemplos completos](#ejemplos-completos) | example/ y example_ui_pydantic/ |
+**Constructor Parameters**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `name` | `str` | *(required)* | Unique identifier for the service |
+| `service` | `type` | *(required)* | The Python class to wrap |
+| `instructions` | `str` | *(required)* | Instructions for the LLM about when to use this service |
+| `middleware` | `List[ToolMiddleware \| Middleware] \| None` | `[]` | Middleware instances applied to this service |
+| `disable_middlewares` | `Tuple[str, ...]` | `()` | Names of middlewares to skip (inherited from parent layers) |
+| `include` | `MethodsType \| Include \| None` | `None` | Methods to include (takes priority over exclude) |
+| `exclude` | `MethodsType \| Exclude \| None` | `None` | Methods to exclude |
+| `args` | `Tuple[Any, ...]` | `()` | Positional args passed to `service.__init__()` |
+| `kwargs` | `Dict[str, Any]` | `{}` | Keyword args passed to `service.__init__()` |
+
+**Public Methods**
+
+| Method | Parameters | Returns | Exceptions | Description |
+|---|---|---|---|---|
+| `add_middleware(middleware)` | `middleware: ToolMiddleware` | `None` | — | Appends a middleware to the service's list |
+| `build_as_capability()` | — | `Capability` | — | Discovers public methods, applies ToolMiddlewares, creates pydantic-ai `Capability` with `Tool` wrappers |
+| `service_to_dependency(dinamic_depend)` | `dinamic_depend: DinamicDepend` | `None` | — | Registers the service instance as a dynamic dependency |
 
 ---
 
-## Uso rápido
+### 2. Module
 
-### 1. Definí tus clases de negocio
+Groups multiple `Service` instances into a **sub-agent**. Each module can have its own model, instructions, and middleware layer.
 
-```python
-class Order:
-    """Gestiona órdenes de clientes."""
+**Constructor Parameters**
 
-    def __init__(self) -> None:
-        self.__orders: list[str] = ["gpu"]
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `name` | `str` | *(required)* | Unique identifier |
+| `services` | `Sequence[Service]` | *(required)* | Services to group |
+| `description` | `str` | *(required)* | Description for the sub-agent |
+| `capabilities` | `List[Capability] \| None` | `None` | Pre-built capabilities |
+| `middleware` | `List \| None` | `None` | Middlewares applied to all services in this module |
+| `disable_middlewares` | `Tuple[str, ...]` | `()` | Middleware names to disable |
+| `model` | `Model \| KnownModelName \| str \| None` | `None` | LLM model for this sub-agent |
+| `instructions` | `Any` | `None` | Agent instructions |
+| `system_prompt` | `str \| Sequence[str]` | `()` | System prompt |
+| `model_settings` | `AgentModelSettings \| None` | `None` | Model settings |
+| `retries` | `int \| AgentRetries \| None` | `None` | Retry configuration |
+| `validation_context` | `Any \| Callable \| None` | `None` | Validation context |
+| `tools` | `Sequence[Any]` | `()` | Additional tools |
+| `toolsets` | `Sequence[AgentToolset] \| None` | `None` | Additional toolsets |
+| `defer_model_check` | `bool` | `False` | Defer model validation |
+| `end_strategy` | `EndStrategy` | `'graceful'` | End strategy |
+| `metadata` | `Any` | `None` | Metadata |
+| `tool_timeout` | `float \| None` | `None` | Tool timeout in seconds |
+| `max_concurrency` | `Any` | `None` | Max concurrency limit |
+| `output_type` | `Any` | `str` | Output type |
 
-    def create(self, product_name: str):
-        """Crea una nueva orden.
+**Public Methods / Properties**
 
-        Args:
-            product_name: Nombre del producto a ordenar.
-        """
-        if product_name in self.__orders:
-            raise OrderAlreadyExistsError(f"Order '{product_name}' already exists")
-        self.__orders.append(product_name)
-        return f"Order '{product_name}' created successfully"
-
-    def delete(self, product_name: str):
-        """Elimina una orden por nombre de producto."""
-        if product_name not in self.__orders:
-            raise OrderNotFoundError(f"Order '{product_name}' not found")
-        self.__orders.remove(product_name)
-        return f"Order '{product_name}' deleted successfully"
-
-    def get_orders(self):
-        """Devuelve todas las órdenes actuales."""
-        return self.__orders
-```
-
-### 2. Registralas como tools
-
-```python
-from to_tool_manager import Service, ToToolManager
-
-manager = ToToolManager([
-    Service(
-        name="Order",
-        service=Order,
-        description="Manages customer orders.",
-        error_map={
-            OrderAlreadyExistsError: ("already_exists", False),
-            OrderNotFoundError: ("not_found", False),
-        },
-    ),
-])
-```
-
-### 3. Construí el agente
-
-```python
-from to_tool_manager.adapters.pydantic_ai import build_agent
-
-agent = build_agent("groq:llama-3.1-8b-instant", manager)
-result = await agent.run("Creá una orden para laptop")
-print(result.output)
-```
+| Method / Property | Parameters | Returns | Exceptions | Description |
+|---|---|---|---|---|
+| `agent` *(property)* | — | `Agent[DinamicDepend]` | `AgentNotBuiltError` | Returns the built agent (call `build_as_agent()` first) |
+| `agent` *(setter)* | `agent: Agent` | — | `AgentAlreadyBuiltError` | Sets the agent (raises if already built) |
+| `dependency` *(property)* | — | `DinamicDepend` | — | Returns the dynamic dependency container |
+| `build_as_agent()` | — | `SubAgent[DinamicDepend]` | `SelfDisableMiddlewareError` | Builds the module as a SubAgent with all its services' capabilities |
 
 ---
 
-## Referencia de la API
+### 3. ToToolManager
 
-### `Service`
+Orchestrates `Service` and `Module` instances, resolves middleware chains, and builds the final pydantic-ai `Agent`.
 
-Registra una clase Python como tool.
+**Constructor Parameters**
 
-```python
-Service(
-    name="Order",                     # nombre de la tool (requerido)
-    service=Order,                    # la clase a envolver (requerido)
-    description="Manages orders.",    # descripción de la tool (default: auto)
-    visibility={"public"},            # qué métodos exponer (default)
-    include=frozenset({"create"}),    # whitelist (ignora visibility)
-    exclude=frozenset({"_internal"}), # blacklist
-    expose_properties=False,          # exponer @property como ops de 0 args
-    error_map=ErrorMap(),             # clasificación de excepciones
-    error_rules=[],                   # reglas callable-checked ANTES que error_map
-    sanitize_system_errors=True,      # ocultar texto raw de errores no mapeados
-    singleton=True,                   # reusar instancia vs. crear por llamada
-    args=(),                          # args del constructor
-    kwargs={},                        # kwargs del constructor
-    middlewares=[],                   # middlewares de este servicio
-    disable_middlewares=[],           # desactivar middlewares globales para este servicio
-)
-```
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `name` | `str` | *(required)* | Orchestrator name |
+| `resources` | `Sequence[Service \| Module]` | *(required)* | Services and modules to orchestrate |
+| `middlewares` | `Sequence[Middleware] \| None` | `None` | Global middlewares applied to all tool calls |
+| `model` | `Model \| KnownModelName \| str \| None` | `None` | LLM model |
+| `instructions` | `Any` | `None` | Agent instructions |
+| `system_prompt` | `str \| Sequence[str]` | `()` | System prompt |
+| `model_settings` | `AgentModelSettings \| None` | `None` | Model settings |
+| `retries` | `int \| AgentRetries \| None` | `None` | Retry count |
+| `validation_context` | `Any` | `None` | Validation context |
+| `tools` | `Sequence[Any]` | `()` | Additional tools |
+| `toolsets` | `Sequence[AgentToolset] \| None` | `None` | Additional toolsets |
+| `defer_model_check` | `bool` | `False` | Defer model check |
+| `end_strategy` | `EndStrategy` | `'graceful'` | End strategy |
+| `metadata` | `Any` | `None` | Metadata |
+| `tool_timeout` | `float \| None` | `None` | Tool timeout |
+| `max_concurrency` | `AnyConcurrencyLimit` | `None` | Max concurrency |
+| `output_type` | `Any` | `str` | Output type |
+| `description` | `str \| None` | `None` | Description |
 
-### `Module`
+**Public Methods / Properties**
 
-Agrupa varios servicios bajo un solo sub-agente con su propio system prompt.
-
-```python
-Module(
-    name="Commerce",
-    description="Sub-agente de comercio.",
-    system_prompt="Sos un especialista en comercio. Respondé en español.",
-    services=[service1, service2],
-    middlewares=[],
-    disable_middlewares=[],
-)
-```
-
-### `ToToolManager`
-
-Punto de entrada único. Crea una instancia por aplicación.
-
-```python
-manager = ToToolManager(
-    services=[service_or_module, ...],    # Service o Module
-    middlewares=[GlobalMiddleware()],      # middlewares globales
-)
-
-manager.tool_specs       # list[ToolSpec] — las tools generadas
-manager.services         # dict[str, Service] — servicios registrados
-manager.modules          # dict[str, Module] — módulos registrados
-manager.get_service("Order")  # lookup por nombre
-manager.refresh()             # invalidar cache de tool_specs
-manager.register_middleware([mw])  # registrar middleware en runtime
-```
-
-### `ErrorMap`
-
-Builder composable para clasificar excepciones.
-
-```python
-ErrorMap()
-    .map(NotFoundError, category="not_found")
-    .map(AlreadyExistsError, category="already_exists")
-    .map(ValidationError, category="validation_error", retryable=True)
-    .map_entry(SomeError, ErrorEntry(category="custom", retryable=False))
-    .map_callable(HTTPError, lambda e: ("not_found", False) if e.status_code == 404 else ("server", False))
-    .when(lambda e: hasattr(e, "timeout"), category="timeout", retryable=True)
-    .when(lambda e: "auth" in str(e).lower(), category="auth_error", retryable=False,
-          message="Error de autenticación: verificá tus credenciales.")
-```
-
-Todos los métodos (`map`, `when`, `map_entry`) aceptan el kwarg `message: str | None` que reemplaza `str(exc)` como el mensaje que ve el LLM. Útil para ocultar detalles técnicos o traducir errores a lenguaje claro.
-
-También acepta el formato dict legacy: `error_map={ExcType: ("category", retryable)}`.
-
-### `ToolSpec` (dato de salida)
-
-Cada `Service`/`Module` produce un `ToolSpec` con:
-
-- `name` — nombre de la tool
-- `description` — descripción auto-generada
-- `operations` — tupla de `OperationSpec` (una por método expuesto)
-- `call(operations=[...])` — dispatch que **nunca lanza excepciones**, siempre retorna `ToolResponse`
-
-### `ToolResponse`
-
-```python
-ToolResponse(content=resultado, error=None)   # éxito
-ToolResponse(content=None, error=ToolError(...))  # error clasificado
-response.ok  # True si no hay error
-```
+| Method / Property | Parameters | Returns | Exceptions | Description |
+|---|---|---|---|---|
+| `name` *(property)* | — | `str` | — | Returns orchestrator name |
+| `agent` *(property)* | — | `Agent[DinamicDepend]` | `AgentNotBuiltError` | Returns built agent |
+| `middlewares` *(property)* | — | `Sequence[Middleware]` | `MiddlewareNotInitializedError` | Returns middlewares list |
+| `services` *(property)* | — | `Dict[str, Service]` | — | Returns copy of registered services |
+| `modules` *(property)* | — | `Dict[str, Module]` | — | Returns copy of registered modules |
+| `get_service(name)` | `name: str` | `Service \| Module` | `ServiceNotFoundError` | Gets a service or module by name |
+| `build_agent(resources, middlewares)` | `resources: Sequence \| None`, `middlewares: Sequence \| None` | `Agent[DinamicDepend]` | `InvalidResourceTypeError` | Builds the pydantic-ai Agent |
+| `add_middleware_to_service(service_name, middleware)` | `service_name: str`, `middleware: Middleware` | `None` | `ServiceNotFoundError`, `MiddlewareTargetMismatchError` | Adds middleware to a specific service |
+| `add_middleware_to_module(module_name, middleware)` | `module_name: str`, `middleware: Middleware` | `None` | `ServiceNotFoundError`, `MiddlewareTargetMismatchError` | Adds middleware to a specific module |
+| `remove_middleware_to_service(service_name, middleware_type)` | `service_name: str`, `middleware_type: type` | `None` | `ServiceNotFoundError`, `MiddlewareTargetMismatchError` | Removes middleware by type from a service |
+| `remove_middleware_to_module(module_name, middleware_type)` | `module_name: str`, `middleware_type: type` | `None` | `ServiceNotFoundError`, `MiddlewareTargetMismatchError` | Removes middleware by type from a module |
 
 ---
 
-## Ejemplos de uso
-
-### Nivel 1 — Lo mínimo: un servicio con una operación
-
-```python
-class Counter:
-    """Un contador simple."""
-
-    def __init__(self) -> None:
-        self.__value = 0
-
-    def increment(self, amount: int = 1):
-        """Suma al contador.
-
-        Args:
-            amount: Cantidad a sumar.
-        """
-        self.__value += amount
-        return self.__value
-
-    def get_value(self):
-        """Devuelve el valor actual."""
-        return self.__value
-```
-
-```python
-from to_tool_manager import Service, ToToolManager
-
-manager = ToToolManager([
-    Service(name="Counter", service=Counter, description="Simple counter."),
-])
-
-# Un solo ToolSpec, con una sola operación
-print(len(manager.tool_specs))  # 1
-print(manager.tool_specs[0].operations[0].name)  # "increment"
-```
-
----
-
-### Nivel 2 — Servicio con múltiples operaciones y excepciones propias
-
-```python
-class OrderAlreadyExistsError(Exception): ...
-class OrderNotFoundError(Exception): ...
-
-class Order:
-    """Gestiona órdenes de clientes: creación, eliminación y listado."""
-
-    def __init__(self) -> None:
-        self.__orders: list[str] = ["gpu"]
-
-    def create(self, product_name: str):
-        """Crea una nueva orden.
-
-        Args:
-            product_name: Nombre del producto a ordenar.
-        """
-        if product_name in self.__orders:
-            raise OrderAlreadyExistsError(f"Order '{product_name}' already exists")
-        self.__orders.append(product_name)
-        return f"Order '{product_name}' created successfully"
-
-    def delete(self, product_name: str):
-        """Elimina una orden por nombre de producto."""
-        if product_name not in self.__orders:
-            raise OrderNotFoundError(f"Order '{product_name}' not found")
-        self.__orders.remove(product_name)
-        return f"Order '{product_name}' deleted successfully"
-
-    def get_orders(self):
-        """Devuelve todas las órdenes actuales."""
-        return self.__orders
-```
-
-```python
-from to_tool_manager import Service, ToToolManager
-
-manager = ToToolManager([
-    Service(
-        name="Order",
-        service=Order,
-        description="Gestiona todo lo relacionado con órdenes de clientes.",
-        error_map={
-            OrderAlreadyExistsError: ("already_exists", False),
-            OrderNotFoundError: ("not_found", False),
-        },
-    ),
-])
-```
-
-Cada `ToolSpec` trae: `name` (== nombre del servicio), `description`
-(auto-generada, enumera cada operación con su firma y docstring), un
-único parámetro `operations`, y `call(operations=[...])` que **nunca
-tira excepción** — siempre devuelve un `ToolResponse` cuyo `content`
-es una lista con el resultado de cada operación:
-
-```json
-[
-  {"method": "create", "success": true, "result": "Order 'laptop' created successfully"},
-  {"method": "get_orders", "success": true, "result": ["gpu", "laptop"]}
-]
-```
-
-Una operación que falla **no aborta** el resto del batch:
-
-```json
-[
-  {"method": "create", "success": false, "error": {"category": "already_exists", "message": "Order 'gpu' already exists"}},
-  {"method": "get_orders", "success": true, "result": ["gpu"]}
-]
-```
-
----
-
-### Nivel 3 — Dos servicios, dos tools (el patrón típico)
-
-```python
-class UserNotFoundError(Exception): ...
-class UserAlreadyExistsError(Exception): ...
-
-class User:
-    """Gestiona usuarios del sistema."""
-
-    def __init__(self) -> None:
-        self.__users: list[str] = ["admin"]
-
-    def create_user(self, user_name: str):
-        """Crea un nuevo usuario."""
-        if user_name in self.__users:
-            raise UserAlreadyExistsError(f"User '{user_name}' already exists")
-        self.__users.append(user_name)
-        return f"User '{user_name}' created"
-
-    def get_users(self):
-        """Lista todos los usuarios."""
-        return self.__users
-```
-
-```python
-from to_tool_manager import Service, ToToolManager
-
-manager = ToToolManager([
-    Service(
-        name="Order",
-        service=Order,
-        description="Manages customer orders.",
-        error_map={
-            OrderAlreadyExistsError: ("already_exists", False),
-            OrderNotFoundError: ("not_found", False),
-        },
-    ),
-    Service(
-        name="User",
-        service=User,
-        description="Manages system users.",
-        error_map={
-            UserAlreadyExistsError: ("already_exists", False),
-            UserNotFoundError: ("not_found", False),
-        },
-    ),
-])
-
-# Dos tools: Order y User
-assert len(manager.tool_specs) == 2
-assert [s.name for s in manager.tool_specs] == ["Order", "User"]
-```
-
----
-
-### Nivel 4 — Ejecutar operaciones directamente (sin framework)
-
-```python
-import asyncio
-from to_tool_manager import ToToolManager, Service
-
-class OrderService:
-    def create(self, product_name: str) -> dict:
-        return {"id": 1, "product": product_name}
-    def get_orders(self) -> list:
-        return [{"id": 1, "product": "laptop"}]
-
-manager = ToToolManager([
-    Service(name="Order", service=OrderService, description="Gestión de órdenes"),
-])
-
-# Ejecuta operaciones directamente vía tool_specs
-async def main():
-    spec = manager.tool_specs[0]  # El ToolSpec de Order
-    response = await spec.call(operations=[
-        {"method": "create", "args": {"product_name": "laptop"}},
-        {"method": "get_orders", "args": {}},
-    ])
-    print(response.content)
-
-asyncio.run(main())
-```
-
----
-
-### Nivel 5 — Integración con pydantic-ai (Agent)
-
-```python
-from to_tool_manager.adapters.pydantic_ai import build_agent
-
-agent = build_agent("groq:llama-3.1-8b-instant", manager)
-
-# El agent ya tiene acceso a las tools Order y User
-result = await agent.run("Creá un usuario llamado David y listá todas las órdenes")
-print(result.output)
-```
-
-**Salida tipada** para integrar a un frontend:
-
-```python
-from pydantic import BaseModel
-
-class AgentReply(BaseModel):
-    message: str
-    success: bool
-    data: dict | None = None
-
-agent = build_agent("groq:llama-3.1-8b-instant", manager, output_type=AgentReply)
-result = await agent.run("Creá al usuario David")
-print(result.output.message)   # str, seguro de mostrar directo
-print(result.output.success)   # bool
-```
-
-**Streaming** de la respuesta:
-
-```python
-from to_tool_manager.adapters.pydantic_ai import run_streaming
-
-async with run_streaming(agent, "Listá todas las órdenes") as stream:
-    async for text in stream.stream_text():
-        print(text, end="", flush=True)
-```
-
-**Iteración de nodos** (para observabilidad):
-
-```python
-from to_tool_manager.adapters.pydantic_ai import iter_agent
-
-async with iter_agent(agent, "Creá al usuario David") as run:
-    async for node in run:
-        print(type(node).__name__)  # ToolCallNode, ToolReturnNode, etc.
-```
-
----
-
-### Nivel 6 — Integración con FastMCP (servidor MCP)
-
-```python
-from to_tool_manager.adapters.fastmcp import build_mcp_server
-
-mcp = build_mcp_server("order-user-service", manager.tool_specs)
-mcp.run()
-```
-
-O registrando en un servidor existente:
-
-```python
-from fastmcp import FastMCP
-from to_tool_manager.adapters.fastmcp import register_on_mcp
-
-mcp = FastMCP("my-server")
-register_on_mcp(mcp, manager.tool_specs)
-mcp.run()
-```
-
-Si tenés `Module`, usá `build_mcp_agent` para montar sub-servidores aislados por namespace:
-
-```python
-from to_tool_manager.adapters.fastmcp import build_mcp_agent
-
-mcp = build_mcp_agent("commerce", manager)
-mcp.run()
-```
-
----
-
-### Nivel 7 — Opciones de visibilidad y filtrado de métodos
-
-```python
-class InternalService:
-    """Servicio con métodos públicos, protegidos y privados."""
-
-    def public_method(self):
-        """Método público."""
-        return "public"
-
-    def _protected_method(self):
-        """Método protegido."""
-        return "protected"
-
-    def __private_method(self):
-        """Método privado (mangled)."""
-        return "private"
-```
-
-```python
-from to_tool_manager import Service, ToToolManager
-
-# Solo públicos (default)
-s1 = Service(name="A", service=InternalService, visibility={"public"})
-
-# Públicos + protegidos
-s2 = Service(name="B", service=InternalService, visibility={"public", "protected"})
-
-# Solo métodos específicos (ignora visibility)
-s3 = Service(name="C", service=InternalService, include=frozenset({"public_method"}))
-
-# Excluir un método puntual
-s4 = Service(name="D", service=InternalService, exclude=frozenset({"_protected_method"}))
-```
-
----
-
-### Nivel 8 — Exponer propiedades como operaciones
-
-```python
-class Config:
-    """Servicio con propiedades de solo lectura."""
-
-    @property
-    def version(self):
-        """Versión actual del sistema."""
-        return "1.0.0"
-
-    @property
-    def max_retries(self):
-        """Máximo de reintentos permitidos."""
-        return 3
-
-    def reload(self):
-        """Recarga la configuración."""
-        return "reloaded"
-```
-
-```python
-service = Service(name="Config", service=Config, expose_properties=True)
-
-manager = ToToolManager([service])
-spec = manager.tool_specs[0]
-
-# Tres operaciones: version, max_retries, reload
-assert len(spec.operations) == 3
-assert [op.name for op in spec.operations] == ["version", "max_retries", "reload"]
-```
-
----
-
-### Nivel 9 — Sistema de errores avanzado con ErrorMap
-
-```python
-from to_tool_manager import Service, ToToolManager
-from to_tool_manager.core.types import ErrorMap
-
-class HTTPError(Exception):
-    def __init__(self, status_code: int, message: str):
-        self.status_code = status_code
-        super().__init__(message)
-
-class RateLimitError(Exception):
-    def __init__(self, retry_after: float):
-        self.retry_after = retry_after
-        super().__init__(f"Rate limited, retry after {retry_after}s")
-
-class ExternalAPI:
-    """Servicio que depende de APIs externas."""
-
-    def fetch_data(self, url: str):
-        """Obtiene datos de una URL externa."""
-        raise HTTPError(404, "Not found")
-
-    def call_api(self, endpoint: str):
-        """Llama a una API externa."""
-        raise RateLimitError(retry_after=2.0)
-```
-
-```python
-# ErrorMap composable con type-based y predicate-based rules
-error_map = (
-    ErrorMap()
-    .map(HTTPError, category="not_found")
-    .map(RateLimitError, category="rate_limited", retryable=True)
-    .map_callable(
-        HTTPError,
-        lambda e: ("not_found", False) if e.status_code == 404 else ("server_error", False),
-    )
-    .when(
-        lambda e: hasattr(e, "retry_after"),
-        category="rate_limited",
-        retryable=True,
-        message="Límite de solicitudes alcanzado. Reintentá en unos segundos.",
-    )
-)
-
-service = Service(
-    name="ExternalAPI",
-    service=ExternalAPI,
-    error_map=error_map,
-    sanitize_system_errors=True,  # errores no mapeados se sanitizan
-)
-```
-
-**Reglas de error por defecto** (sin mapear):
-
-| Excepción | Categoría | Reintentable |
+### 4. TTMBuilder
+
+Fluent builder API for declaratively assembling agents. Supports method chaining and context manager usage.
+
+**Constructor Parameters**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `name` | `str` | *(required)* | Agent name |
+| `capabilities` | `List \| None` | `None` | Pre-built capabilities |
+| `toolsets` | `List \| None` | `None` | Pre-built toolsets |
+| `model` | `Model \| KnownModelName \| str \| None` | `None` | LLM model |
+| `instructions` | `Any` | `None` | Agent instructions |
+| `system_prompt` | `str \| Sequence[str]` | `()` | System prompt |
+| `model_settings` | `AgentModelSettings \| None` | `None` | Model settings |
+| `retries` | `int \| AgentRetries \| None` | `None` | Retry count |
+| `validation_context` | `Any` | `None` | Validation context |
+| `tools` | `Sequence[Any]` | `()` | Additional tools |
+| `defer_model_check` | `bool` | `False` | Defer model check |
+| `end_strategy` | `EndStrategy` | `'graceful'` | End strategy |
+| `metadata` | `Any` | `None` | Metadata |
+| `tool_timeout` | `float \| None` | `None` | Tool timeout |
+| `max_concurrency` | `AnyConcurrencyLimit` | `None` | Max concurrency |
+| `output_type` | `Any` | `str` | Output type |
+| `description` | `str \| None` | `None` | Description |
+
+**Fluent API Methods** (all return `self` for chaining)
+
+| Method | Parameters | Returns | Exceptions | Description |
+|---|---|---|---|---|
+| `add_service(name, service, instructions, ...)` | See below | `TTMBuilder` | — | Adds a service |
+| `add_module(name, services, description, ...)` | See below | `TTMBuilder` | `SelfDisableMiddlewareError` | Adds a module |
+| `add_middleware(middleware)` | `middleware: Middleware` | `TTMBuilder` | — | Adds a global middleware |
+| `remove_middleware_to_service(service_name, middleware_type)` | `service_name: str`, `middleware_type: type` | `TTMBuilder` | `ServiceNotFoundError` | Removes middleware from a service |
+| `add_skill(skill)` | `skill: Skill` | `TTMBuilder` | — | Adds a pydantic-ai-skill |
+| `add_ttm(manager)` | `manager: ToToolManager` | `TTMBuilder` | `ToToolManagerAlreadyRegisteredError` | Adds an existing ToToolManager |
+| `build(model)` | `model: str \| None = None` | `None` | — | Constructs the Agent (`model` param overrides `__init__` model) |
+| `to_mcp_tool(name, instructions)` | `name: str`, `instructions: str` | `FastMCP` | — | Converts to a FastMCP server |
+
+**`add_service` sub-parameters**
+
+| Parameter | Type | Default |
 |---|---|---|
-| `ValueError` / `TypeError` | `validation_error` | Sí |
-| `KeyError` / `LookupError` | `not_found` | No |
-| Cualquier otra | `unclassified` (sanitizado) | No |
+| `name` | `str` | *(required)* |
+| `service` | `type` | *(required)* |
+| `instructions` | `str` | *(required)* |
+| `middleware` | `List \| None` | `None` |
+| `disable_middlewares` | `Tuple[str, ...]` | `()` |
+| `include` | `MethodsType \| Include \| None` | `None` |
+| `exclude` | `MethodsType \| Exclude \| None` | `None` |
+| `args` | `tuple` | `()` |
+| `kwargs` | `dict \| None` | `None` |
 
----
-
-### Nivel 10 — Prompts personalizados
+**Context Manager**
 
 ```python
-from to_tool_manager import build_system_prompt, build_instructions
-
-services = list(manager.services.values())
-
-# Extender el prompt por defecto
-prompt = build_system_prompt(
-    services,
-    custom="Responde siempre en español, tono formal.",
-)
-
-# Reemplazar el prompt por completo
-prompt = build_system_prompt(
-    services,
-    custom="Sos un agente interno, solo para empleados.",
-    mode="override",
-)
-
-# Instrucciones dinámicas (separadas del system prompt)
-instructions = build_instructions(
-    custom="Siempre confirmá con el usuario antes de borrar.",
-)
+with TTMBuilder(name="Agent") as builder:
+    builder.add_service(...)
+    # build() is called automatically on __exit__
+agent = builder.agent
 ```
 
 ---
 
-### Nivel 11 — Módulos (sub-agentes aislados)
+## Middleware System
 
-Un `Module` agrupa varios servicios bajo un solo sub-agente con su
-propio system prompt. El agente principal llama al Module como una
-única tool.
+Middlewares intercept tool calls (or graph node transitions) without touching business logic. They form a chain: the first middleware in the list is the outermost (executes first).
+
+### Tool Call Middleware Flow (Mermaid)
+
+```mermaid
+sequenceDiagram
+    participant LLM
+    participant Agent
+    participant MW1 as Global Middleware
+    participant MW2 as Service Middleware
+    participant TMW as ToolMiddleware
+    participant Tool as Tool Function
+
+    LLM->>Agent: calls tool(args)
+    Agent->>MW1: dispatch(func, args)
+    MW1->>MW2: dispatch(func, args)
+    MW2->>TMW: dispatch(func, args)
+    TMW->>Tool: func(args)
+    Tool-->>TMW: result
+    TMW-->>MW2: result
+    MW2-->>MW1: result
+    MW1-->>Agent: result
+    Agent-->>LLM: tool result
+```
+
+### HITL (Human-in-the-Loop) Middleware Flow (Mermaid)
+
+```mermaid
+sequenceDiagram
+    participant LLM
+    participant Agent
+    participant HITL_MW as HITL Middleware
+    participant HITL as HumanInTheLoop
+    participant Client as Client (SSE/WS)
+    participant Tool as Tool Function
+
+    LLM->>Agent: calls tool(args)
+    Agent->>HITL_MW: dispatch(func, args)
+    HITL_MW->>HITL: execute(event_fn)
+    HITL->>Client: emit(event_id, payload)
+    Client-->>HITL: human_response
+    HITL->>HITL: validate response
+    alt Validation passed
+        HITL-->>HITL_MW: ok
+        HITL_MW->>Tool: func(args)
+        Tool-->>HITL_MW: result
+        HITL_MW-->>Agent: result
+    else Validation failed
+        HITL-->>HITL_MW: HumanInputRetry
+        HITL_MW->>HITL: retry (up to max_retries)
+    end
+```
+
+### Graph Node Middleware Flow (Mermaid)
+
+```mermaid
+sequenceDiagram
+    participant Runner as GraphMiddlewareRunner
+    participant MW as NodeMiddleware
+    participant Node as Graph Node
+
+    Runner->>MW: before_transition(source, target, state)
+    alt Approved
+        MW-->>Runner: True
+        Runner->>Node: run(ctx)
+        Node-->>Runner: next_node
+        Runner->>MW: after_run(node, ctx, next_node)
+        MW-->>Runner: next_node (or End)
+    else Blocked
+        MW-->>Runner: False
+        Runner->>Runner: override_next(End(None))
+    end
+```
+
+---
+
+### Middleware Classes
+
+#### Middleware (ABC)
+
+Base abstract middleware for intercepting tool calls.
+
+| Method | Parameters | Returns | Description |
+|---|---|---|---|
+| `__call__(func)` | `func: Callable` | `Callable` | Wraps func; returns async wrapper that calls `self.dispatch(func, ...)` |
+| `call_func(func, *args, **kwargs)` *(static)* | `func: Callable`, `*args`, `**kwargs` | `Any` | Helper to call sync or async func from dispatch |
+| `name` *(property)* | — | `str` | Returns middleware name (auto-set to class name) |
+| `dispatch(func, /, *args, **kw)` *(abstract)* | `func: Callable`, `*args`, `**kw` | `Any` | **Must be implemented.** Intercepts the tool call. |
+
+#### ToolMiddleware
+
+Extends `Middleware`. Adds method-level filtering via `include`/`exclude`.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `include` | `MethodsType \| Include \| None` | `None` | Methods to include |
+| `exclude` | `MethodsType \| Exclude \| None` | `None` | Methods to exclude |
+
+| Method | Parameters | Returns | Description |
+|---|---|---|---|
+| `include` *(property)* | — | `frozenset[str] \| None` | Returns include filter as frozenset |
+| `exclude` *(property)* | — | `frozenset[str] \| None` | Returns exclude filter as frozenset |
+| `is_allowed(method_name)` | `method_name: str` | `bool` | Checks if method passes filter. **Include takes priority over exclude.** |
+
+#### NodeMiddleware (ABC)
+
+Base middleware for graph node transitions (`pydantic_graph`).
+
+| Method | Parameters | Returns | Description |
+|---|---|---|---|
+| `name` *(property)* | — | `str` | Returns middleware name |
+| `before_transition(source_node_id, target_node_id, state)` | `str \| None`, `str`, `Any` | `bool` | Hook before transition. Return `True` to approve, `False` to block. |
+| `before_run(node, ctx)` | `BaseNode`, `GraphRunContext` | `None` | Hook before node execution (for NodeWrapper). Modify state. |
+| `after_run(node, ctx, next_node)` | `BaseNode`, `GraphRunContext`, `BaseNode \| End` | `BaseNode \| End` | Hook after node execution. Return next_node or End. |
+
+#### NodeWrapper
+
+Wraps a graph node with a chain of `NodeMiddleware` instances.
+
+| Method | Parameters | Returns | Description |
+|---|---|---|---|
+| `run(ctx)` | `ctx: GraphRunContext` | `BaseNode \| End` | Executes wrapped node with before_run/after_run hooks from middlewares |
+
+#### HumanInTheLoopMiddleware
+
+Global HITL middleware — applies to **all** tool calls.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `hitl` | `HumanInTheLoop` | *(required)* | HITL coordinator |
+| `max_retries` | `int` | `3` | Max HITL retry attempts |
+
+| Method | Parameters | Returns | Description |
+|---|---|---|---|
+| `dispatch(func, /, *args, **kw)` | `func: Callable`, `*args`, `**kw` | `Any` | Runs HITL cycle (emit → wait → validate) before executing the tool |
+
+#### HumanInTheLoopToolMiddleware
+
+Per-method HITL middleware with `include`/`exclude` filtering.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `hitl` | `HumanInTheLoop` | *(required)* | HITL coordinator |
+| `max_retries` | `int` | `3` | Max HITL retry attempts |
+| `include` | `MethodsType \| Include \| None` | `None` | Methods to include |
+| `exclude` | `MethodsType \| Exclude \| None` | `None` | Methods to exclude |
+
+| Method | Parameters | Returns | Description |
+|---|---|---|---|
+| `dispatch(func, /, *args, **kw)` | `func: Callable`, `*args`, `**kw` | `Any` | Runs HITL cycle for filtered methods |
+
+#### GraphMiddlewareRunner
+
+Executes a `pydantic_graph` with a `NodeMiddleware` chain on each transition.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `graph` | `Graph[Any, Any, Any, Any]` | *(required)* | The graph to run |
+| `middlewares` | `Sequence[NodeMiddleware]` | *(required)* | Middlewares to apply on transitions |
+
+| Method | Parameters | Returns | Description |
+|---|---|---|---|
+| `run(state, deps, inputs)` | `state: Any`, `deps: Any`, `inputs: Any` | `Any` | Runs the graph; each transition passes through the middleware chain. Returns `None` if any middleware blocks, or the final `End.value` on success. |
+
+---
+
+## Exceptions
+
+All exceptions inherit from `TTMError` for generic capture.
+
+```
+TTMError
+├── ConfigurationError
+│   ├── InvalidResourceTypeError(got_type: str)
+│   └── SelfDisableMiddlewareError(middleware_name: str)
+├── ServiceError
+│   ├── ServiceNotFoundError(name: str)
+│   ├── ServiceAlreadyRegisteredError(name: str)
+│   └── DependencyNotSetError(name: str)
+├── ModuleError
+│   └── ModuleAlreadyRegisteredError(name: str)
+├── AgentError
+│   ├── AgentNotBuiltError(component: str)
+│   └── AgentAlreadyBuiltError(component: str)
+├── MiddlewareError
+│   ├── MiddlewareNotInitializedError()
+│   └── MiddlewareTargetMismatchError(name: str, expected: str)
+└── BuilderError
+    ├── ToToolManagerAlreadyRegisteredError(name: str)
+    └── ToToolManagerNotFoundError(name: str)
+```
+
+| Exception | Message Pattern | When it is raised |
+|---|---|---|
+| `InvalidResourceTypeError` | `"Expected Service or Module, got {got_type}"` | A resource passed to `ToToolManager` is neither `Service` nor `Module` |
+| `SelfDisableMiddlewareError` | `"Cannot disable middleware '{name}' in the same class that declares it..."` | A `Module` tries to disable a middleware it declares itself |
+| `ServiceNotFoundError` | `"Unknown service '{name}'"` | Lookup by name fails in `ToToolManager` |
+| `ServiceAlreadyRegisteredError` | `"Service '{name}' already registered"` | Duplicate service name in `Manager` |
+| `DependencyNotSetError` | `"DinamicDepend has no attribute '{name}'"` | Accessing an unset dependency |
+| `ModuleAlreadyRegisteredError` | `"Module '{name}' already registered"` | Duplicate module name in `Manager` |
+| `AgentNotBuiltError` | `"Agent not built. Call build() first on {component}."` | Accessing `.agent` before calling `build()` / `build_agent()` |
+| `AgentAlreadyBuiltError` | `"Agent already built on {component}. Cannot rebuild."` | Attempting to rebuild an already-built agent |
+| `MiddlewareNotInitializedError` | `"Middleware sequence is not initialized (None)"` | Accessing `.middlewares` when none were provided |
+| `MiddlewareTargetMismatchError` | `"'{name}' is not a {expected}..."` | Adding middleware to wrong target type (e.g., module method on a service) |
+| `ToToolManagerAlreadyRegisteredError` | `"ToToolManager '{name}' already registered"` | Duplicate TTM name in `Manager` |
+| `ToToolManagerNotFoundError` | `"ToToolManager '{name}' not found"` | TTM lookup by name fails in `Manager` |
+
+Additionally, `HumanInputRetry` (extends `Exception`) is thrown by HITL logic when validation fails — the middleware catches it and retries.
+
+---
+
+## Examples
+
+The following examples use two in-memory CRUD classes: `UserManager` and `OrderManager`.
+
+### Shared CRUD Classes
 
 ```python
-from to_tool_manager import Service, Module, ToToolManager
+from dataclasses import dataclass, field
 
-module = Module(
-    name="OrderManagement",
-    description="Sub-agente que gestiona órdenes y usuarios.",
-    system_prompt="Sos un especialista en gestión de pedidos. Siempre respondé en español.",
-    services=[
-        Service(name="Order", service=Order, description="Manages orders."),
-        Service(name="User", service=User, description="Manages users."),
+
+@dataclass
+class User:
+    id: str
+    name: str
+    email: str
+
+
+@dataclass
+class Order:
+    id: str
+    user_id: str
+    product: str
+    quantity: int
+    status: str = "pending"
+
+
+class UserManager:
+    """In-memory CRUD for users."""
+
+    def __init__(self):
+        self._users: dict[str, User] = {}
+
+    def create(self, id: str, name: str, email: str) -> str:
+        self._users[id] = User(id=id, name=name, email=email)
+        return f"User {id} created: {name}"
+
+    def get(self, id: str) -> str:
+        user = self._users.get(id)
+        if not user:
+            return f"User {id} not found."
+        return f"User {user.id}: {user.name} <{user.email}>"
+
+    def list_all(self) -> str:
+        if not self._users:
+            return "No users."
+        return "; ".join(f"{u.name} <{u.email}>" for u in self._users.values())
+
+    def delete(self, id: str) -> str:
+        if id not in self._users:
+            return f"User {id} not found."
+        del self._users[id]
+        return f"User {id} deleted."
+
+
+class OrderManager:
+    """In-memory CRUD for orders."""
+
+    def __init__(self):
+        self._orders: dict[str, Order] = {}
+
+    def create(self, id: str, user_id: str, product: str, quantity: int) -> str:
+        self._orders[id] = Order(id=id, user_id=user_id, product=product, quantity=quantity)
+        return f"Order {id} created: {quantity}x {product} for user {user_id}"
+
+    def get(self, id: str) -> str:
+        order = self._orders.get(id)
+        if not order:
+            return f"Order {id} not found."
+        return f"Order {order.id}: {order.quantity}x {order.product} [{order.status}]"
+
+    def list_all(self) -> str:
+        if not self._orders:
+            return "No orders."
+        return "; ".join(f"{o.id}: {o.quantity}x {o.product}" for o in self._orders.values())
+
+    def update_status(self, id: str, status: str) -> str:
+        order = self._orders.get(id)
+        if not order:
+            return f"Order {id} not found."
+        order.status = status
+        return f"Order {id} status updated to {status}"
+
+    def delete(self, id: str) -> str:
+        if id not in self._orders:
+            return f"Order {id} not found."
+        del self._orders[id]
+        return f"Order {id} deleted."
+```
+
+### Shared Middlewares
+
+```python
+from to_tool_manager.core.middleware.middleware import Middleware, ToolMiddleware
+
+
+class AuthMiddleware(ToolMiddleware):
+    """Simulates authentication check. Applies only to specified methods."""
+
+    async def dispatch(self, func, /, *args, **kw):
+        print("[Auth] Verifying access...")
+        return await func(*args, **kw)
+
+
+class LogMiddleware(Middleware):
+    """Logs every tool call. Applies globally to all methods."""
+
+    async def dispatch(self, func, /, *args, **kw):
+        print(f"[Log] Calling {func.__name__}")
+        result = await func(*args, **kw)
+        print(f"[Log] {func.__name__} returned {len(str(result))} chars")
+        return result
+
+
+class RateLimitMiddleware(Middleware):
+    """Simulates rate limiting. Applies globally."""
+
+    def __init__(self, max_calls: int = 10):
+        self._count = 0
+        self._max = max_calls
+
+    async def dispatch(self, func, /, *args, **kw):
+        self._count += 1
+        if self._count > self._max:
+            return "Rate limit exceeded. Try again later."
+        return await func(*args, **kw)
+```
+
+---
+
+### Example 1 — Service with Module
+
+A single service wrapped in a `Module` (sub-agent), with a global `LogMiddleware`.
+
+```python
+from to_tool_manager.core.main.service import Service
+from to_tool_manager.core.main.module import Module
+from to_tool_manager.core.main.to_tool_manager import ToToolManager
+
+
+# Wrap the class
+user_service = Service(
+    name="users",
+    service=UserManager,
+    instructions="Use this service for user CRUD operations.",
+)
+
+# Group into a module
+users_module = Module(
+    name="UsersModule",
+    services=[user_service],
+    description="Manages user data.",
+    middleware=[LogMiddleware()],
+)
+
+# Orchestrate with ToToolManager
+manager = ToToolManager(
+    name="App",
+    resources=[users_module],
+)
+
+agent = manager.build_agent()
+# agent is ready to use with an LLM
+```
+
+---
+
+### Example 2 — Two Services with Module
+
+Two services inside one `Module`, each with its own `ToolMiddleware`.
+
+```python
+user_service = Service(
+    name="users",
+    service=UserManager,
+    instructions="User CRUD operations.",
+    middleware=[
+        AuthMiddleware(include=frozenset({"create", "delete"})),
     ],
 )
 
-manager = ToToolManager([module])
-
-# Un solo ToolSpec que engloba todo el módulo
-assert len(manager.tool_specs) == 1
-assert manager.tool_specs[0].name == "OrderManagement"
-
-# Todas las operaciones de Order y User están disponibles
-op_names = [op.name for op in manager.tool_specs[0].operations]
-assert "create" in op_names       # de Order
-assert "get_users" in op_names    # de User
-```
-
-Modules soportan middlewares propios y pueden desactivar middlewares globales:
-
-```python
-module = Module(
-    name="SecureModule",
-    services=[service1, service2],
-    middlewares=[LocalMiddleware()],
-    disable_middlewares=["GlobalSecurity"],
-)
-```
-
----
-
-### Nivel 12 — Planner (planificación cross-service)
-
-Planner sirve para dos escenarios distintos, que no son modos configurables
-sino simplemente dos formas de usar la misma API:
-
-- **Manual**: el programador arma el Plan a mano en código (sabe de antemano
-  qué steps y dependencias hacen falta) y llama `create_plan`/`execute_plan`
-  directamente. No hay ningún LLM en el medio.
-- **Automático**: el LLM/agent decide los steps. `Planner.build_tools()` expone
-  `create_plan`/`execute_plan`/`get_plan`/`update_plan_step` como tools; el
-  agente los llama con JSON, igual que llamaría a cualquier otro tool del
-  ToToolManager.
-
-Ambos casos usan exactamente el mismo Planner, el mismo `Plan`/`Step`, y las
-mismas features (`$from`, `condition`, `depends_on`) — la única diferencia es
-quién arma el plan.
-
-#### Servicios de ejemplo (usados en los dos casos de abajo)
-
-```python
-class UserService:
-    def create_user(self, name: str) -> dict:
-        ...  # -> {"id": 42, "name": "David"}
-
-class OrderService:
-    def create(self, user_id: int, item: str) -> dict:
-        ...  # -> {"order_id": 7, "user_id": 42, "item": "Widget"}
-
-    def notify_failure(self) -> dict:
-        ...
-
-manager = ToToolManager([
-    Service(name="User", service=UserService),
-    Service(name="Order", service=OrderService),
-])
-```
-
-#### 1. Planificación manual
-
-El programador ya sabe el flujo (crear usuario → crear orden con ese usuario →
-avisar solo si la orden falló) y lo escribe directo, sin pasar por un LLM.
-Usa ``$from`` para pasar el `id` del usuario del step 1 al step 2, y `condition`
-para que el step 3 sea puramente defensivo.
-
-```python
-from to_tool_manager.core.planner import Step, StepOperation
-
-planner = manager.with_planner()
-
-steps = [
-    Step(
-        id="create_user",
-        description="Crear el usuario",
-        operations=[
-            StepOperation(service="User", method="create_user", args={"name": "David"}),
-        ],
-    ),
-    Step(
-        id="create_order",
-        description="Crear la orden para ese usuario",
-        operations=[
-            StepOperation(
-                service="Order",
-                method="create",
-                args={
-                    # en vez del literal, referencia al resultado de create_user
-                    "user_id": {"$from": "create_user", "path": "User.result.id"},
-                    "item": "Widget",
-                },
-            )
-        ],
-        depends_on=["create_user"],
-    ),
-    Step(
-        id="notify_on_failure",
-        description="Avisar solo si la orden falló",
-        operations=[
-            StepOperation(service="Order", method="notify_failure", args={}),
-        ],
-        # no hace falta agregar "create_order" a depends_on a mano:
-        # create_plan lo auto-deriva de esta misma condition.
-        condition={"op": "create_order", "outcome": "error"},
-    ),
-]
-
-plan = await planner.create_plan(steps)   # valida referencias/orden ANTES de ejecutar
-plan = await planner.execute_plan(plan.id)
-
-for step in plan.steps:
-    print(step.id, step.status, step.result)
-
-# create_user       -> COMPLETED {"User": {"success": True, "result": [...{"id": 42}...]}}
-# create_order      -> COMPLETED {"Order": {..."user_id": 42...}}  (resuelto vía $from)
-# notify_on_failure -> SKIPPED   (la condition no se cumplió: create_order tuvo éxito)
-```
-
-Ideal para pipelines fijos, jobs programados, o cualquier flujo donde el orden
-y las dependencias no cambian de una corrida a otra — el LLM no necesita
-reinventar el plan cada vez.
-
-#### 2. Planificación automática
-
-Acá el LLM arma el plan. `build_tools()` le da al agente las mismas piezas
-(`create_plan`, `execute_plan`, `get_plan`, `update_plan_step`) como tools de
-function-calling — el agente decide steps, dependencias, ``$from`` y `condition`
-según el pedido del usuario en lenguaje natural.
-
-```python
-planner = manager.with_planner()
-tools = planner.build_tools()   # [{"func", "name", "description"}, ...]
-
-# Se registran junto con los tool_specs normales del manager en el loop
-# del agente (cualquier adapter: raw, pydantic-ai, fastmcp, ag_ui).
-agent_tools = manager.tool_specs + tools
-```
-
-Ante un pedido como *"Creá un usuario David y hacele una orden de un Widget;
-si la orden falla, notificá"*, el LLM —sin que nadie le escriba el plan a
-mano— termina llamando al tool `create_plan` con un payload equivalente al
-ejemplo manual de arriba:
-
-```json
-{
-  "steps": [
-    {
-      "description": "Crear el usuario",
-      "operations": [
-        {"service": "User", "method": "create_user", "args": {"name": "David"}}
-      ]
-    },
-    {
-      "description": "Crear la orden",
-      "operations": [
-        {
-          "service": "Order",
-          "method": "create",
-          "args": {
-            "user_id": {"$from": "step0", "path": "User.result.id"},
-            "item": "Widget"
-          }
-        }
-      ],
-      "depends_on": ["step0"]
-    },
-    {
-      "description": "Notificar si falló",
-      "operations": [
-        {"service": "Order", "method": "notify_failure", "args": {}}
-      ],
-      "condition": {"op": "step1", "outcome": "error"}
-    }
-  ]
-}
-```
-
-Y después llama a `execute_plan` con el `plan_id` que le devolvió `create_plan`.
-Si el LLM referenció mal un step (typo, id inexistente), `create_plan` lo
-rechaza con un error legible en la misma respuesta del tool — el agente ve el
-error y puede corregir el plan en el siguiente turno, sin que nada se ejecute
-a medias.
-
-Ideal cuando el flujo varía según el pedido del usuario y no se puede fijar de
-antemano en código.
-
-#### Wiring automático con `build_agent`
-
-Lo de arriba (`tools = manager.tool_specs + planner.build_tools()`) sigue
-siendo válido para cualquier adapter. Si usás `adapters/pydantic_ai.py`,
-`build_agent()` ahora lo hace por vos:
-
-```python
-from to_tool_manager.adapters.pydantic_ai import build_agent
-
-agent = build_agent(
-    "openai:gpt-4o", manager,
-    planner=manager.with_planner(),
-    planning_mode="gated",  # "off" | "manual" | "gated" (default: "manual")
-)
-```
-
-- `planning_mode="manual"` (default si pasás `planner=...`): los tools del
-  planner están siempre disponibles, el LLM decide libremente.
-- `planning_mode="gated"`: un heurístico sin costo de inferencia
-  (`core.planner.request_looks_complex`) decide, turno a turno, si
-  conviene exponer `create_plan`/`execute_plan` como tools reales o si
-  alcanza con un recordatorio liviano en las instructions — nunca fuerza
-  plan-then-execute en cada turno.
-- No pasar `planner=` (o pasar `planning_mode="off"`) deja todo exactamente
-  como estaba antes de esta fase.
-
-#### Planner con handler de eventos (para UIs en tiempo real)
-
-```python
-class LogHandler:
-    async def on_plan_event(self, event):
-        print(f"[{event.type.value}] plan={event.plan_id[:8]}")
-
-planner.add_handler(LogHandler())
-
-# Ahora cada cambio de estado emite eventos
-plan = await planner.create_plan([...])
-await planner.execute_plan(plan.id)
-```
-
----
-### Nivel 13 — Integración con ag_ui (streaming de estado a UIs)
-
-```python
-from to_tool_manager.adapters.ag_ui import AGUIPlanHandler
-
-planner = manager.with_planner()
-planner.add_handler(AGUIPlanHandler())
-
-# Los eventos del planner se convierten a StateSnapshotEvent / StateDeltaEvent
-# para actualizaciones en tiempo real en clientes ag_ui
-```
-
----
-
-### Nivel 14 — Skills (patrones de comportamiento para agentes)
-
-Los skills son patrones de comportamiento que influyen CÓMO el agente
-piensa y ejecuta. Se incluyen automáticamente al usar `build_agent`:
-
-```python
-from to_tool_manager.skills import (
-    reasoning_skill,
-    validation_skill,
-    error_handling_skill,
-    composition_skill,
-    planning_skill,
-    build_skills_toolset,
+order_service = Service(
+    name="orders",
+    service=OrderManager,
+    instructions="Order CRUD operations.",
+    middleware=[
+        AuthMiddleware(include=frozenset({"create", "update_status"})),
+    ],
 )
 
-# build_agent ya incluye todos los skills por defecto
-agent = build_agent("groq:llama-3.1-8b-instant", manager)
-
-# O construir un toolset personalizado
-toolset = build_skills_toolset(skills=[reasoning_skill, validation_skill])
-```
-
-**Skills disponibles:**
-
-| Skill | Qué influye |
-|---|---|
-| `reasoning` | Pre-análisis, estrategia de ejecución, manejo de incertidumbre |
-| `validation` | Validación de inputs, estado, dependencias y seguridad |
-| `error_handling` | Clasificación de errores, estrategia de retry, comunicación |
-| `composition` | Agrupación de operaciones independientes vs dependientes |
-| `planning` | Cuándo planificar, estructura de pasos, batching inteligente |
-
----
-
-### Nivel 15 — build_agent con todas las opciones
-
-```python
-from pydantic import BaseModel
-from to_tool_manager.adapters.pydantic_ai import build_agent
-
-class AgentReply(BaseModel):
-    message: str
-    success: bool
-    data: dict | None = None
-
-agent = build_agent(
-    model="groq:llama-3.1-8b-instant",
-    manager=manager,
-    output_type=AgentReply,                # salida tipada
-    system_prompt="Sos un asistente de negocio.",  # override del prompt auto-generado
-    instructions="Siempre confirmá antes de borrar.",  # instrucciones dinámicas
-    name="business-assistant",             # nombre para tracing
-    description="Agente de gestión de negocio",
-    model_settings={"temperature": 0.7},  # configuración del modelo
-    retries=3,                             # reintentos por categoría
-    tool_timeout=30.0,                     # timeout por tool
-    max_concurrency=5,                     # concurrencia máxima
-    end_strategy="exhaustive",             # ejecutar todos los tools antes de responder
+commerce_module = Module(
+    name="Commerce",
+    services=[user_service, order_service],
+    description="E-commerce backend: users and orders.",
+    middleware=[LogMiddleware()],
 )
-```
 
----
-
-### Nivel 16 — Operaciones condicionales con `when`
-
-Dentro de un batch, podés encadenar operaciones con cláusulas `when`
-que dependen del resultado de una operación anterior en la misma llamada:
-
-```python
-# Solo listar usuarios si la creación falló porque ya existía
-response = await dispatch("User", {
-    "operations": [
-        {"id": "create", "method": "create_user", "args": {"user_name": "David"}},
-        {
-            "method": "get_users",
-            "args": {},
-            "when": {"op": "create", "outcome": "error", "category": "already_exists"},
-        },
-    ]
-}, manager.tool_specs)
-```
-
-Si la operación `create` falla con categoría `already_exists`, se
-ejecuta `get_users`. Si `create` tiene éxito, `get_users` se skipea
-(reportado pero no ejecutado).
-
----
-
-### Nivel 17 — Clase como singleton vs instancias frescas
-
-```python
-# Singleton (default): una sola instancia para todas las llamadas
-Service(name="Order", service=Order, singleton=True)
-
-# Instancia fresca por llamada al manager (no por operación dentro del batch)
-Service(name="Order", service=Order, singleton=False)
-
-# Constructor con argumentos
-Service(
-    name="DB",
-    service=DatabaseService,
-    args=("postgresql://localhost/mydb",),
-    kwargs={"pool_size": 10},
-)
-```
-
----
-
-### Nivel 18 -- Middleware
-
-Intercepta llamadas a tools para logging, validacion, sanitizacion o control de acceso.
-
-#### Middleware vs ToolMiddleware
-
-Hay **dos tipos** de middleware. No son intercambiables: cada uno vive en un nivel distinto.
-
-| Tipo | Que hace | Donde se registra | Filtra por metodo? |
-|------|----------|-------------------|--------------------|
-| `Middleware` | Intercepta la llamada **completa** a la tool (el batch de operaciones) | `ToToolManager(middlewares=[...])` (global) | No, corre siempre |
-| `ToolMiddleware` | Intercepta **metodos individuales** dentro de un servicio | `Service(middlewares=[...])` (local) | Si, via `include`/`exclude` |
-
-**Por que estan en capas separadas?**
-
-`ToolMiddleware` opera a nivel de metodo individual: envuelve cada metodo
-en la dispatch table con `is_allowed()` (linea 301 de `manager.py`). Por eso
-**solo puede vivir en `Service.middlewares`** -- necesita acceso a los nombres
-de los metodos para filtrar. Si lo pusieras en el manager level, no tendria
-sense porque no sabe que metodos tiene cada servicio.
-
-`Middleware` opera a nivel de tool completa: envuelve el `dispatch_call` entero
-(linea 247 de `manager.py`). Corre una vez por tool call, no por metodo.
-Y explicitamente **salta** los `ToolMiddleware` (linea 248: `if isinstance(mw, ToolMiddleware): continue`).
-
-En resumen:
-- **Global** (`ToToolManager`) = solo `Middleware` (logging, metricas, rate limiting)
-- **Local** (`Service`) = `Middleware` + `ToolMiddleware` (auth, sanitizacion por metodo)
-
-#### Ejemplo: Middleware global (solo Middleware)
-
-```python
-from to_tool_manager import Middleware
-
-class LoggingMiddleware(Middleware):
-    async def dispatch(self, func, /, *args, **kw):
-        print(f"[LOG] Ejecutando tool...")
-        response = await func(*args, **kw)
-        print(f"[LOG] Completado")
-        return response
-
-# Solo Middleware en el manager (ToolMiddleware no iria aca)
-manager = ToToolManager([service], middlewares=[LoggingMiddleware()])
-```
-
-#### Ejemplo: ToolMiddleware local (solo en Service)
-
-```python
-from to_tool_manager import ToolMiddleware, ToolResponse, ToolError
-
-class AuthMiddleware(ToolMiddleware):
-    def __init__(self):
-        # Solo corre para estos dos metodos del servicio
-        super().__init__(include=["create_user", "delete_user"])
-
-    async def dispatch(self, func, /, *args, **kw):
-        if not self.is_authenticated():
-            return ToolResponse(
-                error=ToolError(
-                    category=frozenset({"authentication_error"}),
-                    message="No autorizado",
-                    exception_type="AuthError",
-                    retryable=False,
-                )
-            )
-        return await func(*args, **kw)
-
-# ToolMiddleware SOLO va en Service.middlewares
-Service(
-    name="User",
-    service=User,
-    middlewares=[AuthMiddleware(include=["create_user"])],
-)
-```
-
-#### Ejemplo: Combinacion (global + local + desactivar)
-
-```python
 manager = ToToolManager(
-    [order_service],
-    middlewares=[LoggingMiddleware()],       # Middleware GLOBAL
+    name="ECommerce",
+    resources=[commerce_module],
+)
+
+agent = manager.build_agent()
+```
+
+---
+
+### Example 3 — Services + Module + ToToolManager
+
+Services at different levels: some inside a `Module`, some directly registered in `ToToolManager`.
+
+```python
+user_service = Service(
+    name="users",
+    service=UserManager,
+    instructions="User CRUD.",
+    middleware=[AuthMiddleware(include=frozenset({"delete"}))],
 )
 
 order_service = Service(
-    name="Order",
-    service=Order,
-    middlewares=[AuthMiddleware(include=["create"])],   # ToolMiddleware LOCAL
-    disable_middlewares=["LoggingMiddleware"],            # desactiva el global
+    name="orders",
+    service=OrderManager,
+    instructions="Order CRUD.",
 )
+
+# Module for commerce
+commerce_module = Module(
+    name="Commerce",
+    services=[user_service, order_service],
+    description="Commerce sub-agent.",
+    middleware=[LogMiddleware()],
+)
+
+# Manager with module + additional global middleware
+manager = ToToolManager(
+    name="FullApp",
+    resources=[commerce_module],
+    middlewares=[RateLimitMiddleware(max_calls=50)],
+)
+
+# Dynamically add middleware to a specific service
+manager.add_middleware_to_service(
+    "orders",
+    AuthMiddleware(include=frozenset({"update_status"})),
+)
+
+agent = manager.build_agent()
 ```
-
-#### Diagrama de secuencia: cadena de middlewares
-
-```
-  LLM                  ToToolManager          LoggingMW(M)       AuthMW(TM)         Service
-   |                        |                     |                |                   |
-   |-- tool_call("Order") ->|                     |                |                   |
-   |                        |                     |                |                   |
-   |                        |-- _resolve_middlewares(service) ---->|                   |
-   |                        |   1. globals: [LoggingMW]           |                   |
-   |                        |   2. - disable_middlewares           |                   |
-   |                        |   3. + locals: [AuthMW]             |                   |
-   |                        |   resolved: [LoggingMW, AuthMW]     |                   |
-   |                        |                     |                |                   |
-   |                        |-- _apply_middlewares() ------------->|                   |
-   |                        |   SKIPS AuthMW (isinstance check)   |                   |
-   |                        |   solo envuelve con LoggingMW       |                   |
-   |                        |                     |                |                   |
-   |                        |                     |-- dispatch -->|                   |
-   |                        |                     |                |-- is_allowed?     |
-   |                        |                     |                |   create: SI      |
-   |                        |                     |                |-- dispatch(func)->|
-   |                        |                     |                |                   |-- func(args)
-   |                        |                     |                |                   |< ToolResponse
-   |                        |                     |                |< ToolResponse     |
-   |                        |                     |< ToolResponse  |                   |
-   |                        |< ToolResponse       |                |                   |
-   |< ToolResponse          |                     |                |                   |
-   |                        |                     |                |                   |
-
-  Para "get_orders" (no esta en include de AuthMW):
-   |                        |                     |                |                   |
-   |                        |-- _apply_middlewares() ------------->|                   |
-   |                        |                     |-- dispatch -->|                   |
-   |                        |                     |                |-- is_allowed?     |
-   |                        |                     |                |   get_orders: NO  |
-   |                        |                     |                |   retorna         |
-   |                        |                     |                |   ToolResponse    |
-   |                        |                     |   sin wrappear |   directamente    |
-   |                        |                     |< ToolResponse  |                   |
-   |                        |< ToolResponse       |                |                   |
-   |< ToolResponse          |                     |                |                   |
-```
-
-#### Para Modules
-
-Los middlewares del modulo se apilan como "globales" del sub-manager interno:
-
-```
-  Module(name="Commerce", middlewares=[ModuleMW])
-      |
-      v
-  sub-ToToolManager:
-    global_middlewares = [ManagerMW] + [ModuleMW]
-      |
-      v
-  Cada Service dentro del modulo resuelve:
-    1. ManagerMW + ModuleMW  (como "globales" del sub-manager, solo Middleware)
-    2. - disable_middlewares del service
-    3. + middlewares locales del service (Middleware + ToolMiddleware)
-```
-
-**Orden de ejecucion:** globales (solo `Middleware`) -> eliminados por `disable_middlewares` -> locales del servicio (`Middleware` + `ToolMiddleware`).
 
 ---
 
-### Nivel 19 -- Caso completo: pydantic-ai + planner + streaming
+### Example 4 — Services + Module + TTMBuilder
 
-El planner se conecta al agent via `planner.build_tools()`, que devuelve
-4 tools (`create_plan`, `execute_plan`, `update_plan_step`, `get_plan`).
-Estas tools se pasan al agent como toolsets adicionales, y el LLM decide
-cuando usarlas.
-
-#### Ejemplo corregido
+Using the fluent builder API to assemble everything declaratively.
 
 ```python
-import asyncio
-from pydantic import BaseModel
-from to_tool_manager import Service, ToToolManager
-from to_tool_manager.adapters.pydantic_ai import build_agent, run_streaming
-from to_tool_manager.core.planner import (
-    Step, StepOperation, ServiceDependency, ServiceDependencyGraph,
-)
+from to_tool_manager.core.builder.ttm_builder import TTMBuilder
 
-# 1. Definir servicios
-class Product:
-    def __init__(self):
-        self._catalog = {"gpu": 500.0, "cpu": 300.0}
 
-    def add_product(self, name: str, price: float):
-        self._catalog[name] = price
-        return f"Product '{name}' added at ${price}"
-
-    def get_products(self):
-        return self._catalog
-
-class ProductAlreadyExistsError(Exception): ...
-class OrderAlreadyExistsError(Exception): ...
-class OrderNotFoundError(Exception): ...
-
-# 2. Configurar manager
-manager = ToToolManager([
-    Service(
-        name="Order", service=Order, description="Manages customer orders.",
-        error_map={OrderAlreadyExistsError: ("already_exists", False)},
-    ),
-    Service(name="User", service=User, description="Manages system users."),
-    Service(
-        name="Product", service=Product, description="Product catalog.",
-        error_map={ProductAlreadyExistsError: ("already_exists", False)},
-    ),
-])
-
-# 3. Configurar planner con dependencias
-graph = ServiceDependencyGraph(dependencies=[
-    ServiceDependency(source="Order", target="User", reason="Orders need users"),
-    ServiceDependency(source="Order", target="Product", reason="Orders reference products"),
-])
-planner = manager.with_planner(dependency_graph=graph)
-
-# 4. Crear agente con las tools del planner
-class BusinessReply(BaseModel):
-    summary: str
-    details: dict
-
-# planner.build_tools() devuelve 4 tools: create_plan, execute_plan,
-# update_plan_step, get_plan. Se pasan como toolsets adicionales.
-planner_tools = planner.build_tools()
-
-agent = build_agent(
-    "groq:llama-3.1-8b-instant",
-    manager,
-    output_type=BusinessReply,
-    name="business-agent",
-)
-
-# Registrar las tools del planner en el agent
-for pt in planner_tools:
-    agent.tools.append(pt["func"])
-
-# 5. Ejecutar
-async def main():
-    result = await agent.run(
-        "Creá el usuario Ana, agregá el producto 'monitor' a $200, "
-        "y creá una orden para ella. Usá el planner para coordinar."
+with TTMBuilder(name="ECommerceAgent") as builder:
+    # Add services
+    builder.add_service(
+        name="users",
+        service=UserManager,
+        instructions="User CRUD operations.",
+        middleware=[AuthMiddleware(include=frozenset({"create", "delete"}))],
     )
-    print(result.output)
 
-asyncio.run(main())
+    builder.add_service(
+        name="orders",
+        service=OrderManager,
+        instructions="Order CRUD operations.",
+    )
+
+    # Add a module
+    builder.add_module(
+        name="Commerce",
+        services=[
+            Service(
+                name="users_v2",
+                service=UserManager,
+                instructions="User management v2.",
+            ),
+            Service(
+                name="orders_v2",
+                service=OrderManager,
+                instructions="Order management v2.",
+            ),
+        ],
+        description="Commerce sub-agent with additional services.",
+        middleware=[LogMiddleware()],
+    )
+
+    # Global middlewares
+    builder.add_middleware(RateLimitMiddleware(max_calls=100))
+
+# build() called automatically on __exit__
+agent = builder.agent
 ```
-
-#### Diagrama de secuencia: planner via agent
-
-```
-  Usuario              Agent                 Planner             Service
-    |                    |                     |                    |
-    | "Creá usuario,     |                     |                    |
-    |  producto y orden" |                     |                    |
-    |------------------->|                     |                    |
-    |                    |                     |                    |
-    |                    |-- LLM decide:       |                    |
-    |                    |   crear plan primero|                    |
-    |                    |                     |                    |
-    |                    |-- create_plan ----->|                    |
-    |                    |   steps: [          |                    |
-    |                    |     {create_user},  |                    |
-    |                    |     {add_product},  |                    |
-    |                    |     {create_order}  |                    |
-    |                    |   ]                 |                    |
-    |                    |                     |                    |
-    |                    |                     |-- Valida deps:     |
-    |                    |                     |   Order depende    |
-    |                    |                     |   de User+Product  |
-    |                    |                     |   OK: User y       |
-    |                    |                     |   Product van      |
-    |                    |                     |   primero          |
-    |                    |<-- plan_id ---------|                    |
-    |                    |                     |                    |
-    |                    |-- LLM decide:       |                    |
-    |                    |   ejecutar plan     |                    |
-    |                    |                     |                    |
-    |                    |-- execute_plan --->|                    |
-    |                    |   plan_id: "abc"   |                    |
-    |                    |                    |                    |
-    |                    |                    |-- Step 1+2         |
-    |                    |                    |   (independientes): |
-    |                    |                    |                    |-- User.create("Ana")
-    |                    |                    |                    |<-- "User 'Ana' created"
-    |                    |                    |                    |-- Product.add("monitor",200)
-    |                    |                    |                    |<-- "Product added"
-    |                    |                    |                    |
-    |                    |                    |-- Step 3           |
-    |                    |                    |   (depende 1+2):   |
-    |                    |                    |                    |-- Order.create("monitor")
-    |                    |                    |                    |<-- "Order created"
-    |                    |                    |                    |
-    |                    |<-- plan completado -|                    |
-    |                    |                     |                    |
-    |                    |-- LLM genera        |                    |
-    |                    |   respuesta final   |                    |
-    |<-- BusinessReply --|                     |                    |
-```
-
-#### La diferencia clave
-
-**Sin planner:** el LLM llama directamente a `User.create()`, `Product.add()`,
-`Order.create()` como tools separadas. No hay validacion de dependencias,
-no hay batching paralelo, no hay tracking de estado.
-
-**Con planner:** el LLM usa `create_plan` para definir la secuencia de pasos,
-y `execute_plan` para ejecutarlos. El planner:
-- Valida que las dependencias se respeten (Order no puede ir antes de User)
-- Ejecuta steps independientes en paralelo (User y Product simultaneamente)
-- Trackea estado de cada step (pending/in_progress/completed/failed)
-- Emite eventos para UIs en tiempo real
 
 ---
 
----
+### Example 5 — Graph with GraphMiddlewareRunner
 
-## Ejemplos completos
-
-### `example/` — App de comercio completa (FastAPI + HTMX)
-
-Aplicación de comercio completa con:
-- SQLModel + SQLite (WAL mode)
-- Capas: Router → Controller → Service → Repository
-- AI agent integrado con streaming via SSE
-- UI admin con HTMX + Jinja2
-- Suite completa de tests
-
-```bash
-cd example
-python run.py                    # iniciar en localhost:8000
-python util/seed_data.py         # sembrar datos de prueba
-pytest test/                     # correr tests
-```
-
-### `example_ui_pydantic/` — Agente standalone con UI web
-
-Ejemplo mínimo con pydantic-ai, sin base de datos:
-- Clases plain con storage en memoria
-- Módulos, middlewares personalizados
-- Una línea para UI web: `agent.to_web()`
-
-```bash
-cd example_ui_pydantic
-python ui_exe.py                 # iniciar en localhost:5000
-```
-
-### Patrón de uso típico
+Using `pydantic_graph` with `NodeMiddleware` to control node transitions.
 
 ```python
-# 1. Clases de negocio
-class Order:
-    def create(self, product_name: str): ...
-    def get_orders(self): ...
+from __future__ import annotations
 
-# 2. Registrar
-manager = ToToolManager([
-    Service(name="Order", service=Order, error_map={...}),
-    Service(name="User", service=User, error_map={...}),
-])
+from dataclasses import dataclass
 
-# 3. Agente
-agent = build_agent("groq:llama-3.1-8b-instant", manager)
-result = await agent.run("message")
+from pydantic_graph import BaseNode, End, Graph, GraphRunContext
 
-# 4. O web UI
-app = agent.to_web()
+from to_tool_manager.core.middleware.middleware import NodeMiddleware
+from to_tool_manager.middleware.graph_runner import GraphMiddlewareRunner
+
+
+# --- State ---
+@dataclass
+class PipelineState:
+    user_id: str
+    validated: bool = False
+    result: str | None = None
+
+
+# --- Nodes ---
+@dataclass
+class ValidateUser(BaseNode[PipelineState]):
+    async def run(self, ctx: GraphRunContext[PipelineState]) -> ProcessOrder:
+        ctx.state.validated = True
+        return ProcessOrder()
+
+
+@dataclass
+class ProcessOrder(BaseNode[PipelineState, None, str]):
+    async def run(self, ctx: GraphRunContext[PipelineState]) -> End[str]:
+        ctx.state.result = f"Order processed for user {ctx.state.user_id}"
+        return End(ctx.state.result)
+
+
+# --- Middleware ---
+class AuditMiddleware(NodeMiddleware):
+    """Logs every node transition and blocks if user_id is empty."""
+
+    async def before_transition(self, source_node_id, target_node_id, state):
+        print(f"[Audit] {source_node_id} -> {target_node_id}")
+        if hasattr(state, "user_id") and not state.user_id:
+            print("[Audit] BLOCKED: empty user_id")
+            return False
+        return True
+
+
+# --- Graph ---
+pipeline_graph = Graph(nodes=(ValidateUser, ProcessOrder))
+
+
+async def run_pipeline(user_id: str) -> str:
+    runner = GraphMiddlewareRunner(
+        graph=pipeline_graph,
+        middlewares=[AuditMiddleware()],
+    )
+    state = PipelineState(user_id=user_id)
+    return await runner.run(state=state)
+
+
+# Usage:
+# result = await run_pipeline("user-42")   # runs normally
+# result = await run_pipeline("")           # blocked by AuditMiddleware
 ```
 
 ---
 
-## En la práctica: qué resuelve to_tool_manager
+## HITL Example
 
-Las imágenes muestran un caso real donde un usuario pide **múltiples
-operaciones** al mismo tiempo:
+A complete Human-in-the-Loop flow using SSE events to require human approval before executing a tool.
 
-**Imagen 1 — La solicitud del usuario:**
+```python
+from typing import Any
 
-![Solicitud multi-operación](data/img/1.jpeg)
+from to_tool_manager.provider.human_in_the_loop import (
+    EventEmitter,
+    HumanInTheLoop,
+)
+from to_tool_manager.middleware.hitl import (
+    HumanInTheLoopMiddleware,
+    HumanInTheLoopToolMiddleware,
+)
 
-> "Hello. Create a new user report. Then, generate a report of all
-> payments to analyze available funds, losses, and related
-> administrative aspects. Also, create the following user: Gustavo
-> (gus@ttm.com) with any password."
 
-**Imagen 2 — La respuesta del agente:**
+# 1. Implement EventEmitter for your framework
+class SSEEventEmitter(EventEmitter):
+    def __init__(self, send_fn):
+        self._send = send_fn
 
-![Respuesta del agente](data/img/2.jpeg)
+    async def emit(self, event_id: str, payload: dict[str, Any]) -> None:
+        await self._send({"event": event_id, "data": payload})
 
-El agente ejecutó **todas las operaciones en una sola interacción**:
 
-- ✅ **User creation**: creó a Gustavo
-- 📊 **User report**: 14 usuarios registrados
-- 📊 **Payments report**: análisis completo de fondos, pérdidas y estados
+# 2. Define the HITL logic
+async def approval_logic(emit, event_fn, action: str):
+    """Emits an approval request, waits for response, validates."""
+    await emit("approval_request", {
+        "action": action,
+        "message": f"Do you approve this action: {action}?",
+    })
+    # In a real app, this would wait for a websocket/SSE response.
+    # If rejected, raise HumanInputRetry to retry the cycle.
 
-**Qué demuestra esto:**
 
-| Sin to_tool_manager | Con to_tool_manager |
-|---------------------|---------------------|
-| 3 round-trips separados (User.create, User.list, Payment.report) | 1 sola tool call con batch de operaciones |
-| El LLM decide el orden secuencialmente | El manager ejecuta todo junto, el LLM solo recibe el resultado |
-| Más tokens, más latencia | Menos tokens, menos latencia |
-| Manejo manual de errores por servicio | ErrorMap unificado, ToolResponse siempre seguro |
+# 3. Create HITL coordinator
+emitter = SSEEventEmitter(send_fn=your_send_function)
+hitl = HumanInTheLoop(
+    emitter=emitter,
+    logic=approval_logic,
+    action="delete_user",  # injected into logic
+)
 
-El usuario no sabe que hay múltiples servicios por detrás. Solo hace
-**un pedido** y recibe **una respuesta consolidada**. Esa es la
-diferencia clave: `to_tool_manager` convierte la complejidad técnica
-en una interfaz simple para el LLM y para el usuario.
+# 4a. Global HITL — applies to ALL tools
+global_hitl_mw = HumanInTheLoopMiddleware(hitl=hitl, max_retries=3)
 
+# 4b. Per-method HITL — applies only to filtered methods
+selective_hitl_mw = HumanInTheLoopToolMiddleware(
+    hitl=hitl,
+    max_retries=3,
+    include=frozenset({"delete", "update_status"}),
+)
+
+# 5. Use in Service or ToToolManager
+service = Service(
+    name="orders",
+    service=OrderManager,
+    instructions="Order management.",
+    middleware=[selective_hitl_mw],
+)
+```
 
 ---
 
-## Manejo de errores
+## Public API
 
-Nunca uses string-matching sobre mensajes. Definí tus propias
-excepciones de dominio y mapealas explícitamente en `error_map`. Sin
-mapear, los defaults son: `ValueError`/`TypeError` → `validation_error`
-(reintentable); `KeyError`/`LookupError` → `not_found`; el resto →
-`unclassified` sanitizado, no reintentable.
+```python
+from to_tool_manager import (
+    # Core
+    Service,
+    Module,
+    ToToolManager,
+    TTMBuilder,
+
+    # Middleware
+    Middleware,
+    ToolMiddleware,
+    NodeMiddleware,
+    GraphMiddlewareRunner,
+
+    # HITL
+    EventEmitter,
+    HumanInTheLoop,
+    HumanInTheLoopMiddleware,
+    HumanInTheLoopToolMiddleware,
+    HumanInputRetry,
+
+    # Exceptions
+    TTMError,
+    ConfigurationError,
+    InvalidResourceTypeError,
+    SelfDisableMiddlewareError,
+    ServiceError,
+    ServiceNotFoundError,
+    ServiceAlreadyRegisteredError,
+    DependencyNotSetError,
+    ModuleError,
+    ModuleAlreadyRegisteredError,
+    AgentError,
+    AgentNotBuiltError,
+    AgentAlreadyBuiltError,
+    MiddlewareError,
+    MiddlewareNotInitializedError,
+    MiddlewareTargetMismatchError,
+    BuilderError,
+    ToToolManagerAlreadyRegisteredError,
+    ToToolManagerNotFoundError,
+)
+```
 
 ---
 
-## Por qué es agnóstico
+## Dependencies
 
-- `to_tool_manager` (core) solo usa `inspect`, `dataclasses`, `re` y
-  `asyncio` de la stdlib. Nunca importa pydantic-ai, fastmcp, ni langchain.
-- Todo lo específico de un framework vive en `to_tool_manager/adapters/`.
-  Si aparece un framework nuevo, se agrega un adapter; el core no se toca.
-- Probado end-to-end: el mismo `manager.tool_specs` corre sin cambios
-  contra un `Agent` real de pydantic-ai y contra un servidor `FastMCP`
-  real, con `pyright` en 0 errores sobre todo el paquete.
+- `pydantic-ai-slim[cli,openai]>=2.37.0`
+- `pydantic-ai-harness>=0.28.0`
+- `pydantic-ai-skills>=1.4.0`
+- `pydantic-graph>=2.37.0`
+- `subagents-pydantic-ai>=0.2.21`
+- `fastmcp>=4.0.2`
 
+---
 
+## Links
+
+- **Repository:** https://github.com/Davidmg5k/ToToolManager
+- **Bug Tracker:** https://github.com/Davidmg5k/ToToolManager/issues
+- **Changelog:** https://github.com/Davidmg5k/ToToolManager/blob/main/CHANGELOG.md

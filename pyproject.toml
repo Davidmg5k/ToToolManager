@@ -30,7 +30,14 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Application Frameworks",
     "Typing :: Typed",
 ]
-dependencies = []
+dependencies = [
+    "fastmcp>=4.0.2",
+    "pydantic-ai-harness>=0.28.0",
+    "pydantic-ai-skills>=1.4.0",
+    "pydantic-ai-slim[cli,openai]>=2.37.0",
+    "pydantic-graph>=2.37.0",
+    "subagents-pydantic-ai>=0.2.21",
+]
 
 [project.urls]
 Homepage = "https://github.com/Davidmg5k/ToToolManager"
@@ -67,6 +74,8 @@ dev = [
     "pytest>=9.1.1",
     "httpx>=0.28.1",
     "pytest-cov>=6.0.0",
+    "beautifulsoup4>=4.15.0",
+    "pydantic-ai-harness[playwright]>=0.28.0",
 ]
 
 [tool.coverage.run]
@@ -76,3 +85,6 @@ omit = ["tests/*", "example/*"]
 [tool.coverage.report]
 fail_under = 79
 show_missing = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

@@ -1,150 +1,94 @@
+"""to_tool_manager — Paquete principal.
+
+Public API:
+- Service: Expone métodos como tools para LLMs
+- Module: Agrupa servicios como sub-agente
+- ToToolManager: Orquestador de servicios y módulos
+- TTMBuilder: Builder para crear agentes de forma declarativa
+- Middleware: Base middleware abstracta
+- ToolMiddleware: Middleware con filtrado por método
+- NodeMiddleware: Base middleware para nodos de grafo
+- GraphMiddlewareRunner: Ejecutor de grafo con middleware
+- EventEmitter: Protocolo para emisión de eventos HITL
+- HumanInTheLoop: Clase central del flujo human-in-the-loop
+- HumanInTheLoopMiddleware: HITL global (aplica a todas las tools)
+- HumanInTheLoopToolMiddleware: HITL por método (con include/exclude)
+- HumanInputRetry: Exception para reintentos de validación HITL
+- Excepciones: TTMError y subtipos para manejo de errores
 """
-to_tool_manager
-===============
 
-Turns plain Python classes ("services") into agent tools, without tying
-you to any specific agent framework.
-
-Core usage (framework-agnostic)::
-
-    from to_tool_manager import ToToolManager, Service
-
-    manager = ToToolManager([
-        Service(name="Order", service=Order, description="..."),
-    ])
-    specs = manager.tool_specs  # list[ToolSpec] -- pure data, no framework
-
-Adapters translate `tool_specs` into whatever a specific framework
-expects, and are imported separately so this package has ZERO hard
-dependency on any agent framework::
-
-    from to_tool_manager.adapters.pydantic_ai import to_pydantic_ai_tools
-    from to_tool_manager.adapters.fastmcp import register_on_mcp
-    from to_tool_manager.adapters.raw import to_openai_tool_schemas, dispatch
-"""
-from typing import TYPE_CHECKING
-
-from to_tool_manager.adapters.pydantic_ai import build_agent
-
-if TYPE_CHECKING:
-    # Only for static analysis -- see the module-level __getattr__ below
-    # for why this isn't a real, unconditional runtime import.
-    from to_tool_manager.adapters.fastmcp import build_mcp_agent, build_mcp_server
-from to_tool_manager.core import (
-    ErrorEntry,
-    ErrorMap,
-    Module,
-    ParamSpec,
-    Service,
-    ToolError,
-    ToolResponse,
-    ToolSpec,
-    ToToolManager,
-    build_instructions,
-    build_service_description,
-    build_system_prompt,
-    class_summary,
-    discover_methods,
-    make_safe_caller,
+from to_tool_manager.core.main.service import Service
+from to_tool_manager.core.main.module import Module
+from to_tool_manager.core.main.to_tool_manager import ToToolManager
+from to_tool_manager.core.builder.ttm_builder import TTMBuilder
+from to_tool_manager.core.middleware.middleware import (
+    Middleware,
+    NodeMiddleware,
+    ToolMiddleware,
 )
-from to_tool_manager.core.planner import (
-    JSONPatchOp,
-    Plan,
-    PlanEvent,
-    PlanEventHandler,
-    Planner,
-    ServiceDependency,
-    ServiceDependencyGraph,
-    Step,
-    StepOperation,
-    StepStatus,
+from to_tool_manager.middleware.graph_runner import GraphMiddlewareRunner
+from to_tool_manager.provider import (
+    EventEmitter,
+    HumanInTheLoop,
+    HumanInputRetry,
 )
-from to_tool_manager.security.middleware import Middleware, ToolMiddleware
-from to_tool_manager.observability import (
-    InMemoryMetricsCollector,
-    LoggingMiddleware,
-    MetricsCollector,
-    MetricsMiddleware,
-    TracingMiddleware,
+from to_tool_manager.middleware import (
+    HumanInTheLoopMiddleware,
+    HumanInTheLoopToolMiddleware,
 )
-from to_tool_manager.resilience import CircuitBreakerMiddleware, CircuitState, RetryMiddleware, TimeoutMiddleware
-from to_tool_manager.operations import HealthReport, ProbeHealth, ServiceHealth, check_manager_health
-
+from to_tool_manager.exception import (
+    TTMError,
+    ConfigurationError,
+    InvalidResourceTypeError,
+    SelfDisableMiddlewareError,
+    ServiceError,
+    ServiceNotFoundError,
+    ServiceAlreadyRegisteredError,
+    DependencyNotSetError,
+    ModuleError,
+    ModuleAlreadyRegisteredError,
+    AgentError,
+    AgentNotBuiltError,
+    AgentAlreadyBuiltError,
+    MiddlewareError,
+    MiddlewareNotInitializedError,
+    MiddlewareTargetMismatchError,
+    BuilderError,
+    ToToolManagerAlreadyRegisteredError,
+    ToToolManagerNotFoundError,
+)
 
 __all__ = [
-    "ToToolManager",
     "Service",
     "Module",
-    "ToolSpec",
-    "ToolResponse",
-    "ToolError",
-    "ParamSpec",
-    "ErrorMap",
-    "ErrorEntry",
-    "discover_methods",
-    "class_summary",
-    "make_safe_caller",
-    "build_system_prompt",
-    "build_instructions",
-    "build_service_description",
-    # Planning
-    "Plan",
-    "Step",
-    "StepStatus",
-    "StepOperation",
-    "Planner",
-    "ServiceDependency",
-    "ServiceDependencyGraph",
-    "PlanEvent",
-    "PlanEventHandler",
-    "JSONPatchOp",
-    # Security
+    "ToToolManager",
+    "TTMBuilder",
     "Middleware",
     "ToolMiddleware",
-    # Observability
-    "LoggingMiddleware",
-    "MetricsCollector",
-    "InMemoryMetricsCollector",
-    "MetricsMiddleware",
-    "TracingMiddleware",
-    # Resilience
-    "TimeoutMiddleware",
-    "RetryMiddleware",
-    "CircuitBreakerMiddleware",
-    "CircuitState",
-    # Operations
-    "HealthReport",
-    "ServiceHealth",
-    "ProbeHealth",
-    "check_manager_health",
-    # Builders
-    "build_agent",
-    "build_mcp_agent",
-    "build_mcp_server",
+    "NodeMiddleware",
+    "GraphMiddlewareRunner",
+    "EventEmitter",
+    "HumanInTheLoop",
+    "HumanInTheLoopMiddleware",
+    "HumanInTheLoopToolMiddleware",
+    "HumanInputRetry",
+    "TTMError",
+    "ConfigurationError",
+    "InvalidResourceTypeError",
+    "SelfDisableMiddlewareError",
+    "ServiceError",
+    "ServiceNotFoundError",
+    "ServiceAlreadyRegisteredError",
+    "DependencyNotSetError",
+    "ModuleError",
+    "ModuleAlreadyRegisteredError",
+    "AgentError",
+    "AgentNotBuiltError",
+    "AgentAlreadyBuiltError",
+    "MiddlewareError",
+    "MiddlewareNotInitializedError",
+    "MiddlewareTargetMismatchError",
+    "BuilderError",
+    "ToToolManagerAlreadyRegisteredError",
+    "ToToolManagerNotFoundError",
 ]
-
-__version__ = "0.4.8"
-
-
-def __getattr__(name: str):
-    """Lazily loads the fastmcp adapter's public names.
-
-    `build_mcp_agent`/`build_mcp_server` are listed in `__all__` (and thus
-    part of the public API accessible as `to_tool_manager.build_mcp_agent`
-    / `from to_tool_manager import build_mcp_agent`) but the fastmcp
-    adapter itself -- and only that adapter -- requires the optional
-    `fastmcp` package. Importing it lazily here (PEP 562), instead of at
-    module load time, means `import to_tool_manager` never fails just
-    because `fastmcp` isn't installed; the adapter's own friendly
-    `ImportError` (see `adapters/fastmcp.py`) still fires, just at first
-    use of one of these two names instead of at package import time --
-    matching the package-level promise ("ZERO hard dependency on any
-    agent framework") stated in this module's own docstring.
-    """
-    if name in ("build_mcp_agent", "build_mcp_server"):
-        from to_tool_manager.adapters.fastmcp import build_mcp_agent, build_mcp_server
-
-        globals()["build_mcp_agent"] = build_mcp_agent
-        globals()["build_mcp_server"] = build_mcp_server
-        return globals()[name]
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

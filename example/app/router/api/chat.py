@@ -17,7 +17,6 @@ from app.service import ChatSessionRepository, ChatMessageRepository, chat_task_
 from app.types.chat import CreateChatSession, CreateChatMessage
 from app.security.middleware_ai.sanitize import SensitiveFieldMiddlewareAI
 from to_tool_manager import ToToolManager
-from to_tool_manager.adapters.pydantic_ai import build_agent
 
 chat_router = APIRouter(prefix="/api/chat", tags=["api", "chat"])
 
@@ -39,7 +38,10 @@ SYSTEM_PROMPT = (
 
 def _build_manager():
     session = Session(engine)
-    manager = ToToolManager([
+    manager = ToToolManager(
+        name="Assistant Agent Application",
+        system_prompt=SYSTEM_PROMPT,
+        resources=[
             build_user_service(session),
             build_commerce_module(session),
             build_communication_module(session),
@@ -262,12 +264,7 @@ async def chat(request: Request):
     message = form.get("message", "")
     manager, tools_session = _build_manager()
     try:
-        agent = build_agent(
-            model=MODEL,
-            manager=manager,
-            system_prompt=SYSTEM_PROMPT,
-        )
-        result = await agent.run(message)
+        result = await manager.agent.run(str(message), deps=manager.dep)
         return ok({"role": "assistant", "content": result.output})
     finally:
         tools_session.close()

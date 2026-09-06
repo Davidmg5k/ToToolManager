@@ -1,150 +1,58 @@
 import pytest
-from to_tool_manager.core.types import ErrorMap, ErrorEntry, ParamSpec, ToolSpec, ToolResponse, ToolError
-from to_tool_manager.core.service import Service
-from to_tool_manager.orchestrator import ToToolManager
-from to_tool_manager.core.discovery import discover_methods
+
+from to_tool_manager.core.middleware.middleware import ToolMiddleware
 
 
-# ---------------------------------------------------------------------------
-# Sample service classes for testing
-# ---------------------------------------------------------------------------
+# Servicios de ejemplo para tests
+class UserService:
+    """Servicio de usuarios para testing."""
 
-class DummyService:
-    """A simple service for testing."""
-    
-    def greet(self, name: str) -> str:
-        """Greet a user by name."""
-        return f"Hello, {name}!"
-    
-    def add(self, a: int, b: int) -> int:
-        """Add two numbers."""
-        return a + b
-    
-    def divide(self, a: float, b: float) -> float:
-        """Divide a by b."""
-        if b == 0:
-            raise ValueError("Cannot divide by zero")
-        return a / b
+    def create(self, name: str) -> str:
+        return f"Created {name}"
+
+    def get(self, id: int) -> dict:
+        return {"id": id, "name": "Test"}
+
+    def delete(self, id: int) -> bool:
+        return True
 
 
-class AsyncDummyService:
-    """An async service for testing."""
-    
-    async def fetch(self, url: str) -> str:
-        """Fetch content from URL."""
-        return f"Content from {url}"
-    
-    async def process(self, data: list[int]) -> int:
-        """Process a list of numbers."""
-        return sum(data)
+class OrderService:
+    """Servicio de órdenes para testing."""
+
+    def create(self, product: str) -> str:
+        return f"Order created for {product}"
+
+    def get(self, id: int) -> dict:
+        return {"id": id, "product": "Test"}
 
 
-class PrivateMethodsService:
-    """Service with mixed visibility."""
-    
-    def public_method(self) -> str:
-        """A public method."""
-        return "public"
-    
-    def _protected_method(self) -> str:
-        """A protected method."""
-        return "protected"
-    
-    def __private_method(self) -> str:
-        """A private method."""
-        return "private"
+class PublicService:
+    """Servicio público para testing."""
+
+    def list(self) -> list:
+        return []
 
 
-class PropertiesService:
-    """Service with properties."""
-    
-    @property
-    def version(self) -> str:
-        """Service version."""
-        return "1.0.0"
-    
-    def get_name(self) -> str:
-        """Get service name."""
-        return "PropertiesService"
+# ConcreteToolMiddleware para testing (ToolMiddleware es abstracta)
+class ConcreteToolMiddleware(ToolMiddleware):
+    """ToolMiddleware concreta para testing."""
+
+    async def dispatch(self, func, /, *args, **kw):
+        return await func(*args, **kw)
 
 
-class FailingService:
-    """Service that raises various errors."""
-    
-    def not_found(self, id: int) -> str:
-        """Raise not found error."""
-        raise FileNotFoundError(f"Item {id} not found")
-    
-    def permission_error(self) -> str:
-        """Raise permission error."""
-        raise PermissionError("Access denied")
-    
-    def timeout_error(self) -> str:
-        """Raise timeout error."""
-        raise TimeoutError("Request timed out")
-
-
-# ---------------------------------------------------------------------------
 # Fixtures
-# ---------------------------------------------------------------------------
-
 @pytest.fixture
-def dummy_service_class():
-    return DummyService
+def user_service_class():
+    return UserService
 
 
 @pytest.fixture
-def async_service_class():
-    return AsyncDummyService
+def order_service_class():
+    return OrderService
 
 
 @pytest.fixture
-def dummy_service():
-    return DummyService()
-
-
-@pytest.fixture
-def service_config():
-    return Service(
-        name="Dummy",
-        service=DummyService,
-        description="A dummy service for testing",
-    )
-
-
-@pytest.fixture
-def async_service_config():
-    return Service(
-        name="AsyncDummy",
-        service=AsyncDummyService,
-        description="An async dummy service",
-    )
-
-
-@pytest.fixture
-def error_map():
-    return (
-        ErrorMap()
-        .map(FileNotFoundError, category="not_found")
-        .map(PermissionError, category="permission_denied", retryable=False)
-        .map(TimeoutError, category="timeout", retryable=True)
-    )
-
-
-@pytest.fixture
-def failing_service_config(error_map):
-    return Service(
-        name="Failing",
-        service=FailingService,
-        error_map=error_map,
-    )
-
-
-@pytest.fixture
-def simple_manager(service_config):
-    return ToToolManager([service_config])
-
-
-@pytest.fixture
-def multi_service_manager(service_config, async_service_config):
-    return ToToolManager([service_config, async_service_config])
+def public_service_class():
+    return PublicService
