@@ -1,6 +1,6 @@
-"""Excepciones de configuración.
+"""Configuration exceptions.
 
-Jerarquía:
+Hierarchy:
     ConfigurationError
     ├── InvalidResourceTypeError
     └── SelfDisableMiddlewareError
@@ -10,11 +10,11 @@ from to_tool_manager.exception._ttm_error import TTMError
 
 
 class ConfigurationError(TTMError):
-    """Error de configuración inválida."""
+    """Invalid configuration error."""
 
 
 class InvalidResourceTypeError(ConfigurationError):
-    """Un resource no es ni Service ni Module."""
+    """Resource is neither Service nor Module."""
 
     def __init__(self, got_type: str) -> None:
         self.got_type = got_type
@@ -24,7 +24,7 @@ class InvalidResourceTypeError(ConfigurationError):
 
 
 class SelfDisableMiddlewareError(ConfigurationError):
-    """Module intenta deshabilitar un middleware declarado en la misma clase."""
+    """Module attempts to disable a middleware declared in the same class."""
 
     def __init__(self, middleware_name: str) -> None:
         self.middleware_name = middleware_name

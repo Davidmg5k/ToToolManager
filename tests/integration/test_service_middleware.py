@@ -6,7 +6,7 @@ from tests.conftest import ConcreteToolMiddleware
 
 
 class UserService:
-    """Servicio de ejemplo para testing."""
+    """Example service for testing."""
 
     def create(self, name: str) -> str:
         return f"Created {name}"
@@ -16,10 +16,10 @@ class UserService:
 
 
 class TestServiceMiddlewareIntegration:
-    """Tests de integración entre Service y Middleware."""
+    """Integration tests between Service and Middleware."""
 
     def test_middleware_chain_order(self):
-        """Cadena de middlewares se ejecuta en orden"""
+        """Middleware chain executes in order"""
         call_order = []
 
         class MW1(Middleware):
@@ -35,7 +35,7 @@ class TestServiceMiddlewareIntegration:
         service = Service(
             name="User",
             service=UserService,
-            instructions="Gestión de usuarios",
+            instructions="User management",
             middleware=[MW1(), MW2()]
         )
         manager = ToToolManager(
@@ -49,11 +49,11 @@ class TestServiceMiddlewareIntegration:
         assert resolved[1].name == "MW2"
 
     def test_tool_middleware_filters_methods(self):
-        """ToolMiddleware filtra métodos correctamente"""
+        """ToolMiddleware filters methods correctly"""
         service = Service(
             name="User",
             service=UserService,
-            instructions="Gestión de usuarios",
+            instructions="User management",
             middleware=[ConcreteToolMiddleware(include=["create"])]
         )
         manager = ToToolManager(

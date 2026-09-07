@@ -27,12 +27,12 @@ from to_tool_manager.exception import (
 
 @dataclass
 class Module:
-    """Agrupa servicios como sub-agente.
+    """Groups services as a sub-agent.
 
-    Precondición: name es único, services no está vacío
-    Postcondición: Module puede construirse como SubAgent vía build_as_agent()
+    Precondition: name is unique, services is not empty
+    Postcondition: Module can be built as SubAgent via build_as_agent()
 
-    Referencia: REQ-002, REQ-007
+    Reference: REQ-002, REQ-007
     """
     name: str
     services: Sequence[Service]
@@ -77,12 +77,12 @@ class Module:
         return self.__dep
 
     def _validate_no_self_disable(self) -> None:
-        """Valida que no se deshabiliten middlewares declarados en la misma clase.
+        """Validates that middlewares declared in the same class are not disabled.
 
-        Precondición: ninguno
-        Postcondición: ValueError si se intenta deshabilitar un middleware propio
+        Precondition: none
+        Postcondition: ValueError if attempting to disable a self-declared middleware
 
-        Referencia: REQ-007
+        Reference: REQ-007
         """
         if not self.middleware or not self.disable_middlewares:
             return
@@ -95,15 +95,15 @@ class Module:
                 raise SelfDisableMiddlewareError(mw_name)
 
     def build_as_agent(self) -> SubAgent[DinamicDepend]:
-        """Construye el módulo como SubAgent con sus servicios.
+        """Builds the module as a SubAgent with its services.
 
-        Precondición: services no está vacío
-        Postcondición: SubAgent creado con capabilities de cada servicio
+        Precondition: services is not empty
+        Postcondition: SubAgent created with capabilities from each service
 
-        Flujo: Para cada servicio → filtrar middlewares deshabilitados →
-               añadir middlewares del módulo → construir capability
+        Flow: For each service -> filter disabled middlewares ->
+               add module middlewares -> build capability
 
-        Referencia: REQ-002, REQ-007
+        Reference: REQ-002, REQ-007
         """
         cp = self.capabilities
         capabilities = [] + cp if cp else []
@@ -140,12 +140,12 @@ class Module:
         return SubAgent(agent)
 
     def _apply_module_middlewares(self, service: Service) -> None:
-        """Aplica middlewares del módulo a un servicio, respetando disable_middlewares.
+        """Applies module middlewares to a service, respecting disable_middlewares.
 
-        Precondición: service es un Service válido
-        Postcondición: middlewares del módulo añadidos al servicio (excepto los deshabilitados)
+        Precondition: service is a valid Service
+        Postcondition: module middlewares added to the service (except disabled ones)
 
-        Referencia: REQ-007
+        Reference: REQ-007
         """
         if not self.middleware:
             return

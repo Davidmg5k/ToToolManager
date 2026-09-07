@@ -4,14 +4,14 @@ from to_tool_manager.exception import DependencyNotSetError
 
 
 class DinamicDepend:
-    """Dependencia dinámica para servicios."""
+    """Dynamic dependency for services."""
 
     def __init__(self):
-        # Usar object.__setattr__ directamente para evitar recursión
+        # Use object.__setattr__ directly to avoid recursion
         object.__setattr__(self, '_data', {})
 
     def __setattr__(self, name: str, value: Any) -> None:
-        """Establece un atributo dinámicamente."""
+        """Sets an attribute dynamically."""
         if name.startswith('_'):
             object.__setattr__(self, name, value)
         else:
@@ -19,8 +19,8 @@ class DinamicDepend:
             data[name] = value
 
     def __getattribute__(self, name: str) -> Any:
-        """Obtiene un atributo dinámicamente."""
-        # Para atributos internos, usar object.__getattribute__
+        """Gets an attribute dynamically."""
+        # For internal attributes, use object.__getattribute__
         if name.startswith('_'):
             return object.__getattribute__(self, name)
         data = object.__getattribute__(self, '_data')
@@ -29,7 +29,7 @@ class DinamicDepend:
         raise DependencyNotSetError(name)
 
     def __hasattr__(self, name: str) -> bool:
-        """Verifica si existe un atributo."""
+        """Checks if an attribute exists."""
         if name.startswith('_'):
             return object.__getattribute__(self, name) is not None
         data = object.__getattribute__(self, '_data')

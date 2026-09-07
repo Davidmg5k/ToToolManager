@@ -7,7 +7,7 @@ from to_tool_manager.core.middleware.middleware import Middleware, ToolMiddlewar
 
 
 class UserService:
-    """Servicio de usuarios para testing."""
+    """User service for testing."""
 
     def create(self, name: str) -> str:
         return f"Created {name}"
@@ -20,7 +20,7 @@ class UserService:
 
 
 class OrderService:
-    """Servicio de órdenes para testing."""
+    """Order service for testing."""
 
     def create(self, product: str) -> str:
         return f"Order created for {product}"
@@ -30,22 +30,22 @@ class OrderService:
 
 
 class AuthMiddleware(Middleware):
-    """Middleware de autenticación de ejemplo."""
+    """Example authentication middleware."""
 
     async def dispatch(self, func, /, *args, **kw):
         return await func(*args, **kw)
 
 
 class TestCrearAgenteBasico:
-    """Caso de uso: Crear agente con 1 servicio."""
+    """Use case: Create agent with 1 service."""
 
     def test_crear_agente_con_servicio(self):
-        """Dado un servicio, cuando se crea agente, entonces está disponible"""
+        """Given a service, when agent is created, then it is available"""
         # Arrange
         service = Service(
             name="User",
             service=UserService,
-            instructions="Gestión de usuarios"
+            instructions="User management"
         )
 
         # Act
@@ -61,25 +61,25 @@ class TestCrearAgenteBasico:
 
 
 class TestAgenteConModulos:
-    """Caso de uso: Crear agente con módulos."""
+    """Use case: Create agent with modules."""
 
     def test_crear_agente_con_modulos(self):
-        """Dado un módulo con servicios, cuando se crea agente, entonces funciona"""
+        """Given a module with services, when agent is created, then it works"""
         # Arrange
         user_service = Service(
             name="User",
             service=UserService,
-            instructions="Gestión de usuarios"
+            instructions="User management"
         )
         order_service = Service(
             name="Order",
             service=OrderService,
-            instructions="Gestión de órdenes"
+            instructions="Order management"
         )
         module = Module(
             name="Commerce",
             services=[user_service, order_service],
-            description="Módulo de comercio"
+            description="Commerce module"
         )
 
         # Act
@@ -95,10 +95,10 @@ class TestAgenteConModulos:
 
 
 class TestToolMiddlewareFiltrado:
-    """Caso de uso: ToolMiddleware filtra métodos."""
+    """Use case: ToolMiddleware filters methods."""
 
     def test_filtrado_por_include(self):
-        """Dado un ToolMiddleware con include, cuando se ejecuta, solo métodos incluidos"""
+        """Given a ToolMiddleware with include, when executed, only included methods"""
         # Arrange
         class AuthMiddleware(ToolMiddleware):
             async def dispatch(self, func, /, *args, **kw):
@@ -116,15 +116,15 @@ class TestToolMiddlewareFiltrado:
 
 
 class TestDisableMiddlewares:
-    """Caso de uso: Deshabilitar middlewares heredados."""
+    """Use case: Disable inherited middlewares."""
 
     def test_servicio_publico_sin_auth(self):
-        """Dado un servicio público, cuando se deshabilita auth, entonces no se aplica"""
+        """Given a public service, when auth is disabled, then it is not applied"""
         # Arrange
         public_service = Service(
             name="Public",
             service=UserService,
-            instructions="API pública",
+            instructions="Public API",
             disable_middlewares=("AuthMiddleware",)
         )
 
@@ -141,16 +141,16 @@ class TestDisableMiddlewares:
 
 
 class TestFluentBuilder:
-    """Caso de uso: API declarativa completa."""
+    """Use case: Full declarative API."""
 
     def test_fluent_api_crea_agente(self):
-        """Dado un TTMBuilder, cuando se usa fluent API, entonces crea agente"""
+        """Given a TTMBuilder, when fluent API is used, then agent is created"""
         # Arrange & Act
         builder = TTMBuilder(name="TestBuilder")
         builder.add_service(
             name="User",
             service=UserService,
-            instructions="Gestión de usuarios"
+            instructions="User management"
         )
         builder.build()
 

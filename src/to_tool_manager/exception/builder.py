@@ -1,6 +1,6 @@
-"""Excepciones del builder.
+"""Builder exceptions.
 
-Jerarquía:
+Hierarchy:
     BuilderError
     ├── ToToolManagerAlreadyRegisteredError
     └── ToToolManagerNotFoundError
@@ -10,11 +10,11 @@ from to_tool_manager.exception._ttm_error import TTMError
 
 
 class BuilderError(TTMError):
-    """Error en el builder (TTMBuilder / Manager)."""
+    """Error in the builder (TTMBuilder / Manager)."""
 
 
 class ToToolManagerAlreadyRegisteredError(BuilderError):
-    """ToToolManager ya registrado con el mismo nombre."""
+    """ToToolManager already registered with the same name."""
 
     def __init__(self, name: str) -> None:
         self.name = name
@@ -22,7 +22,7 @@ class ToToolManagerAlreadyRegisteredError(BuilderError):
 
 
 class ToToolManagerNotFoundError(BuilderError):
-    """ToToolManager no encontrado por nombre."""
+    """ToToolManager not found by name."""
 
     def __init__(self, name: str) -> None:
         self.name = name

@@ -1,20 +1,20 @@
-"""to_tool_manager — Paquete principal.
+"""to_tool_manager — Main package.
 
 Public API:
-- Service: Expone métodos como tools para LLMs
-- Module: Agrupa servicios como sub-agente
-- ToToolManager: Orquestador de servicios y módulos
-- TTMBuilder: Builder para crear agentes de forma declarativa
-- Middleware: Base middleware abstracta
-- ToolMiddleware: Middleware con filtrado por método
-- NodeMiddleware: Base middleware para nodos de grafo
-- GraphMiddlewareRunner: Ejecutor de grafo con middleware
-- EventEmitter: Protocolo para emisión de eventos HITL
-- HumanInTheLoop: Clase central del flujo human-in-the-loop
-- HumanInTheLoopMiddleware: HITL global (aplica a todas las tools)
-- HumanInTheLoopToolMiddleware: HITL por método (con include/exclude)
-- HumanInputRetry: Exception para reintentos de validación HITL
-- Excepciones: TTMError y subtipos para manejo de errores
+- Service: Exposes methods as tools for LLMs
+- Module: Groups services as a sub-agent
+- ToToolManager: Orchestrator of services and modules
+- TTMBuilder: Builder for creating agents declaratively
+- Middleware: Abstract base middleware
+- ToolMiddleware: Middleware with method filtering
+- NodeMiddleware: Base middleware for graph nodes
+- GraphMiddlewareRunner: Graph executor with middleware
+- EventEmitter: Protocol for HITL event emission
+- HumanInTheLoop: Core class for the human-in-the-loop flow
+- HumanInTheLoopMiddleware: Global HITL (applies to all tools)
+- HumanInTheLoopToolMiddleware: Per-method HITL (with include/exclude)
+- HumanInputRetry: Exception for HITL validation retries
+- Exceptions: TTMError and subtypes for error handling
 """
 
 from to_tool_manager.core.main.service import Service
@@ -92,6 +92,3 @@ __all__ = [
     "ToToolManagerAlreadyRegisteredError",
     "ToToolManagerNotFoundError",
 ]
-
-
-__version__ = "0.9.0"

@@ -26,12 +26,12 @@ from to_tool_manager.exception import (
 
 
 class ToToolManager:
-    """Orquestador de servicios y módulos.
+    """Orchestrator of services and modules.
 
-    Precondición: resources no está vacío, middlewares son válidos
-    Postcondición: servicios y módulos registrados, listos para construir agentes
+    Precondition: resources is not empty, middlewares are valid
+    Postcondition: services and modules registered, ready to build agents
 
-    Referencia: REQ-003, REQ-005, REQ-007
+    Reference: REQ-003, REQ-005, REQ-007
     """
 
     def __init__(self,
@@ -55,14 +55,14 @@ class ToToolManager:
         description: str | None = None,
     ) -> None:
         """
-        Precondición: resources no está vacío
-        Postcondición: __services, __modules y __middlewares inicializados
+        Precondition: resources is not empty
+        Postcondition: __services, __modules and __middlewares initialized
         """
         self.__name = name
         self.__agent: Agent[DinamicDepend] | None = None
         self.__dep = DinamicDepend()
 
-        # Almacenar parámetros del Agent para build_agent()
+        # Store Agent parameters for build_agent()
         self.__agent_params: Dict[str, Any] = {
             'model': model,
             'instructions': instructions,
@@ -81,12 +81,12 @@ class ToToolManager:
             'description': description,
         }
 
-        # Almacenar servicios y módulos
+        # Store services and modules
         self.__services: Dict[str, Service] = {}
         self.__modules: Dict[str, Module] = {}
         self.__middlewares: Sequence[Middleware] | None = middlewares
 
-        # Parsear resources
+        # Parse resources
         for item in resources:
             if isinstance(item, Service):
                 self.__services[item.name] = item
@@ -97,42 +97,38 @@ class ToToolManager:
 
     @property
     def name(self) -> str:
-        """Retorna el nombre del orquestador."""
+        """Returns the orchestrator name."""
         return self.__name
 
     @property
     def agent(self) -> Agent[DinamicDepend]:
-        """Retorna el agente construido.
+        """Returns the built agent.
 
-        Precondición: build_agent() ha sido llamado
-        Postcondición: retorna Agent válido
+        Precondition: build_agent() has been called
+        Postcondition: returns a valid Agent
         """
         if self.__agent is None:
             raise AgentNotBuiltError("ToToolManager")
         return self.__agent
 
     @property
-    def dep(self):
-        return self.__dep
-
-    @property
     def middlewares(self) -> Sequence[Middleware]:
-        """Retorna la lista de middlewares globales.
+        """Returns the list of global middlewares.
 
-        Precondición: middlewares está inicializado
-        Postcondición: retorna Sequence[Middleware]
+        Precondition: middlewares is initialized
+        Postcondition: returns Sequence[Middleware]
         """
         if self.__middlewares is None:
             raise MiddlewareNotInitializedError()
         return self.__middlewares
 
     def get_service(self, name: str) -> Service | Module:
-        """Obtiene un servicio o módulo por nombre.
+        """Gets a service or module by name.
 
-        Precondición: name existe en servicios o módulos
-        Postcondición: retorna Service o Module
+        Precondition: name exists in services or modules
+        Postcondition: returns Service or Module
         
-        Referencia: REQ-001, REQ-002
+        Reference: REQ-001, REQ-002
         """
         if name in self.__services:
             return self.__services[name]
@@ -143,25 +139,25 @@ class ToToolManager:
 
     @property
     def services(self) -> Dict[str, Service]:
-        """Retorna copia de servicios registrados."""
+        """Returns a copy of registered services."""
         return dict(self.__services)
 
     @property
     def modules(self) -> Dict[str, Module]:
-        """Retorna copia de módulos registrados."""
+        """Returns a copy of registered modules."""
         return dict(self.__modules)
 
     def _resolve_middlewares(self, service: Service) -> list[Middleware]:
-        """Resuelve qué middlewares aplican a un servicio dado.
+        """Resolves which middlewares apply to a given service.
 
-        Comienza con middlewares globales (nivel ToToolManager), remueve
-        los deshabilitados por service.disable_middlewares, y añade
-        los middlewares del nivel servicio.
+        Starts with global middlewares (ToToolManager level), removes
+        those disabled by service.disable_middlewares, and adds
+        service-level middlewares.
 
-        Precondición: service tiene disable_middlewares definido
-        Postcondición: retorna lista filtrada de middlewares
+        Precondition: service has disable_middlewares defined
+        Postcondition: returns filtered list of middlewares
         
-        Referencia: REQ-007
+        Reference: REQ-007
         """
         global_mws: Sequence[Middleware] = self.__middlewares or ()
         service_disable = set(getattr(service, "disable_middlewares", ()))
@@ -174,7 +170,7 @@ class ToToolManager:
                 continue
             resolved.append(mw)
 
-        # Añadir middlewares de nivel servicio
+        # Add service-level middlewares
         for mw in service_mws:
             if isinstance(mw, Middleware):
                 resolved.append(mw)
@@ -186,15 +182,15 @@ class ToToolManager:
         dispatch_call: Any,
         middlewares: Sequence[Middleware],
     ) -> Any:
-        """Aplica una cadena de middlewares alrededor de dispatch_call.
+        """Applies a chain of middlewares around dispatch_call.
 
-        Los middlewares se aplican en orden inverso para que el primero
-        de la lista sea el que se ejecuta primero (más externo).
-        Las instancias de ToolMiddleware se saltan aquí porque operan
-        a nivel de método (manejado en _build_dispatch_table).
+        Middlewares are applied in reverse order so that the first
+        in the list is the one that executes first (outermost).
+        ToolMiddleware instances are skipped here because they operate
+        at the method level (handled in _build_dispatch_table).
 
-        Precondición: middlewares son válidos
-        Postcondición: dispatch_call envuelto en middlewares
+        Precondition: middlewares are valid
+        Postcondition: dispatch_call wrapped in middlewares
         """
         for mw in reversed(middlewares):
             if isinstance(mw, ToolMiddleware):
@@ -208,10 +204,10 @@ class ToToolManager:
         return dispatch_call
 
     def add_middleware_to_service(self, service_name: str, middleware: Middleware) -> None:
-        """Añade un middleware a un servicio específico.
+        """Adds a middleware to a specific service.
 
-        Precondición: service_name existe, middleware es válido
-        Postcondición: middleware añadido al servicio
+        Precondition: service_name exists, middleware is valid
+        Postcondition: middleware added to the service
         """
         service = self.get_service(service_name)
         if isinstance(service, Service):
@@ -222,10 +218,10 @@ class ToToolManager:
             raise MiddlewareTargetMismatchError(service_name, "Service")
 
     def add_middleware_to_module(self, module_name: str, middleware: Middleware) -> None:
-        """Añade un middleware a un módulo específico.
+        """Adds a middleware to a specific module.
 
-        Precondición: module_name existe, middleware es válido
-        Postcondición: middleware añadido al módulo
+        Precondition: module_name exists, middleware is valid
+        Postcondition: middleware added to the module
         """
         module = self.get_service(module_name)
         if isinstance(module, Module):
@@ -236,10 +232,10 @@ class ToToolManager:
             raise MiddlewareTargetMismatchError(module_name, "Module")
 
     def remove_middleware_to_service(self, service_name: str, middleware_type: type) -> None:
-        """Remueve un middleware de un servicio por tipo.
+        """Removes a middleware from a service by type.
 
-        Precondición: service_name existe, middleware_type es un tipo válido
-        Postcondición: middleware removido del servicio
+        Precondition: service_name exists, middleware_type is a valid type
+        Postcondition: middleware removed from the service
         """
         service = self.get_service(service_name)
         if isinstance(service, Service):
@@ -249,10 +245,10 @@ class ToToolManager:
             raise MiddlewareTargetMismatchError(service_name, "Service")
 
     def remove_middleware_to_module(self, module_name: str, middleware_type: type) -> None:
-        """Remueve un middleware de un módulo por tipo.
+        """Removes a middleware from a module by type.
 
-        Precondición: module_name existe, middleware_type es un tipo válido
-        Postcondición: middleware removido del módulo
+        Precondition: module_name exists, middleware_type is a valid type
+        Postcondition: middleware removed from the module
         """
         module = self.get_service(module_name)
         if isinstance(module, Module):
@@ -265,14 +261,14 @@ class ToToolManager:
         resources: Sequence[Service | Module] | None = None,
         middlewares: Sequence[Middleware] | None = None
     ) -> Agent[DinamicDepend]:
-        """Construye el agente con los servicios y módulos registrados.
+        """Builds the agent with registered services and modules.
 
-        Precondición: servicios o módulos registrados
-        Postcondición: __agent creado
+        Precondition: services or modules registered
+        Postcondition: __agent created
 
-        Referencia: REQ-003
+        Reference: REQ-003
         """
-        # Usar recursos proporcionados o los registrados
+        # Use provided resources or registered ones
         if resources is not None:
             services_to_use = {}
             modules_to_use = {}
@@ -285,22 +281,22 @@ class ToToolManager:
             services_to_use = self.__services
             modules_to_use = self.__modules
 
-        # Usar middlewares proporcionados o los registrados
+        # Use provided middlewares or registered ones
         if middlewares is not None:
             self.__middlewares = middlewares
 
-        # Registrar servicios como dependencias
+        # Register services as dependencies
         for service in services_to_use.values():
             service.service_to_dependency(self.__dep)
 
-        # Construir sub-agentes de módulos
+        # Build module sub-agents
         sagents = []
         for module in modules_to_use.values():
             sagents.append(module.build_as_agent())
 
         sub_agents = SubAgents(agents=sagents)
 
-        # Combinar toolsets de __agent_params con los sub-agentes
+        # Combine toolsets from __agent_params with sub-agents
         agent_params = dict(self.__agent_params)
         existing_toolsets = list(agent_params.pop('toolsets', None) or [])
         agent_params['toolsets'] = existing_toolsets + [sub_agents]

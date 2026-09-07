@@ -1,9 +1,9 @@
-"""Excepciones personalizadas de to_tool_manager.
+"""Custom exceptions for to_tool_manager.
 
-Todas las excepciones del paquete heredan de TTMError para permitir
-capture genérico y discriminación por subtipo.
+All package exceptions inherit from TTMError to allow
+generic catching and subtype discrimination.
 
-Jerarquía:
+Hierarchy:
     TTMError
     ├── ConfigurationError
     │   ├── InvalidResourceTypeError

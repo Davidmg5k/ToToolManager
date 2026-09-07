@@ -1,6 +1,6 @@
-"""Excepciones de middlewares.
+"""Middleware exceptions.
 
-Jerarquía:
+Hierarchy:
     MiddlewareError
     ├── MiddlewareNotInitializedError
     └── MiddlewareTargetMismatchError
@@ -10,18 +10,18 @@ from to_tool_manager.exception._ttm_error import TTMError
 
 
 class MiddlewareError(TTMError):
-    """Error relacionado con middlewares."""
+    """Error related to middlewares."""
 
 
 class MiddlewareNotInitializedError(MiddlewareError):
-    """La secuencia de middlewares no está inicializada (None)."""
+    """Middleware sequence is not initialized (None)."""
 
     def __init__(self) -> None:
         super().__init__("Middleware sequence is not initialized (None)")
 
 
 class MiddlewareTargetMismatchError(MiddlewareError):
-    """Intento de add/remove de middleware en un tipo de target incorrecto."""
+    """Attempted add/remove of middleware on an incorrect target type."""
 
     def __init__(self, name: str, expected: str) -> None:
         self.name = name

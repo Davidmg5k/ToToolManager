@@ -9,10 +9,10 @@ from to_tool_manager.core.main.shared.dinamic_depend import DinamicDepend
 
 
 def service_to_dependency(service: Service, dinamic_depend: DinamicDepend) -> None:
-    """Registra el servicio como dependencia dinámica.
+    """Registers the service as a dynamic dependency.
 
-    Precondición: service es un Service válido, dinamic_depend es válido
-    Postcondición: servicio registrado como atributo en dinamic_depend
+    Precondition: service is a valid Service, dinamic_depend is valid
+    Postcondition: service registered as an attribute in dinamic_depend
     """
     dinamic_depend.__setattr__(
         service.name,
@@ -26,15 +26,15 @@ def build_module_capabilities(
     apply_middleware_fn: Callable[[Service], None],
     dep: DinamicDepend,
 ) -> list:
-    """Construye capabilities para cada servicio de un módulo.
+    """Builds capabilities for each service in a module.
 
-    Precondición: services es una secuencia válida, capabilities es una lista
-    Postcondición: capabilities enriquecida con las capabilities de cada servicio
+    Precondition: services is a valid sequence, capabilities is a list
+    Postcondition: capabilities enriched with each service's capabilities
 
-    Flujo: Para cada servicio → aplicar middlewares del módulo →
-           construir capability → registrar dependencia
+    Flow: For each service -> apply module middlewares ->
+           build capability -> register dependency
 
-    Referencia: REQ-002, REQ-007
+    Reference: REQ-002, REQ-007
     """
     for service in services:
         apply_middleware_fn(service)

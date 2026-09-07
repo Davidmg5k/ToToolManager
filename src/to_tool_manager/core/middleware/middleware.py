@@ -47,9 +47,9 @@ class Middleware(ABC):
 
     @staticmethod
     async def call_func(func: Callable, *args: Any, **kwargs: Any) -> Any:
-        """Helper para llamar sync o async desde dispatch.
+        """Helper to call sync or async from dispatch.
 
-        Usage en dispatch:
+        Usage in dispatch:
             return await self.call_func(func, *args, **kwargs)
         """
         result = func(*args, **kwargs)
@@ -101,10 +101,10 @@ class ToolMiddleware(Middleware):
 
     @property
     def include(self) -> frozenset[str] | None:
-        """Retorna frozenset de métodos incluidos, o None.
+        """Returns frozenset of included methods, or None.
 
-        Precondición: __include fue inicializado en __init__
-        Postcondición: retorna frozenset[str] o None
+        Precondition: __include was initialized in __init__
+        Postcondition: returns frozenset[str] or None
         """
         if self.__include is None:
             return None
@@ -116,10 +116,10 @@ class ToolMiddleware(Middleware):
 
     @property
     def exclude(self) -> frozenset[str] | None:
-        """Retorna frozenset de métodos excluidos, o None.
+        """Returns frozenset of excluded methods, or None.
 
-        Precondición: __exclude fue inicializado en __init__
-        Postcondición: retorna frozenset[str] o None
+        Precondition: __exclude was initialized in __init__
+        Postcondition: returns frozenset[str] or None
         """
         if self.__exclude is None:
             return None
@@ -130,17 +130,17 @@ class ToolMiddleware(Middleware):
         return frozenset(self.__exclude)
 
     def is_allowed(self, method_name: str) -> bool:
-        """Verifica si un método está permitido.
+        """Checks if a method is allowed.
 
-        Precondición: method_name es un str
-        Postcondición: retorna True si el método está permitido
+        Precondition: method_name is a str
+        Postcondition: returns True if the method is allowed
 
-        Reglas:
-        - Si include está definido, method_name debe estar en include
-        - Si exclude está definido, method_name no debe estar en exclude
-        - include tiene prioridad sobre exclude
+        Rules:
+        - If include is defined, method_name must be in include
+        - If exclude is defined, method_name must not be in exclude
+        - include takes priority over exclude
         """
-        # include tiene prioridad sobre exclude
+        # include takes priority over exclude
         if self.__include is not None:
             include_set = self.include
             if include_set is not None:
@@ -155,10 +155,10 @@ class ToolMiddleware(Middleware):
 
 
 class NodeMiddleware(ABC):
-    """Base middleware para transiciones de nodo en grafo (pydantic_graph).
+    """Base middleware for node transitions in pydantic_graph.
 
-    Intercepta la transición nodo→nodo antes de que el siguiente nodo
-    se ejecute. Puede aprobar o bloquear la transición.
+    Intercepts the node->node transition before the next node
+    executes. Can approve or block the transition.
 
     Usage::
 
@@ -186,11 +186,11 @@ class NodeMiddleware(ABC):
         target_node_id: str,
         state: Any,
     ) -> bool:
-        """Hook pre-transición. Decide si la transición procede.
+        """Pre-transition hook. Decides if the transition proceeds.
 
-        Precondición: source_node_id puede ser None (desde start),
-                      target_node_id es el nodo destino
-        Postcondición: retorna True si aprobado, False si bloqueado
+        Precondition: source_node_id can be None (from start),
+                      target_node_id is the target node
+        Postcondition: returns True if approved, False if blocked
         """
         return True
 
@@ -199,7 +199,7 @@ class NodeMiddleware(ABC):
         node: BaseNode[Any, Any, Any],
         ctx: GraphRunContext[Any, Any],
     ) -> None:
-        """Hook pre-ejecución (para NodeWrapper). Modificar state antes de que el nodo corra."""
+        """Pre-execution hook (for NodeWrapper). Modify state before the node runs."""
         ...
 
     async def after_run(
@@ -208,27 +208,27 @@ class NodeMiddleware(ABC):
         ctx: GraphRunContext[Any, Any],
         next_node: BaseNode[Any, Any, Any] | End[Any],
     ) -> BaseNode[Any, Any, Any] | End[Any]:
-        """Hook post-ejecución (para NodeWrapper). Decidir si la transición procede."""
+        """Post-execution hook (for NodeWrapper). Decide if the transition proceeds."""
         return next_node
 
 
 class NodeWrapper(BaseNode[StateT, DepsT, NodeRunEndT]):
-    """Wrapper que aplica una cadena de NodeMiddleware a un nodo.
+    """Wrapper that applies a chain of NodeMiddleware to a node.
 
-    Funciona como clase: pydantic_graph instancia nodos sin argumentos,
-    así que el wrapped_node_type y middlewares se almacenan como
-    class-level attributes en las subclases dinámicas.
+    Works as a class: pydantic_graph instantiates nodes without arguments,
+    so the wrapped_node_type and middlewares are stored as
+    class-level attributes in dynamic subclasses.
 
     Usage::
 
-        # Crear wrapper como clase
+        # Create wrapper as a class
         WrappedMyNode = type(
             "WrappedMyNode",
             (NodeWrapper,),
             {"_wrapped_node_type": MyNode, "_middlewares_attr": [my_mw]},
         )
 
-        # Usar en graph
+        # Use in graph
         graph = Graph(nodes=[WrappedMyNode, ...])
     """
 

@@ -6,7 +6,7 @@ from tests.conftest import ConcreteToolMiddleware
 
 
 class UserService:
-    """Servicio de ejemplo para testing."""
+    """Example service for testing."""
 
     def create(self, name: str) -> str:
         return f"Created {name}"
@@ -19,7 +19,7 @@ class UserService:
 
 
 class AsyncUserService:
-    """Servicio async de ejemplo para testing."""
+    """Example async service for testing."""
 
     async def create(self, name: str) -> str:
         return f"Created {name}"
@@ -29,133 +29,133 @@ class AsyncUserService:
 
 
 class AuthMiddleware(ConcreteToolMiddleware):
-    """Middleware de autenticación de ejemplo."""
+    """Example authentication middleware."""
 
     async def dispatch(self, func, /, *args, **kw):
         return await func(*args, **kw)
 
 
 class LogMiddleware(ConcreteToolMiddleware):
-    """Middleware de logging de ejemplo."""
+    """Example logging middleware."""
 
     async def dispatch(self, func, /, *args, **kw):
         return await func(*args, **kw)
 
 
 class TestService:
-    """Tests para la clase Service."""
+    """Tests for the Service class."""
 
     def test_build_as_capability(self):
-        """Service retorna Capability"""
+        """Service returns Capability"""
         service = Service(
             name="User",
             service=UserService,
-            instructions="Gestión de usuarios"
+            instructions="User management"
         )
         capability = service.build_as_capability()
         assert capability.id == "User"
 
     def test_add_middleware(self):
-        """Service permite añadir middlewares"""
+        """Service allows adding middlewares"""
         service = Service(
             name="User",
             service=UserService,
-            instructions="Gestión de usuarios"
+            instructions="User management"
         )
         mw = ConcreteToolMiddleware()
         service.add_middleware(mw)
         assert mw in service.middleware
 
     def test_disable_middlewares_default_empty(self):
-        """disable_middlewares es tuple vacío por defecto"""
+        """disable_middlewares is empty tuple by default"""
         service = Service(
             name="User",
             service=UserService,
-            instructions="Gestión de usuarios"
+            instructions="User management"
         )
         assert service.disable_middlewares == ()
 
     def test_disable_middlewares_custom(self):
-        """disable_middlewares acepta tupla de strings"""
+        """disable_middlewares accepts tuple of strings"""
         service = Service(
             name="User",
             service=UserService,
-            instructions="Gestión de usuarios",
+            instructions="User management",
             disable_middlewares=("AuthMiddleware", "LogMiddleware")
         )
         assert "AuthMiddleware" in service.disable_middlewares
         assert "LogMiddleware" in service.disable_middlewares
 
     def test_service_is_not_frozen(self):
-        """Service NO es frozen (add_middleware() necesita mutar)"""
+        """Service is NOT frozen (add_middleware() needs to mutate)"""
         service = Service(
             name="User",
             service=UserService,
-            instructions="Gestión de usuarios"
+            instructions="User management"
         )
-        # Service permite mutación porque add_middleware() añade a self.middleware
+        # Service allows mutation because add_middleware() adds to self.middleware
         service.name = "Other"
         assert service.name == "Other"
 
     def test_service_has_slots(self):
-        """Service tiene slots para eficiencia"""
+        """Service has slots for efficiency"""
         service = Service(
             name="User",
             service=UserService,
-            instructions="Gestión de usuarios"
+            instructions="User management"
         )
         assert not hasattr(service, '__dict__')
 
     def test_middleware_default_empty_list(self):
-        """middleware es lista vacía por defecto"""
+        """middleware is empty list by default"""
         service = Service(
             name="User",
             service=UserService,
-            instructions="Gestión de usuarios"
+            instructions="User management"
         )
         assert service.middleware == []
 
     def test_include_default_none(self):
-        """include es None por defecto"""
+        """include is None by default"""
         service = Service(
             name="User",
             service=UserService,
-            instructions="Gestión de usuarios"
+            instructions="User management"
         )
         assert service.include is None
 
     def test_exclude_default_none(self):
-        """exclude es None por defecto"""
+        """exclude is None by default"""
         service = Service(
             name="User",
             service=UserService,
-            instructions="Gestión de usuarios"
+            instructions="User management"
         )
         assert service.exclude is None
 
 
 class TestBuildAsCapability:
-    """Tests para build_as_capability() con descubrimiento automático."""
+    """Tests for build_as_capability() with auto-discovery."""
 
     def test_creates_capability_with_tools(self):
-        """build_as_capability() crea Capability con tools de todos los métodos."""
+        """build_as_capability() creates Capability with tools from all methods."""
         service = Service(
             name="User",
             service=UserService,
-            instructions="Gestión de usuarios"
+            instructions="User management"
         )
         capability = service.build_as_capability()
 
-        # Debe tener 3 tools: create, get, delete
+        # Should have 3 tools: create, get, delete
         assert len(capability.tools) == 3
 
     def test_tools_are_tool_instances(self):
-        """Las tools creadas son instancias de Tool de pydantic_ai."""
+        """Created tools are instances of pydantic_ai Tool."""
         from pydantic_ai.tools import Tool as PydanticTool
         service = Service(
             name="User",
             service=UserService,
-            instructions="Gestión de usuarios"
+            instructions="User management"
         )
         capability = service.build_as_capability()
 
@@ -163,11 +163,11 @@ class TestBuildAsCapability:
             assert isinstance(tool, PydanticTool)
 
     def test_tool_names_match_methods(self):
-        """Los nombres de las tools coinciden con los métodos del servicio."""
+        """Tool names match the service methods."""
         service = Service(
             name="User",
             service=UserService,
-            instructions="Gestión de usuarios"
+            instructions="User management"
         )
         capability = service.build_as_capability()
 
@@ -177,11 +177,11 @@ class TestBuildAsCapability:
         assert "delete" in tool_names
 
     def test_tool_has_run_context_param(self):
-        """Cada tool tiene RunContext como primer parámetro en su función."""
+        """Each tool has RunContext as the first parameter in its function."""
         service = Service(
             name="User",
             service=UserService,
-            instructions="Gestión de usuarios"
+            instructions="User management"
         )
         capability = service.build_as_capability()
 
@@ -191,42 +191,42 @@ class TestBuildAsCapability:
             assert params[0] == "ctx"
 
     def test_middleware_applied_before_tool_creation(self):
-        """El middleware se aplica ANTES de crear la tool."""
+        """Middleware is applied BEFORE creating the tool."""
         auth_mw = AuthMiddleware(include=["create"])
         service = Service(
             name="User",
             service=UserService,
-            instructions="Gestión de usuarios",
+            instructions="User management",
             middleware=[auth_mw]
         )
         capability = service.build_as_capability()
 
-        # Todas las tools deben existir
+        # All tools should exist
         assert len(capability.tools) == 3
 
     def test_middleware_filters_methods(self):
-        """ToolMiddleware con include solo aplica a métodos incluidos."""
+        """ToolMiddleware with include only applies to included methods."""
         auth_mw = AuthMiddleware(include=["create"])
         service = Service(
             name="User",
             service=UserService,
-            instructions="Gestión de usuarios",
+            instructions="User management",
             middleware=[auth_mw]
         )
         capability = service.build_as_capability()
 
-        # Todas las tools deben existir (create con middleware, get/delete sin)
+        # All tools should exist (create with middleware, get/delete without)
         tool_names = [tool.name for tool in capability.tools]
         assert "create" in tool_names
         assert "get" in tool_names
         assert "delete" in tool_names
 
     def test_async_service_creates_async_tools(self):
-        """Servicio async crea tools async."""
+        """Async service creates async tools."""
         service = Service(
             name="AsyncUser",
             service=AsyncUserService,
-            instructions="Gestión async de usuarios"
+            instructions="Async user management"
         )
         capability = service.build_as_capability()
 
@@ -234,38 +234,38 @@ class TestBuildAsCapability:
             assert inspect.iscoroutinefunction(tool.function)
 
     def test_multiple_middlewares_applied(self):
-        """Múltiples middlewares se aplican al mismo método."""
+        """Multiple middlewares applied to the same method."""
         auth_mw = AuthMiddleware(include=["create"])
         log_mw = LogMiddleware(include=["create"])
         service = Service(
             name="User",
             service=UserService,
-            instructions="Gestión de usuarios",
+            instructions="User management",
             middleware=[auth_mw, log_mw]
         )
         capability = service.build_as_capability()
 
-        # Todas las tools deben existir
+        # All tools should exist
         assert len(capability.tools) == 3
 
     def test_capability_has_instructions(self):
-        """Capability conserva las instructions del servicio."""
+        """Capability preserves the service instructions."""
         service = Service(
             name="User",
             service=UserService,
-            instructions="Gestion de usuarios"
+            instructions="User management"
         )
         capability = service.build_as_capability()
 
         instructions = capability.get_instructions()
-        assert "Gestion de usuarios" in instructions
+        assert "User management" in instructions
 
     def test_capability_defer_loading(self):
-        """Capability tiene defer_loading=True."""
+        """Capability has defer_loading=True."""
         service = Service(
             name="User",
             service=UserService,
-            instructions="Gestión de usuarios"
+            instructions="User management"
         )
         capability = service.build_as_capability()
 

@@ -7,7 +7,7 @@ from tests.conftest import ConcreteToolMiddleware
 
 
 class UserService:
-    """Servicio de usuarios para testing."""
+    """User service for testing."""
 
     def create(self, name: str) -> str:
         return f"Created {name}"
@@ -17,117 +17,117 @@ class UserService:
 
 
 class OrderService:
-    """Servicio de órdenes para testing."""
+    """Order service for testing."""
 
     def create(self, product: str) -> str:
         return f"Order created for {product}"
 
 
 class LogMiddleware(ConcreteToolMiddleware):
-    """Middleware de logging de ejemplo."""
+    """Example logging middleware."""
 
     async def dispatch(self, func, /, *args, **kw):
         return await func(*args, **kw)
 
 
 class TestTTMBuilderWithModule:
-    """Tests de integración TTMBuilder + Module."""
+    """Integration tests for TTMBuilder + Module."""
 
     def test_builder_add_module(self):
-        """TTMBuilder add_module funciona correctamente"""
+        """TTMBuilder add_module works correctly"""
         user_service = Service(
             name="User",
             service=UserService,
-            instructions="Gestión de usuarios"
+            instructions="User management"
         )
         builder = TTMBuilder(name="TestBuilder")
         result = builder.add_module(
             name="Commerce",
             services=[user_service],
-            description="Módulo de comercio"
+            description="Commerce module"
         )
         assert result is builder
 
     def test_builder_build_with_module(self):
-        """TTMBuilder build() funciona con módulos"""
+        """TTMBuilder build() works with modules"""
         user_service = Service(
             name="User",
             service=UserService,
-            instructions="Gestión de usuarios"
+            instructions="User management"
         )
         builder = TTMBuilder(name="TestBuilder")
         builder.add_module(
             name="Commerce",
             services=[user_service],
-            description="Módulo de comercio"
+            description="Commerce module"
         )
         builder.build()
         assert builder.agent is not None
         assert builder.agent.name == "TestBuilder"
 
     def test_builder_with_module_and_service(self):
-        """TTMBuilder funciona con módulos y servicios"""
+        """TTMBuilder works with modules and services"""
         user_service = Service(
             name="User",
             service=UserService,
-            instructions="Gestión de usuarios"
+            instructions="User management"
         )
         order_service = Service(
             name="Order",
             service=OrderService,
-            instructions="Gestión de órdenes"
+            instructions="Order management"
         )
         builder = TTMBuilder(name="TestBuilder")
         builder.add_module(
             name="Commerce",
             services=[user_service],
-            description="Módulo de comercio"
+            description="Commerce module"
         )
         builder.add_service(
             name="Orders",
             service=OrderService,
-            instructions="Gestión de órdenes"
+            instructions="Order management"
         )
         builder.build()
         assert builder.agent is not None
 
     def test_builder_with_multiple_modules(self):
-        """TTMBuilder funciona con múltiples módulos"""
+        """TTMBuilder works with multiple modules"""
         user_service = Service(
             name="User",
             service=UserService,
-            instructions="Gestión de usuarios"
+            instructions="User management"
         )
         order_service = Service(
             name="Order",
             service=OrderService,
-            instructions="Gestión de órdenes"
+            instructions="Order management"
         )
         builder = TTMBuilder(name="TestBuilder")
         builder.add_module(
             name="Users",
             services=[user_service],
-            description="Módulo de usuarios"
+            description="User module"
         )
         builder.add_module(
             name="Orders",
             services=[order_service],
-            description="Módulo de órdenes"
+            description="Order module"
         )
         builder.build()
         assert builder.agent is not None
 
     def test_builder_context_manager_with_module(self):
-        """Context manager funciona con módulos"""
+        """Context manager works with modules"""
         user_service = Service(
             name="User",
             service=UserService,
-            instructions="Gestión de usuarios"
+            instructions="User management"
         )
         with TTMBuilder(name="TestBuilder") as builder:
             builder.add_module(
                 name="Commerce",
                 services=[user_service],
-                description="Módulo de comercio"
+                description="Commerce module"
             )
         assert builder.agent is not None

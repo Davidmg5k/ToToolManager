@@ -3,10 +3,10 @@ from to_tool_manager.core.main.shared.discover import discover_methods, MethodMe
 
 
 class SyncService:
-    """Servicio con métodos sync para testing."""
+    """Service with sync methods for testing."""
 
     def create(self, name: str) -> str:
-        """Crea un recurso."""
+        """Creates a resource."""
         return f"Created {name}"
 
     def get(self, id: int) -> dict:
@@ -14,10 +14,10 @@ class SyncService:
 
 
 class AsyncService:
-    """Servicio con métodos async para testing."""
+    """Service with async methods for testing."""
 
     async def create(self, name: str) -> str:
-        """Crea un recurso async."""
+        """Creates an async resource."""
         return f"Created {name}"
 
     async def get(self, id: int) -> dict:
@@ -25,7 +25,7 @@ class AsyncService:
 
 
 class MixedService:
-    """Servicio con métodos sync y async."""
+    """Service with sync and async methods."""
 
     def get(self, id: int) -> dict:
         return {"id": id}
@@ -35,7 +35,7 @@ class MixedService:
 
 
 class PrivateMethodService:
-    """Servicio con métodos privados."""
+    """Service with private methods."""
 
     def public_method(self) -> str:
         return "public"
@@ -48,69 +48,69 @@ class PrivateMethodService:
 
 
 class TestDiscoverMethods:
-    """Tests para discover_methods."""
+    """Tests for discover_methods."""
 
     def test_discovers_sync_methods(self):
-        """Descubre métodos sync de una clase."""
+        """Discovers sync methods from a class."""
         methods = discover_methods(SyncService)
         names = [m.name for m in methods]
         assert "create" in names
         assert "get" in names
 
     def test_discovers_async_methods(self):
-        """Descubre métodos async de una clase."""
+        """Discovers async methods from a class."""
         methods = discover_methods(AsyncService)
         names = [m.name for m in methods]
         assert "create" in names
         assert "get" in names
 
     def test_detects_async_methods(self):
-        """Detecta correctamente si un método es async."""
+        """Correctly detects if a method is async."""
         methods = discover_methods(AsyncService)
         for m in methods:
             assert m.is_async is True
 
     def test_detects_sync_methods(self):
-        """Detecta correctamente si un método es sync."""
+        """Correctly detects if a method is sync."""
         methods = discover_methods(SyncService)
         for m in methods:
             assert m.is_async is False
 
     def test_mixed_service_methods(self):
-        """Descubre métodos sync y async en la misma clase."""
+        """Discovers sync and async methods in the same class."""
         methods = discover_methods(MixedService)
         by_name = {m.name: m for m in methods}
         assert by_name["get"].is_async is False
         assert by_name["create"].is_async is True
 
     def test_excludes_private_methods(self):
-        """Excluye métodos privados."""
+        """Excludes private methods."""
         methods = discover_methods(PrivateMethodService)
         names = [m.name for m in methods]
         assert "public_method" in names
         assert "_private_method" not in names
 
     def test_excludes_dunder_methods(self):
-        """Excluye métodos dunder."""
+        """Excludes dunder methods."""
         methods = discover_methods(PrivateMethodService)
         names = [m.name for m in methods]
         assert "__dunder_method" not in names
 
     def test_extracts_docstring(self):
-        """Extrae docstring del método."""
+        """Extracts docstring from the method."""
         methods = discover_methods(SyncService)
         by_name = {m.name: m for m in methods}
-        assert by_name["create"].docstring == "Crea un recurso."
+        assert by_name["create"].docstring == "Creates a resource."
 
     def test_excludes_self_from_parameters(self):
-        """Excluye 'self' de los parámetros."""
+        """Excludes 'self' from parameters."""
         methods = discover_methods(SyncService)
         by_name = {m.name: m for m in methods}
         assert "self" not in by_name["create"].parameters
         assert "name" in by_name["create"].parameters
 
     def test_returns_list_of_method_meta(self):
-        """Retorna lista de MethodMeta."""
+        """Returns list of MethodMeta."""
         methods = discover_methods(SyncService)
         assert isinstance(methods, list)
         for m in methods:

@@ -1,6 +1,6 @@
-"""Excepciones de servicios.
+"""Service exceptions.
 
-Jerarquía:
+Hierarchy:
     ServiceError
     ├── ServiceNotFoundError
     ├── ServiceAlreadyRegisteredError
@@ -11,11 +11,11 @@ from to_tool_manager.exception._ttm_error import TTMError
 
 
 class ServiceError(TTMError):
-    """Error relacionado con servicios."""
+    """Error related to services."""
 
 
 class ServiceNotFoundError(ServiceError):
-    """Servicio no encontrado por nombre."""
+    """Service not found by name."""
 
     def __init__(self, name: str) -> None:
         self.name = name
@@ -23,7 +23,7 @@ class ServiceNotFoundError(ServiceError):
 
 
 class ServiceAlreadyRegisteredError(ServiceError):
-    """Servicio ya registrado con el mismo nombre."""
+    """Service already registered with the same name."""
 
     def __init__(self, name: str) -> None:
         self.name = name
@@ -31,7 +31,7 @@ class ServiceAlreadyRegisteredError(ServiceError):
 
 
 class DependencyNotSetError(ServiceError):
-    """Atributo no existe en DinamicDepend."""
+    """Attribute does not exist in DinamicDepend."""
 
     def __init__(self, name: str) -> None:
         self.name = name

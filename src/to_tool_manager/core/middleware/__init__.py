@@ -1,10 +1,10 @@
 """to_tool_manager — Middleware module.
 
 Public API:
-- Middleware: Base middleware abstracta
-- ToolMiddleware: Middleware con filtrado por método
-- NodeMiddleware: Base middleware para nodos de grafo
-- NodeWrapper: Wrapper de nodo con middleware chain
+- Middleware: Abstract base middleware
+- ToolMiddleware: Middleware with method filtering
+- NodeMiddleware: Base middleware for graph nodes
+- NodeWrapper: Node wrapper with middleware chain
 """
 
 from to_tool_manager.core.middleware.middleware import (

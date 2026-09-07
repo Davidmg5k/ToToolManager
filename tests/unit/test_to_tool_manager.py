@@ -11,7 +11,7 @@ from tests.conftest import ConcreteToolMiddleware
 
 
 class UserService:
-    """Servicio de ejemplo para testing."""
+    """Example service for testing."""
 
     def create(self, name: str) -> str:
         return f"Created {name}"
@@ -21,35 +21,35 @@ class UserService:
 
 
 class PublicService:
-    """Servicio público de ejemplo."""
+    """Example public service."""
 
     def list(self) -> list:
         return []
 
 
 class AuthMiddleware(Middleware):
-    """Middleware de autenticación de ejemplo."""
+    """Example authentication middleware."""
 
     async def dispatch(self, func, /, *args, **kw):
         return await func(*args, **kw)
 
 
 class LogMiddleware(Middleware):
-    """Middleware de logging de ejemplo."""
+    """Example logging middleware."""
 
     async def dispatch(self, func, /, *args, **kw):
         return await func(*args, **kw)
 
 
 class TestToToolManager:
-    """Tests para la clase ToToolManager."""
+    """Tests for the ToToolManager class."""
 
     def test_create_with_services(self):
-        """ToToolManager crea con servicios"""
+        """ToToolManager creates with services"""
         service = Service(
             name="User",
             service=UserService,
-            instructions="Gestión de usuarios"
+            instructions="User management"
         )
         manager = ToToolManager(
             name="TestManager",
@@ -59,16 +59,16 @@ class TestToToolManager:
         assert "User" in manager.services
 
     def test_create_with_modules(self):
-        """ToToolManager crea con módulos"""
+        """ToToolManager creates with modules"""
         service = Service(
             name="User",
             service=UserService,
-            instructions="Gestión de usuarios"
+            instructions="User management"
         )
         module = Module(
             name="Commerce",
             services=[service],
-            description="Módulo de comercio"
+            description="Commerce module"
         )
         manager = ToToolManager(
             name="TestManager",
@@ -77,11 +77,11 @@ class TestToToolManager:
         assert "Commerce" in manager.modules
 
     def test_get_service(self):
-        """get_service retorna servicio por nombre"""
+        """get_service returns service by name"""
         service = Service(
             name="User",
             service=UserService,
-            instructions="Gestión de usuarios"
+            instructions="User management"
         )
         manager = ToToolManager(
             name="TestManager",
@@ -91,7 +91,7 @@ class TestToToolManager:
         assert retrieved.name == "User"
 
     def test_get_service_not_found(self):
-        """get_service lanza error si no existe"""
+        """get_service raises error if not found"""
         manager = ToToolManager(
             name="TestManager",
             resources=[]
@@ -100,11 +100,11 @@ class TestToToolManager:
             manager.get_service("NonExistent")
 
     def test_resolve_middlewares_filters_disabled(self):
-        """_resolve_middlewares() excluye middlewares deshabilitados"""
+        """_resolve_middlewares() excludes disabled middlewares"""
         service = Service(
             name="Public",
             service=PublicService,
-            instructions="API pública",
+            instructions="Public API",
             disable_middlewares=("AuthMiddleware",)
         )
         manager = ToToolManager(
@@ -117,12 +117,12 @@ class TestToToolManager:
         assert any(m.name == "LogMiddleware" for m in resolved)
 
     def test_resolve_middlewares_includes_service_level(self):
-        """_resolve_middlewares() incluye middlewares de nivel servicio"""
+        """_resolve_middlewares() includes service-level middlewares"""
         mw = ConcreteToolMiddleware(include=["create"])
         service = Service(
             name="User",
             service=UserService,
-            instructions="Gestión de usuarios",
+            instructions="User management",
             middleware=[mw]
         )
         manager = ToToolManager(
@@ -135,11 +135,11 @@ class TestToToolManager:
         assert any(m.name == "LogMiddleware" for m in resolved)
 
     def test_build_agent(self):
-        """build_agent() crea agente válido"""
+        """build_agent() creates a valid agent"""
         service = Service(
             name="User",
             service=UserService,
-            instructions="Gestión de usuarios"
+            instructions="User management"
         )
         manager = ToToolManager(
             name="TestManager",
@@ -150,11 +150,11 @@ class TestToToolManager:
         assert agent.name == "TestManager"
 
     def test_agent_property_after_build(self):
-        """agent property retorna agente después de build"""
+        """agent property returns agent after build"""
         service = Service(
             name="User",
             service=UserService,
-            instructions="Gestión de usuarios"
+            instructions="User management"
         )
         manager = ToToolManager(
             name="TestManager",
@@ -164,7 +164,7 @@ class TestToToolManager:
         assert manager.agent is not None
 
     def test_agent_property_before_build_raises(self):
-        """agent property lanza error antes de build"""
+        """agent property raises error before build"""
         manager = ToToolManager(
             name="TestManager",
             resources=[]
@@ -174,10 +174,10 @@ class TestToToolManager:
 
 
 class TestToToolManagerAgentParams:
-    """Tests para parámetros Agent en ToToolManager."""
+    """Tests for Agent parameters in ToToolManager."""
 
     def test_stores_model(self):
-        """ToToolManager almacena model"""
+        """ToToolManager stores model"""
         manager = ToToolManager(
             name="TestManager",
             resources=[],
@@ -186,7 +186,7 @@ class TestToToolManagerAgentParams:
         assert manager._ToToolManager__agent_params['model'] == "gpt-4o"
 
     def test_stores_instructions(self):
-        """ToToolManager almacena instructions"""
+        """ToToolManager stores instructions"""
         manager = ToToolManager(
             name="TestManager",
             resources=[],
@@ -195,7 +195,7 @@ class TestToToolManagerAgentParams:
         assert manager._ToToolManager__agent_params['instructions'] == "Custom instructions"
 
     def test_stores_system_prompt(self):
-        """ToToolManager almacena system_prompt"""
+        """ToToolManager stores system_prompt"""
         manager = ToToolManager(
             name="TestManager",
             resources=[],
@@ -204,7 +204,7 @@ class TestToToolManagerAgentParams:
         assert manager._ToToolManager__agent_params['system_prompt'] == ["prompt1"]
 
     def test_stores_tool_timeout(self):
-        """ToToolManager almacena tool_timeout"""
+        """ToToolManager stores tool_timeout"""
         manager = ToToolManager(
             name="TestManager",
             resources=[],
@@ -213,7 +213,7 @@ class TestToToolManagerAgentParams:
         assert manager._ToToolManager__agent_params['tool_timeout'] == 30.0
 
     def test_stores_retries(self):
-        """ToToolManager almacena retries"""
+        """ToToolManager stores retries"""
         manager = ToToolManager(
             name="TestManager",
             resources=[],
@@ -222,7 +222,7 @@ class TestToToolManagerAgentParams:
         assert manager._ToToolManager__agent_params['retries'] == 3
 
     def test_stores_output_type(self):
-        """ToToolManager almacena output_type"""
+        """ToToolManager stores output_type"""
         manager = ToToolManager(
             name="TestManager",
             resources=[],
@@ -231,7 +231,7 @@ class TestToToolManagerAgentParams:
         assert manager._ToToolManager__agent_params['output_type'] == dict
 
     def test_stores_description(self):
-        """ToToolManager almacena description"""
+        """ToToolManager stores description"""
         manager = ToToolManager(
             name="TestManager",
             resources=[],
@@ -240,7 +240,7 @@ class TestToToolManagerAgentParams:
         assert manager._ToToolManager__agent_params['description'] == "Test description"
 
     def test_defaults_agent_params(self):
-        """ToToolManager tiene defaults correctos"""
+        """ToToolManager has correct defaults"""
         manager = ToToolManager(
             name="TestManager",
             resources=[]
@@ -256,11 +256,11 @@ class TestToToolManagerAgentParams:
         assert params['end_strategy'] == 'graceful'
 
     def test_build_agent_with_params(self):
-        """build_agent() usa los parámetros Agent"""
+        """build_agent() uses Agent parameters"""
         service = Service(
             name="User",
             service=UserService,
-            instructions="Gestión de usuarios"
+            instructions="User management"
         )
         manager = ToToolManager(
             name="TestManager",

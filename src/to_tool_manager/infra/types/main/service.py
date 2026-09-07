@@ -3,10 +3,10 @@ from typing import Sequence
 
 @dataclass(frozen=True, slots=True)
 class Include:
-    """Wrapper para incluir métodos específicos.
+    """Wrapper to include specific methods.
 
-    Precondición: include es una secuencia de nombres de métodos
-    Postcondición: almacena la lista de métodos incluidos
+    Precondition: include is a sequence of method names
+    Postcondition: stores the list of included methods
     """
     include: Sequence[str]
 
@@ -19,10 +19,10 @@ class Include:
 
 @dataclass(frozen=True, slots=True)
 class Exclude:
-    """Wrapper para excluir métodos específicos.
+    """Wrapper to exclude specific methods.
 
-    Precondición: exclude es una secuencia de nombres de métodos
-    Postcondición: almacena la lista de métodos excluidos
+    Precondition: exclude is a sequence of method names
+    Postcondition: stores the list of excluded methods
     """
     exclude: Sequence[str]
 

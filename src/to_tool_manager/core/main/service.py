@@ -16,12 +16,12 @@ from to_tool_manager.infra.types.main.signature import MethodsType
 
 @dataclass(slots=True)
 class Service:
-    """Representa un servicio que expone métodos como herramientas para LLMs.
+    """Represents a service that exposes methods as tools for LLMs.
 
-    Precondición: service es una clase válida con métodos públicos
-    Postcondición: Service puede convertirse en Capability vía build_as_capability()
+    Precondition: service is a valid class with public methods
+    Postcondition: Service can be converted to Capability via build_as_capability()
     
-    Referencia: REQ-001, REQ-006, REQ-007
+    Reference: REQ-001, REQ-006, REQ-007
     """
     name: str
     service: type
@@ -34,29 +34,29 @@ class Service:
     kwargs: Dict[str, Any] = field(default_factory=dict)
 
     def add_middleware(self, middleware: ToolMiddleware) -> None:
-        """Añade un ToolMiddleware o Middleware a la lista de middlewares del servicio.
+        """Adds a ToolMiddleware or Middleware to the service's middleware list.
 
-        Precondición: middleware es un ToolMiddleware válido
-        Postcondición: middleware añadido a self.middleware
+        Precondition: middleware is a valid ToolMiddleware
+        Postcondition: middleware added to self.middleware
         
-        Referencia: REQ-006
+        Reference: REQ-006
         """
         if self.middleware is None:
             self.middleware = []
         self.middleware.append(middleware)
 
     def build_as_capability(self) -> Capability:
-        """Convierte el servicio en una Capability para pydantic-ai.
+        """Converts the service into a Capability for pydantic-ai.
 
-        Descubre automáticamente los métodos públicos del servicio, aplica
-        los ToolMiddlewares según include/exclude, y crea tools wrapper.
+        Automatically discovers public methods of the service, applies
+        ToolMiddlewares according to include/exclude, and creates tool wrappers.
 
-        Flujo: Método → Middleware (si aplica) → Tool
+        Flow: Method -> Middleware (if applicable) -> Tool
 
-        Precondición: service es una clase válida con métodos
-        Postcondición: retorna Capability con tools registradas
+        Precondition: service is a valid class with methods
+        Postcondition: returns Capability with registered tools
         
-        Referencia: REQ-001
+        Reference: REQ-001
         """
         methods = discover_methods(self.service)
         tools: list[Tool] = []
@@ -65,14 +65,14 @@ class Service:
             func = method_meta.func
             is_async = method_meta.is_async
 
-            # Aplicar ToolMiddlewares (siempre ANTES de crear la tool)
+            # Apply ToolMiddlewares (always BEFORE creating the tool)
             for mw in (self.middleware or []):
                 if isinstance(mw, ToolMiddleware) and mw.is_allowed(method_meta.name):
                     func = mw(func)
-                    # Si el middleware es async, el wrapper resultante es async
+                    # If the middleware is async, the resulting wrapper is async
                     is_async = inspect.iscoroutinefunction(func)
 
-            # Crear wrapper automática
+            # Create automatic wrapper
             decorated_meta = MethodMeta(
                 name=method_meta.name,
                 func=func,
@@ -91,9 +91,9 @@ class Service:
         )
 
     def service_to_dependency(self, dinamic_depend: DinamicDepend) -> None:
-        """Registra el servicio como dependencia dinámica.
+        """Registers the service as a dynamic dependency.
 
-        Precondición: dinamic_depend es un DinamicDepend válido
-        Postcondición: servicio registrado como dependencia
+        Precondition: dinamic_depend is a valid DinamicDepend
+        Postcondition: service registered as a dependency
         """
         service_to_dependency(self, dinamic_depend)

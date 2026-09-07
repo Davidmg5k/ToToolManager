@@ -5,31 +5,31 @@ from tests.conftest import ConcreteToolMiddleware
 
 
 class TestToolMiddlewareInclude:
-    """Tests para filtrado por include."""
+    """Tests for include filtering."""
 
     def test_include_with_list(self):
-        """Include con lista de strings"""
+        """Include with list of strings"""
         mw = ConcreteToolMiddleware(include=["create", "update"])
         assert mw.include == frozenset({"create", "update"})
 
     def test_include_with_frozenset(self):
-        """Include con frozenset"""
+        """Include with frozenset"""
         mw = ConcreteToolMiddleware(include=frozenset({"create", "update"}))
         assert mw.include == frozenset({"create", "update"})
 
     def test_include_with_include_wrapper(self):
-        """Include con wrapper Include"""
+        """Include with Include wrapper"""
         wrapper = Include(include=["create", "update"])
         mw = ConcreteToolMiddleware(include=wrapper)
         assert mw.include == frozenset({"create", "update"})
 
     def test_include_none(self):
-        """Include es None cuando no se define"""
+        """Include is None when not set"""
         mw = ConcreteToolMiddleware()
         assert mw.include is None
 
     def test_include_filters_methods(self):
-        """include solo permite métodos listados"""
+        """include only allows listed methods"""
         mw = ConcreteToolMiddleware(include=["create", "update"])
         assert mw.is_allowed("create") == True
         assert mw.is_allowed("update") == True
@@ -38,31 +38,31 @@ class TestToolMiddlewareInclude:
 
 
 class TestToolMiddlewareExclude:
-    """Tests para filtrado por exclude."""
+    """Tests for exclude filtering."""
 
     def test_exclude_with_list(self):
-        """Exclude con lista de strings"""
+        """Exclude with list of strings"""
         mw = ConcreteToolMiddleware(exclude=["delete"])
         assert mw.exclude == frozenset({"delete"})
 
     def test_exclude_with_frozenset(self):
-        """Exclude con frozenset"""
+        """Exclude with frozenset"""
         mw = ConcreteToolMiddleware(exclude=frozenset({"delete"}))
         assert mw.exclude == frozenset({"delete"})
 
     def test_exclude_with_exclude_wrapper(self):
-        """Exclude con wrapper Exclude"""
+        """Exclude with Exclude wrapper"""
         wrapper = Exclude(exclude=["delete"])
         mw = ConcreteToolMiddleware(exclude=wrapper)
         assert mw.exclude == frozenset({"delete"})
 
     def test_exclude_none(self):
-        """Exclude es None cuando no se define"""
+        """Exclude is None when not set"""
         mw = ConcreteToolMiddleware()
         assert mw.exclude is None
 
     def test_exclude_filters_methods(self):
-        """exclude excluye métodos listados"""
+        """exclude excludes listed methods"""
         mw = ConcreteToolMiddleware(exclude=["delete"])
         assert mw.is_allowed("create") == True
         assert mw.is_allowed("get") == True
@@ -70,15 +70,15 @@ class TestToolMiddlewareExclude:
 
 
 class TestToolMiddlewarePriority:
-    """Tests para prioridad include vs exclude."""
+    """Tests for include vs exclude priority."""
 
     def test_include_takes_priority_over_exclude(self):
-        """include tiene prioridad sobre exclude"""
+        """include takes priority over exclude"""
         mw = ConcreteToolMiddleware(include=["create"], exclude=["create"])
         assert mw.is_allowed("create") == True
 
     def test_include_priority_method_not_in_exclude(self):
-        """include permite método que no está en exclude"""
+        """include allows method not in exclude"""
         mw = ConcreteToolMiddleware(include=["create", "update"], exclude=["update"])
         assert mw.is_allowed("create") == True
         assert mw.is_allowed("update") == True
@@ -86,10 +86,10 @@ class TestToolMiddlewarePriority:
 
 
 class TestToolMiddlewareNoFilters:
-    """Tests para sin filtros."""
+    """Tests for no filters."""
 
     def test_no_filters_allows_all(self):
-        """Sin filtros, todos los métodos están permitidos"""
+        """Without filters, all methods are allowed"""
         mw = ConcreteToolMiddleware()
         assert mw.is_allowed("create") == True
         assert mw.is_allowed("get") == True
@@ -98,10 +98,10 @@ class TestToolMiddlewareNoFilters:
 
 
 class TestToolMiddlewareDispatch:
-    """Tests para dispatch."""
+    """Tests for dispatch."""
 
     def test_dispatch_is_called(self):
-        """dispatch es invocado al usar __call__"""
+        """dispatch is called when using __call__"""
         called = []
 
         class TestMW(ConcreteToolMiddleware):
@@ -118,12 +118,12 @@ class TestToolMiddlewareDispatch:
         assert callable(wrapped)
 
     def test_name_property(self):
-        """ToolMiddleware tiene nombre"""
+        """ToolMiddleware has name"""
         mw = ConcreteToolMiddleware()
         assert mw.name == "ConcreteToolMiddleware"
 
     def test_name_from_subclass(self):
-        """Subclass conserva nombre"""
+        """Subclass preserves name"""
         class MyFilter(ConcreteToolMiddleware):
             pass
         mw = MyFilter()

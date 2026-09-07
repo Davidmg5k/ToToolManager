@@ -8,7 +8,7 @@ from tests.conftest import ConcreteToolMiddleware
 
 
 class UserService:
-    """Servicio de usuarios para testing."""
+    """User service for testing."""
 
     def create(self, name: str) -> str:
         return f"Created {name}"
@@ -18,28 +18,28 @@ class UserService:
 
 
 class AuthMiddleware(ConcreteToolMiddleware):
-    """Middleware de autenticación de ejemplo."""
+    """Example authentication middleware."""
 
     async def dispatch(self, func, /, *args, **kw):
         return await func(*args, **kw)
 
 
 class LogMiddleware(ConcreteToolMiddleware):
-    """Middleware de logging de ejemplo."""
+    """Example logging middleware."""
 
     async def dispatch(self, func, /, *args, **kw):
         return await func(*args, **kw)
 
 
 class TestDisableMiddlewaresEnToToolManager:
-    """Caso de uso: Deshabilitar middlewares en ToToolManager."""
+    """Use case: Disable middlewares in ToToolManager."""
 
     def test_servicio_publico_sin_auth(self):
-        """Dado un servicio público, cuando se deshabilita auth, no se aplica"""
+        """Given a public service, when auth is disabled, it is not applied"""
         public_service = Service(
             name="Public",
             service=UserService,
-            instructions="API pública",
+            instructions="Public API",
             disable_middlewares=("AuthMiddleware",)
         )
         manager = ToToolManager(
@@ -52,11 +52,11 @@ class TestDisableMiddlewaresEnToToolManager:
         assert any(m.name == "LogMiddleware" for m in resolved)
 
     def test_servicio_con_auth_normal(self):
-        """Dado un servicio normal, auth se aplica"""
+        """Given a normal service, auth is applied"""
         service = Service(
             name="User",
             service=UserService,
-            instructions="Gestión de usuarios"
+            instructions="User management"
         )
         manager = ToToolManager(
             name="TestManager",
@@ -69,20 +69,20 @@ class TestDisableMiddlewaresEnToToolManager:
 
 
 class TestDisableMiddlewaresEnModule:
-    """Caso de uso: Deshabilitar middlewares en Module."""
+    """Use case: Disable middlewares in Module."""
 
     def test_module_sin_auth(self):
-        """Dado un módulo, cuando el Service deshabilita auth, no se aplica"""
+        """Given a module, when Service disables auth, it is not applied"""
         service = Service(
             name="User",
             service=UserService,
-            instructions="Gestión de usuarios",
+            instructions="User management",
             disable_middlewares=("AuthMiddleware",)
         )
         module = Module(
             name="Commerce",
             services=[service],
-            description="Módulo de comercio",
+            description="Commerce module",
             middleware=[AuthMiddleware(), LogMiddleware()],
         )
         module.build_as_agent()
@@ -90,16 +90,16 @@ class TestDisableMiddlewaresEnModule:
         assert any(isinstance(mw, LogMiddleware) for mw in service.middleware)
 
     def test_module_con_auth_normal(self):
-        """Dado un módulo sin disable_middlewares, auth se aplica"""
+        """Given a module without disable_middlewares, auth is applied"""
         service = Service(
             name="User",
             service=UserService,
-            instructions="Gestión de usuarios"
+            instructions="User management"
         )
         module = Module(
             name="Commerce",
             services=[service],
-            description="Módulo de comercio",
+            description="Commerce module",
             middleware=[AuthMiddleware(), LogMiddleware()]
         )
         module.build_as_agent()
@@ -108,23 +108,23 @@ class TestDisableMiddlewaresEnModule:
 
 
 class TestDisableMiddlewaresEnTTMBuilder:
-    """Caso de uso: Deshabilitar middlewares en TTMBuilder."""
+    """Use case: Disable middlewares in TTMBuilder."""
 
     def test_builder_add_middleware(self):
-        """TTMBuilder add_middleware registra el middleware"""
+        """TTMBuilder add_middleware registers the middleware"""
         builder = TTMBuilder(name="TestBuilder")
         mw = LogMiddleware()
         result = builder.add_middleware(mw)
         assert result is builder
 
     def test_builder_remove_middleware_to_service(self):
-        """TTMBuilder remove_middleware_to_service funciona"""
+        """TTMBuilder remove_middleware_to_service works"""
         builder = TTMBuilder(name="TestBuilder")
         builder.add_service(
             name="User",
             service=UserService,
-            instructions="Gestión de usuarios"
+            instructions="User management"
         )
-        # No debe lanzar error
+        # Should not raise error
         result = builder.remove_middleware_to_service("User", AuthMiddleware)
         assert result is builder

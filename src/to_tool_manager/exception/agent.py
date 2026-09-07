@@ -1,6 +1,6 @@
-"""Excepciones de agentes.
+"""Agent exceptions.
 
-Jerarquía:
+Hierarchy:
     AgentError
     ├── AgentNotBuiltError
     └── AgentAlreadyBuiltError
@@ -10,11 +10,11 @@ from to_tool_manager.exception._ttm_error import TTMError
 
 
 class AgentError(TTMError):
-    """Error en la construcción del agente."""
+    """Error in agent construction."""
 
 
 class AgentNotBuiltError(AgentError):
-    """Se accedió al agente antes de llamar build()."""
+    """Agent was accessed before calling build()."""
 
     def __init__(self, component: str) -> None:
         self.component = component
@@ -24,7 +24,7 @@ class AgentNotBuiltError(AgentError):
 
 
 class AgentAlreadyBuiltError(AgentError):
-    """Se intentó construir el agente cuando ya estaba construido."""
+    """Attempted to build the agent when it was already built."""
 
     def __init__(self, component: str) -> None:
         self.component = component

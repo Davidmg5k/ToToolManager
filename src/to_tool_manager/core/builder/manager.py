@@ -19,10 +19,10 @@ from to_tool_manager.exception import (
 
 
 class Manager:
-    """Gestiona servicios, módulos, skills y ToToolManagers.
+    """Manages services, modules, skills, and ToToolManagers.
 
-    Precondición: ninguno
-    Postcondición: estructuras de datos inicializadas
+    Precondition: none
+    Postcondition: data structures initialized
     """
 
     def __init__(self) -> None:
@@ -33,10 +33,10 @@ class Manager:
         self.__ttm: Dict[str, ToToolManager] = {}
 
     def toolsets(self, toolsets: List | None):
-        """Construye la lista de toolsets combinando módulos y skills.
+        """Builds the toolsets list by combining modules and skills.
 
-        Precondición: toolsets es None o lista válida
-        Postcondición: retorna lista combinada
+        Precondition: toolsets is None or a valid list
+        Postcondition: returns combined list
         """
         toolsets_ = []
         skills = self.__skills
@@ -49,10 +49,10 @@ class Manager:
         return toolsets_ + toolsets
 
     def capabilities(self, capabilities: List | None):
-        """Combina capabilities registradas con las proporcionadas.
+        """Combines registered capabilities with provided ones.
 
-        Precondición: capabilities es None o lista válida
-        Postcondición: retorna lista combinada
+        Precondition: capabilities is None or a valid list
+        Postcondition: returns combined list
         """
         caps = list(self.__services.values())
         modules = self.__modules
@@ -64,11 +64,20 @@ class Manager:
             return caps
         return caps + capabilities
 
-    def add_service(self, service: Service, dep: DinamicDepend):
-        """Añade un servicio al manager.
+    @property
+    def service_objects(self) -> Dict[str, Service]:
+        """Returns the original registered Service objects.
 
-        Precondición: service.name es único, dep es válido
-        Postcondición: servicio registrado como Capability
+        Precondition: none
+        Postcondition: returns dict with Service objects
+        """
+        return self.__service_objects
+
+    def add_service(self, service: Service, dep: DinamicDepend):
+        """Adds a service to the manager.
+
+        Precondition: service.name is unique, dep is valid
+        Postcondition: service registered as Capability
         """
         name = service.name
         if name in self.__services:
@@ -78,10 +87,10 @@ class Manager:
         service.service_to_dependency(dep)
 
     def add_module(self, module: Module):
-        """Añade un módulo al manager.
+        """Adds a module to the manager.
 
-        Precondición: module.name es único
-        Postcondición: módulo registrado como SubAgent
+        Precondition: module.name is unique
+        Postcondition: module registered as SubAgent
         """
         name = module.name
         if name in self.__modules:
@@ -89,45 +98,45 @@ class Manager:
         self.__modules[name] = module.build_as_agent()
 
     def add_skill(self, skill: Skill):
-        """Añade un skill al manager.
+        """Adds a skill to the manager.
 
-        Precondición: skill es válido
-        Postcondición: skill añadido a lista
+        Precondition: skill is valid
+        Postcondition: skill added to list
         """
         self.__skills.append(skill)
 
     def add_middleware_to_service(self, ttm_name: str, service_name: str, middleware):
-        """Añade un middleware a un servicio vía ToToolManager.
+        """Adds a middleware to a service via ToToolManager.
 
-        Precondición: ttm_name y service_name existen
-        Postcondición: middleware añadido
+        Precondition: ttm_name and service_name exist
+        Postcondition: middleware added
         """
         ttm = self.__get_ttm(ttm_name)
         ttm.add_middleware_to_service(service_name, middleware)
 
     def add_middleware_to_module(self, ttm_name: str, module_name: str, middleware):
-        """Añade un middleware a un módulo vía ToToolManager.
+        """Adds a middleware to a module via ToToolManager.
 
-        Precondición: ttm_name y module_name existen
-        Postcondición: middleware añadido
+        Precondition: ttm_name and module_name exist
+        Postcondition: middleware added
         """
         ttm = self.__get_ttm(ttm_name)
         ttm.add_middleware_to_module(module_name, middleware)
 
     def remove_middleware_to_service(self, ttm_name: str, service_name: str, middleware):
-        """Remueve un middleware de un servicio vía ToToolManager.
+        """Removes a middleware from a service via ToToolManager.
 
-        Precondición: ttm_name y service_name existen
-        Postcondición: middleware removido
+        Precondition: ttm_name and service_name exist
+        Postcondition: middleware removed
         """
         ttm = self.__get_ttm(ttm_name)
         ttm.remove_middleware_to_service(service_name, middleware)
 
     def remove_middleware_from_services(self, service_name: str, middleware_type: type):
-        """Remueve un middleware de un servicio por tipo.
+        """Removes a middleware from a service by type.
 
-        Precondición: service_name existe en servicios registrados
-        Postcondición: middleware removido del Service original
+        Precondition: service_name exists in registered services
+        Postcondition: middleware removed from the original Service
         """
         if service_name not in self.__service_objects:
             raise ServiceNotFoundError(service_name)
@@ -138,10 +147,10 @@ class Manager:
             ]
 
     def apply_middlewares_to_services(self, middlewares: Sequence[Middleware]) -> None:
-        """Aplica middlewares a los Service originales registrados.
+        """Applies middlewares to the original registered Services.
 
-        Precondición: middlewares es una secuencia válida
-        Postcondición: middlewares añadidos a cada Service
+        Precondition: middlewares is a valid sequence
+        Postcondition: middlewares added to each Service
         """
         for service in self.__service_objects.values():
             for mw in middlewares:
@@ -150,28 +159,28 @@ class Manager:
                 service.middleware.append(mw)
 
     def rebuild_capabilities(self) -> None:
-        """Reconstruye las Capabilities desde los Service originales.
+        """Rebuilds Capabilities from the original Services.
 
-        Precondición: servicios han sido registrados
-        Postcondición: __services actualizado con Capabilities frescas
+        Precondition: services have been registered
+        Postcondition: __services updated with fresh Capabilities
         """
         for name, service in self.__service_objects.items():
             self.__services[name] = service.build_as_capability()
 
     def remove_middleware_to_module(self, ttm_name: str, module_name: str, middleware):
-        """Remueve un middleware de un módulo vía ToToolManager.
+        """Removes a middleware from a module via ToToolManager.
 
-        Precondición: ttm_name y module_name existen
-        Postcondición: middleware removido
+        Precondition: ttm_name and module_name exist
+        Postcondition: middleware removed
         """
         ttm = self.__get_ttm(ttm_name)
         ttm.remove_middleware_to_module(module_name, middleware)
 
     def add_ttm(self, ttm: ToToolManager):
-        """Añade un ToToolManager al manager.
+        """Adds a ToToolManager to the manager.
 
-        Precondición: ttm.name es único
-        Postcondición: ToToolManager registrado
+        Precondition: ttm.name is unique
+        Postcondition: ToToolManager registered
         """
         name = ttm.name
         if name in self.__ttm:
@@ -179,10 +188,10 @@ class Manager:
         self.__ttm[name] = ttm
 
     def __get_ttm(self, name: str):
-        """Obtiene un ToToolManager por nombre.
+        """Gets a ToToolManager by name.
 
-        Precondición: name existe en __ttm
-        Postcondición: retorna ToToolManager
+        Precondition: name exists in __ttm
+        Postcondition: returns ToToolManager
         """
         if name not in self.__ttm:
             raise ToToolManagerNotFoundError(name)

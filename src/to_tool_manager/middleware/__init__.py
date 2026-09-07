@@ -1,12 +1,12 @@
 """to_tool_manager — Middleware module.
 
 Public API:
-- Middleware: Base middleware abstracta
-- ToolMiddleware: Middleware con filtrado por método
-- NodeMiddleware: Base middleware para nodos de grafo
-- GraphMiddlewareRunner: Ejecutor de grafo con middleware
-- HumanInTheLoopMiddleware: HITL global (aplica a todas las tools)
-- HumanInTheLoopToolMiddleware: HITL por método (con include/exclude)
+- Middleware: Abstract base middleware
+- ToolMiddleware: Middleware with method filtering
+- NodeMiddleware: Base middleware for graph nodes
+- GraphMiddlewareRunner: Graph executor with middleware
+- HumanInTheLoopMiddleware: Global HITL (applies to all tools)
+- HumanInTheLoopToolMiddleware: Per-method HITL (with include/exclude)
 """
 
 from to_tool_manager.core.middleware.middleware import (

@@ -6,40 +6,40 @@ from typing import Any, Callable
 
 
 class EventEmitter(ABC):
-    """Protocolo que el framework implementa para emitir eventos al cliente.
+    """Protocol that the framework implements to emit events to the client.
 
-    Ejemplos de implementación:
-    - FastAPI + SSE: enviar evento via Server-Sent Events
-    - Django + WebSocket: enviar via canal WebSocket
-    - Cualquier transport: callback personalizado
+    Implementation examples:
+    - FastAPI + SSE: send event via Server-Sent Events
+    - Django + WebSocket: send via WebSocket channel
+    - Any transport: custom callback
     """
 
     @abstractmethod
     async def emit(self, event_id: str, payload: dict[str, Any]) -> None:
-        """Emite un evento de input humano al cliente.
+        """Emits a human input event to the client.
 
-        Precondición: event_id es válido, payload contiene datos del evento
-        Postcondición: evento enviado al cliente
+        Precondition: event_id is valid, payload contains event data
+        Postcondition: event sent to client
         """
         ...
 
 
 class HumanInputRetry(Exception):
-    """Exception que la logic lanza cuando la validación falla.
+    """Exception that logic throws when validation fails.
 
-    El middleware captura esta exception y reintenta el ciclo
-    HITL (emit → esperar respuesta → validar).
+    The middleware catches this exception and retries the HITL cycle
+    (emit -> wait for response -> validate).
     """
 
 
 class HumanInTheLoop:
-    """Clase central del flujo human-in-the-loop.
+    """Core class of the human-in-the-loop flow.
 
-    Coordina la emisión de eventos y la suspensión/resolución
-    de tools que requieren input humano antes de ejecutarse.
+    Coordinates event emission and suspension/resolution
+    of tools that require human input before execution.
 
-    Precondición: emitter es válido, logic es callable
-    Postcondición: instancia lista para execute()
+    Precondition: emitter is valid, logic is callable
+    Postcondition: instance ready for execute()
     """
 
     __slots__ = ("_emitter", "_logic", "_args", "_kwargs", "_is_async_logic")
@@ -52,16 +52,16 @@ class HumanInTheLoop:
         **kwargs: Any,
     ) -> None:
         """
-        Precondición: emitter implementa EventEmitter, logic es callable
-        Postcondición: emitter, logic, args, kwargs inicializados
+        Precondition: emitter implements EventEmitter, logic is callable
+        Postcondition: emitter, logic, args, kwargs initialized
 
         Args:
-            emitter: implementación del framework para emitir eventos
+            emitter: framework implementation for emitting events
             logic: async def logic(emit, event_fn, *args, **kwargs) -> None
-                   Maneja todo el ciclo: emitir, esperar, validar.
-                   Si validación falla → lanza HumanInputRetry.
-            *args: argumentos posicionales que se inyectan a logic
-            **kwargs: argumentos nombrados que se inyectan a logic
+                   Handles the full cycle: emit, wait, validate.
+                   If validation fails -> raises HumanInputRetry.
+            *args: positional arguments injected into logic
+            **kwargs: named arguments injected into logic
         """
         self._emitter = emitter
         self._logic = logic
@@ -70,16 +70,16 @@ class HumanInTheLoop:
         self._is_async_logic = inspect.iscoroutinefunction(logic)
 
     async def execute(self, event_fn: Callable[[], Any]) -> None:
-        """Ejecuta el ciclo HITL completo.
+        """Executes the complete HITL cycle.
 
-        Precondición: event_fn es callable que encapsula la tool
-        Postcondición: logic ejecutada con emit y event_fn
+        Precondition: event_fn is callable that wraps the tool
+        Postcondition: logic executed with emit and event_fn
 
-        Flujo:
-        1. Crea emit_fn vinculada al emitter
-        2. Ejecuta logic(emit_fn, event_fn, *args, **kwargs)
-        3. Si logic lanza HumanInputRetry → middleware reintenta
-        4. Si logic retorna → validación pasó
+        Flow:
+        1. Creates emit_fn bound to the emitter
+        2. Executes logic(emit_fn, event_fn, *args, **kwargs)
+        3. If logic raises HumanInputRetry -> middleware retries
+        4. If logic returns -> validation passed
         """
         async def emit_fn(event_id: str, payload: dict[str, Any]) -> None:
             await self._emitter.emit(event_id, payload)

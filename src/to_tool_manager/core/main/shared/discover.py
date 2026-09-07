@@ -7,10 +7,10 @@ from typing import Any, Callable
 
 @dataclass(frozen=True)
 class MethodMeta:
-    """Metadata de un método descubierto de un servicio.
+    """Metadata of a discovered service method.
 
-    Precondición: func es un método válido
-    Postcondición: contiene toda la información necesaria para crear una tool
+    Precondition: func is a valid method
+    Postcondition: contains all information needed to create a tool
     """
     name: str
     func: Callable[..., Any]
@@ -20,22 +20,22 @@ class MethodMeta:
 
 
 def discover_methods(service_class: type) -> list[MethodMeta]:
-    """Descubre métodos públicos de una clase de servicio.
+    """Discovers public methods of a service class.
 
-    Precondición: service_class es una clase válida
-    Postcondición: retorna lista de MethodMeta con métodos públicos
+    Precondition: service_class is a valid class
+    Postcondition: returns list of MethodMeta with public methods
 
-    Reglas:
-    - Excluye métodos privados (empiezan con _)
-    - Excluye métodos dunder (__init__, __str__, etc)
-    - Solo incluye métodos definidos directamente en la clase (no heredados)
+    Rules:
+    - Excludes private methods (start with _)
+    - Excludes dunder methods (__init__, __str__, etc)
+    - Only includes methods defined directly in the class (not inherited)
     """
     methods = []
     for name, func in inspect.getmembers(service_class, predicate=inspect.isfunction):
         if name.startswith('_'):
             continue
 
-        # Solo métodos definidos en la clase (no heredados de object)
+        # Only methods defined in the class (not inherited from object)
         if name not in service_class.__dict__:
             continue
 

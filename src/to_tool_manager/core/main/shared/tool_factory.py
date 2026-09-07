@@ -8,16 +8,16 @@ from to_tool_manager.core.main.shared.dinamic_depend import DinamicDepend
 
 
 def make_tool(service_name: str, method_meta: MethodMeta) -> Callable[..., Any]:
-    """Crea una tool wrapper automática para un método de servicio.
+    """Creates an automatic tool wrapper for a service method.
 
-    Precondición: service_name es válido, method_meta contiene el método
-    Postcondición: retorna función wrapper compatible con pydantic_ai Tool
+    Precondition: service_name is valid, method_meta contains the method
+    Postcondition: returns wrapper function compatible with pydantic_ai Tool
 
-    La wrapper:
-    - Recibe RunContext como primer arg
-    - Obtiene instancia de ctx.deps vía service_name
-    - Invoca el método con los args correctos
-    - Preserva firma para schema de pydantic_ai
+    The wrapper:
+    - Receives RunContext as first arg
+    - Gets instance from ctx.deps via service_name
+    - Invokes the method with correct args
+    - Preserves signature for pydantic_ai schema
     """
     method_func = method_meta.func
     method_name = method_meta.name
@@ -25,19 +25,25 @@ def make_tool(service_name: str, method_meta: MethodMeta) -> Callable[..., Any]:
     is_effectively_async = inspect.iscoroutinefunction(method_func)
 
     if is_effectively_async:
-        async def wrapper(ctx: RunContext[DinamicDepend], **kwargs: Any) -> Any:
+        async def async_wrapper(ctx: RunContext[DinamicDepend], **kwargs: Any) -> Any:
             instance = getattr(ctx.deps, service_name)
-            instance_method = getattr(instance, method_name)
             bound = method_func.__get__(instance, type(instance))
-            return await bound(**kwargs)
+            try:
+                return await bound(**kwargs)
+            except Exception as e:
+                return f"Error in {service_name}.{method_name}: {type(e).__name__}: {e}"
+        wrapper = async_wrapper
     else:
-        def wrapper(ctx: RunContext[DinamicDepend], **kwargs: Any) -> Any:
+        def sync_wrapper(ctx: RunContext[DinamicDepend], **kwargs: Any) -> Any:
             instance = getattr(ctx.deps, service_name)
-            instance_method = getattr(instance, method_name)
             bound = method_func.__get__(instance, type(instance))
-            return bound(**kwargs)
+            try:
+                return bound(**kwargs)
+            except Exception as e:
+                return f"Error in {service_name}.{method_name}: {type(e).__name__}: {e}"
+        wrapper = sync_wrapper
 
-    # Preservar metadata del método original
+    # Preserve original method metadata
     wrapper.__name__ = method_name
     wrapper.__qualname__ = f"{service_name}.{method_name}"
     wrapper.__module__ = method_func.__module__
@@ -45,9 +51,9 @@ def make_tool(service_name: str, method_meta: MethodMeta) -> Callable[..., Any]:
     if method_meta.docstring:
         wrapper.__doc__ = method_meta.docstring
 
-    # Preservar anotaciones de tipo (excluyendo 'self')
-    # IMPORTANTE: no sobrescribir la anotación de ctx: RunContext[DinamicDepend]
-    # porque pydantic-ai la usa para detectar que la tool recibe RunContext
+    # Preserve type annotations (excluding 'self')
+    # IMPORTANT: do not overwrite the ctx: RunContext[DinamicDepend] annotation
+    # because pydantic-ai uses it to detect that the tool receives RunContext
     if hasattr(method_func, '__annotations__'):
         annotations = {
             k: v for k, v in method_func.__annotations__.items()
@@ -55,8 +61,8 @@ def make_tool(service_name: str, method_meta: MethodMeta) -> Callable[..., Any]:
         }
         wrapper.__annotations__.update(annotations)
 
-    # Construir firma explícita para que pydantic_ai genere el JSON schema correcto.
-    # Sin esto, inspect.signature() ve **kwargs y el LLM no ve los parámetros reales.
+    # Build explicit signature so pydantic_ai generates the correct JSON schema.
+    # Without this, inspect.signature() sees **kwargs and the LLM doesn't see the real parameters.
     sig_params = [
         inspect.Parameter('ctx', inspect.Parameter.POSITIONAL_OR_KEYWORD, annotation=RunContext[DinamicDepend])
     ]

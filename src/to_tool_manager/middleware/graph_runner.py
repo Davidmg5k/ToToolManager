@@ -9,14 +9,14 @@ from to_tool_manager.core.middleware.middleware import NodeMiddleware
 
 
 class GraphMiddlewareRunner:
-    """Ejecuta un grafo de pydantic_graph con una cadena de NodeMiddleware.
+    """Executes a pydantic_graph with a chain of NodeMiddleware.
 
-    Intercepta transiciones nodo→nodo usando override_next del GraphRun.
-    Cada transición pasa por la cadena de middleware antes de ejecutar
-    el siguiente nodo.
+    Intercepts node->node transitions using GraphRun's override_next.
+    Each transition passes through the middleware chain before executing
+    the next node.
 
-    Precondición: graph es válido, middlewares no está vacío
-    Postcondición: grafo ejecutado con middleware aplicado a cada transición
+    Precondition: graph is valid, middlewares is not empty
+    Postcondition: graph executed with middleware applied to each transition
     """
 
     __slots__ = ("_graph", "_middlewares")
@@ -27,8 +27,8 @@ class GraphMiddlewareRunner:
         middlewares: Sequence[NodeMiddleware],
     ) -> None:
         """
-        Precondición: graph es válido, middlewares es secuencia de NodeMiddleware
-        Postcondición: graph y middlewares inicializados
+        Precondition: graph is valid, middlewares is a sequence of NodeMiddleware
+        Postcondition: graph and middlewares initialized
         """
         self._graph = graph
         self._middlewares = middlewares
@@ -39,10 +39,10 @@ class GraphMiddlewareRunner:
         deps: Any = None,
         inputs: Any = None,
     ) -> Any:
-        """Ejecuta el grafo con middleware aplicado a cada transición.
+        """Executes the graph with middleware applied to each transition.
 
-        Precondición: graph es válido, middlewares configurados
-        Postcondición: retorna el resultado final del grafo
+        Precondition: graph is valid, middlewares configured
+        Postcondition: returns the final result of the graph
         """
         async with self._graph.iter(
             state=state, deps=deps, inputs=inputs, infer_name=False
@@ -76,10 +76,10 @@ class GraphMiddlewareRunner:
         target_node_id: str,
         state: Any,
     ) -> bool:
-        """Ejecuta la cadena de middleware para una transición.
+        """Executes the middleware chain for a transition.
 
-        Precondición: source_node_id puede ser None (start), target_node_id es válido
-        Postcondición: retorna True si la transición está aprobada, False si bloqueada
+        Precondition: source_node_id can be None (start), target_node_id is valid
+        Postcondition: returns True if transition is approved, False if blocked
         """
         for mw in self._middlewares:
             approved = await mw.before_transition(source_node_id, target_node_id, state)

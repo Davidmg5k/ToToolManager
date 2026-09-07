@@ -7,7 +7,7 @@ from tests.conftest import ConcreteToolMiddleware
 
 
 class UserService:
-    """Servicio de usuarios para testing."""
+    """User service for testing."""
 
     def create(self, name: str) -> str:
         return f"Created {name}"
@@ -17,34 +17,34 @@ class UserService:
 
 
 class SlowMiddleware(ConcreteToolMiddleware):
-    """Middleware que simula latencia."""
+    """Middleware that simulates latency."""
 
     async def dispatch(self, func, /, *args, **kw):
         return await func(*args, **kw)
 
 
 class TestBenchmark:
-    """Tests de rendimiento (NRF-001)."""
+    """Performance tests (NRF-001)."""
 
     def test_service_creation_latency(self):
-        """Service se crea en menos de 10ms"""
+        """Service is created in less than 10ms"""
         start = time.perf_counter()
         for _ in range(100):
             Service(
                 name="User",
                 service=UserService,
-                instructions="Gestión de usuarios"
+                instructions="User management"
             )
         elapsed = time.perf_counter() - start
         avg_ms = (elapsed / 100) * 1000
         assert avg_ms < 10, f"Service creation avg: {avg_ms:.2f}ms (>10ms)"
 
     def test_build_as_capability_latency(self):
-        """build_as_capability() completa en menos de 10ms"""
+        """build_as_capability() completes in less than 10ms"""
         service = Service(
             name="User",
             service=UserService,
-            instructions="Gestión de usuarios"
+            instructions="User management"
         )
         start = time.perf_counter()
         for _ in range(100):
@@ -54,11 +54,11 @@ class TestBenchmark:
         assert avg_ms < 10, f"build_as_capability() avg: {avg_ms:.2f}ms (>10ms)"
 
     def test_resolve_middlewares_latency(self):
-        """_resolve_middlewares() completa en menos de 10ms"""
+        """_resolve_middlewares() completes in less than 10ms"""
         service = Service(
             name="User",
             service=UserService,
-            instructions="Gestión de usuarios",
+            instructions="User management",
             middleware=[SlowMiddleware(), SlowMiddleware()]
         )
         manager = ToToolManager(
@@ -74,11 +74,11 @@ class TestBenchmark:
         assert avg_ms < 10, f"_resolve_middlewares() avg: {avg_ms:.2f}ms (>10ms)"
 
     def test_build_agent_latency(self):
-        """build_agent() completa en menos de 50ms"""
+        """build_agent() completes in less than 50ms"""
         service = Service(
             name="User",
             service=UserService,
-            instructions="Gestión de usuarios"
+            instructions="User management"
         )
         start = time.perf_counter()
         manager = ToToolManager(
@@ -91,7 +91,7 @@ class TestBenchmark:
         assert elapsed_ms < 50, f"build_agent() took: {elapsed_ms:.2f}ms (>50ms)"
 
     def test_middleware_overhead(self):
-        """Overhead de middleware es < 1ms por llamada"""
+        """Middleware overhead is < 1ms per call"""
         call_count = 0
 
         class CounterMiddleware(ConcreteToolMiddleware):
@@ -103,7 +103,7 @@ class TestBenchmark:
         service = Service(
             name="User",
             service=UserService,
-            instructions="Gestión de usuarios",
+            instructions="User management",
             middleware=[CounterMiddleware(), CounterMiddleware(), CounterMiddleware()]
         )
         manager = ToToolManager(

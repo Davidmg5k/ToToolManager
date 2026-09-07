@@ -3,9 +3,9 @@ import pytest
 from to_tool_manager.core.middleware.middleware import ToolMiddleware
 
 
-# Servicios de ejemplo para tests
+# Example services for tests
 class UserService:
-    """Servicio de usuarios para testing."""
+    """User service for testing."""
 
     def create(self, name: str) -> str:
         return f"Created {name}"
@@ -18,7 +18,7 @@ class UserService:
 
 
 class OrderService:
-    """Servicio de órdenes para testing."""
+    """Order service for testing."""
 
     def create(self, product: str) -> str:
         return f"Order created for {product}"
@@ -28,15 +28,15 @@ class OrderService:
 
 
 class PublicService:
-    """Servicio público para testing."""
+    """Public service for testing."""
 
     def list(self) -> list:
         return []
 
 
-# ConcreteToolMiddleware para testing (ToolMiddleware es abstracta)
+# ConcreteToolMiddleware for testing (ToolMiddleware is abstract)
 class ConcreteToolMiddleware(ToolMiddleware):
-    """ToolMiddleware concreta para testing."""
+    """Concrete ToolMiddleware for testing."""
 
     async def dispatch(self, func, /, *args, **kw):
         return await func(*args, **kw)

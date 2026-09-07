@@ -1,9 +1,9 @@
 """to_tool_manager — Core main module.
 
 Public API:
-- Service: Expone métodos como tools para LLMs
-- Module: Agrupa servicios como sub-agente
-- ToToolManager: Orquestador de servicios y módulos
+- Service: Exposes methods as tools for LLMs
+- Module: Groups services as a sub-agent
+- ToToolManager: Orchestrator of services and modules
 """
 
 from to_tool_manager.core.main.service import Service

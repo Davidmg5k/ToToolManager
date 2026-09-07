@@ -7,7 +7,7 @@ from tests.conftest import ConcreteToolMiddleware
 
 
 class UserService:
-    """Servicio de usuarios para testing."""
+    """User service for testing."""
 
     def create(self, name: str) -> str:
         return f"Created {name}"
@@ -17,40 +17,40 @@ class UserService:
 
 
 class OrderService:
-    """Servicio de órdenes para testing."""
+    """Order service for testing."""
 
     def create(self, product: str) -> str:
         return f"Order created for {product}"
 
 
 class AuthMiddleware(ConcreteToolMiddleware):
-    """Middleware de autenticación de ejemplo."""
+    """Example authentication middleware."""
 
     async def dispatch(self, func, /, *args, **kw):
         return await func(*args, **kw)
 
 
 class LogMiddleware(ConcreteToolMiddleware):
-    """Middleware de logging de ejemplo."""
+    """Example logging middleware."""
 
     async def dispatch(self, func, /, *args, **kw):
         return await func(*args, **kw)
 
 
 class TestModuleServiceIntegration:
-    """Tests de integración entre Module y Service."""
+    """Integration tests between Module and Service."""
 
     def test_module_with_service_builds_agent(self):
-        """Module con servicio construye agente correctamente"""
+        """Module with service builds agent correctly"""
         service = Service(
             name="User",
             service=UserService,
-            instructions="Gestión de usuarios"
+            instructions="User management"
         )
         module = Module(
             name="Commerce",
             services=[service],
-            description="Módulo de comercio"
+            description="Commerce module"
         )
         manager = ToToolManager(
             name="TestManager",
@@ -61,16 +61,16 @@ class TestModuleServiceIntegration:
         assert "Commerce" in manager.modules
 
     def test_module_middlewares_applied_to_services(self):
-        """Middlewares del módulo se aplican a servicios"""
+        """Module middlewares are applied to services"""
         service = Service(
             name="User",
             service=UserService,
-            instructions="Gestión de usuarios"
+            instructions="User management"
         )
         module = Module(
             name="Commerce",
             services=[service],
-            description="Módulo de comercio",
+            description="Commerce module",
             middleware=[LogMiddleware()]
         )
         manager = ToToolManager(
@@ -78,21 +78,21 @@ class TestModuleServiceIntegration:
             resources=[module]
         )
         manager.build_agent()
-        # LogMiddleware debe estar en el servicio
+        # LogMiddleware must be in the service
         assert any(isinstance(mw, LogMiddleware) for mw in service.middleware)
 
     def test_module_disable_middlewares_filters_correctly(self):
-        """disable_middlewares filtra middlewares correctamente"""
+        """disable_middlewares filters middlewares correctly"""
         service = Service(
             name="User",
             service=UserService,
-            instructions="Gestión de usuarios",
+            instructions="User management",
             disable_middlewares=("AuthMiddleware",)
         )
         module = Module(
             name="Commerce",
             services=[service],
-            description="Módulo de comercio",
+            description="Commerce module",
             middleware=[AuthMiddleware(), LogMiddleware()],
         )
         manager = ToToolManager(
@@ -100,32 +100,32 @@ class TestModuleServiceIntegration:
             resources=[module]
         )
         manager.build_agent()
-        # AuthMiddleware filtrado, LogMiddleware presente
+        # AuthMiddleware filtered, LogMiddleware present
         assert not any(isinstance(mw, AuthMiddleware) for mw in service.middleware)
         assert any(isinstance(mw, LogMiddleware) for mw in service.middleware)
 
     def test_multiple_modules_with_different_middlewares(self):
-        """Múltiples módulos con middlewares diferentes"""
+        """Multiple modules with different middlewares"""
         user_service = Service(
             name="User",
             service=UserService,
-            instructions="Gestión de usuarios"
+            instructions="User management"
         )
         order_service = Service(
             name="Order",
             service=OrderService,
-            instructions="Gestión de órdenes"
+            instructions="Order management"
         )
         user_module = Module(
             name="Users",
             services=[user_service],
-            description="Módulo de usuarios",
+            description="User module",
             middleware=[AuthMiddleware()]
         )
         order_module = Module(
             name="Orders",
             services=[order_service],
-            description="Módulo de órdenes",
+            description="Order module",
             middleware=[LogMiddleware()]
         )
         manager = ToToolManager(
@@ -138,16 +138,16 @@ class TestModuleServiceIntegration:
         assert "Orders" in manager.modules
 
     def test_global_middlewares_with_module(self):
-        """Middlewares globales se aplican junto con middlewares de módulo"""
+        """Global middlewares are applied alongside module middlewares"""
         service = Service(
             name="User",
             service=UserService,
-            instructions="Gestión de usuarios"
+            instructions="User management"
         )
         module = Module(
             name="Commerce",
             services=[service],
-            description="Módulo de comercio",
+            description="Commerce module",
             middleware=[LogMiddleware()]
         )
         manager = ToToolManager(
@@ -156,11 +156,11 @@ class TestModuleServiceIntegration:
             middlewares=[AuthMiddleware()]
         )
         manager.build_agent()
-        # Después de build_agent():
-        # - LogMiddleware (módulo) se aplica vía Module._apply_module_middlewares
-        # - AuthMiddleware (global) se resuelve vía _resolve_middlewares
-        # Verificamos que el servicio tiene el middleware del módulo
+        # After build_agent():
+        # - LogMiddleware (module) is applied via Module._apply_module_middlewares
+        # - AuthMiddleware (global) is resolved via _resolve_middlewares
+        # Verify that the service has the module middleware
         assert any(isinstance(mw, LogMiddleware) for mw in service.middleware)
-        # Verificamos que _resolve_middlewares incluye el global
+        # Verify that _resolve_middlewares includes the global
         resolved = manager._resolve_middlewares(service)
         assert any(isinstance(mw, AuthMiddleware) for mw in resolved)

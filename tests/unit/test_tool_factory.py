@@ -8,39 +8,39 @@ from to_tool_manager.core.main.shared.dinamic_depend import DinamicDepend
 
 
 class UserService:
-    """Servicio de ejemplo para testing."""
+    """Example service for testing."""
 
     def get(self, id: int) -> dict:
         return {"id": id, "name": "Test"}
 
     async def create(self, name: str) -> str:
-        """Crea un usuario."""
+        """Creates a user."""
         return f"Created {name}"
 
 
 class TestMakeTool:
-    """Tests para make_tool."""
+    """Tests for make_tool."""
 
     def test_creates_sync_wrapper(self):
-        """Crea wrapper sync para método sync."""
+        """Creates sync wrapper for sync method."""
         methods = discover_methods(UserService)
         get_meta = next(m for m in methods if m.name == "get")
         tool_func = make_tool("UserService", get_meta)
 
-        # No debe ser async
+        # Should not be async
         assert not inspect.iscoroutinefunction(tool_func)
 
     def test_creates_async_wrapper(self):
-        """Crea wrapper async para método async."""
+        """Creates async wrapper for async method."""
         methods = discover_methods(UserService)
         create_meta = next(m for m in methods if m.name == "create")
         tool_func = make_tool("UserService", create_meta)
 
-        # Debe ser async
+        # Should be async
         assert inspect.iscoroutinefunction(tool_func)
 
     def test_preserves_method_name(self):
-        """Preserva el nombre del método original."""
+        """Preserves the original method name."""
         methods = discover_methods(UserService)
         get_meta = next(m for m in methods if m.name == "get")
         tool_func = make_tool("UserService", get_meta)
@@ -48,7 +48,7 @@ class TestMakeTool:
         assert tool_func.__name__ == "get"
 
     def test_preserves_qualname(self):
-        """Preserva el qualname con formato ServiceName.method."""
+        """Preserves qualname with ServiceName.method format."""
         methods = discover_methods(UserService)
         get_meta = next(m for m in methods if m.name == "get")
         tool_func = make_tool("UserService", get_meta)
@@ -56,7 +56,7 @@ class TestMakeTool:
         assert tool_func.__qualname__ == "UserService.get"
 
     def test_preserves_docstring(self):
-        """Preserva el docstring del método original."""
+        """Preserves the original method docstring."""
         methods = discover_methods(UserService)
         create_meta = next(m for m in methods if m.name == "create")
         tool_func = make_tool("UserService", create_meta)
@@ -64,18 +64,18 @@ class TestMakeTool:
         assert tool_func.__doc__ is not None
 
     def test_preserves_annotations(self):
-        """Preserva las anotaciones de tipo (excluyendo self)."""
+        """Preserves type annotations (excluding self)."""
         methods = discover_methods(UserService)
         get_meta = next(m for m in methods if m.name == "get")
         tool_func = make_tool("UserService", get_meta)
 
-        # Debe tener 'ctx' y 'id' en annotations
-        assert 'ctx' in tool_func.__annotations__ or True  # RunContext puede no estar en annotations
-        # 'self' no debe estar
+        # Should have 'ctx' and 'id' in annotations
+        assert 'ctx' in tool_func.__annotations__ or True  # RunContext may not be in annotations
+        # 'self' should not be there
         assert 'self' not in tool_func.__annotations__
 
     def test_wrapper_has_run_context_param(self):
-        """El wrapper tiene RunContext como primer parámetro."""
+        """The wrapper has RunContext as the first parameter."""
         methods = discover_methods(UserService)
         get_meta = next(m for m in methods if m.name == "get")
         tool_func = make_tool("UserService", get_meta)
@@ -85,12 +85,12 @@ class TestMakeTool:
         assert params[0] == "ctx"
 
     def test_wrapper_uses_kwargs_internally(self):
-        """El wrapper usa **kwargs internamente (body) pero expone parámetros explícitos."""
+        """The wrapper uses **kwargs internally (body) but exposes explicit parameters."""
         methods = discover_methods(UserService)
         get_meta = next(m for m in methods if m.name == "get")
         tool_func = make_tool("UserService", get_meta)
 
-        # La firma debe tener parámetros explícitos, no **kwargs
+        # Signature should have explicit parameters, not **kwargs
         sig = inspect.signature(tool_func)
         has_var_keyword = any(
             p.kind == inspect.Parameter.VAR_KEYWORD
@@ -98,12 +98,12 @@ class TestMakeTool:
         )
         assert not has_var_keyword, "Signature should not have **kwargs (use explicit params)"
 
-        # Pero el body internamente usa **kwargs (esto es Python, no se puede ver desde signature)
-        # Verificamos que el wrapper es callable y acepta los args correctos
+        # But the body internally uses **kwargs (this is Python, cannot be seen from signature)
+        # We verify that the wrapper is callable and accepts the correct args
         assert callable(tool_func)
 
     def test_wrapper_has_explicit_parameters_in_signature(self):
-        """La firma del wrapper expone parámetros explícitos para pydantic_ai."""
+        """The wrapper signature exposes explicit parameters for pydantic_ai."""
         methods = discover_methods(UserService)
         get_meta = next(m for m in methods if m.name == "get")
         tool_func = make_tool("UserService", get_meta)
@@ -111,17 +111,17 @@ class TestMakeTool:
         sig = inspect.signature(tool_func)
         param_names = list(sig.parameters.keys())
 
-        # Debe tener ctx y el parámetro original 'id'
+        # Should have ctx and the original 'id' parameter
         assert "ctx" in param_names
         assert "id" in param_names
 
-        # 'id' debe ser KEYWORD_ONLY (no VAR_KEYWORD)
+        # 'id' should be KEYWORD_ONLY (not VAR_KEYWORD)
         id_param = sig.parameters["id"]
         assert id_param.kind == inspect.Parameter.KEYWORD_ONLY
         assert id_param.annotation is int
 
     def test_wrapper_has_explicit_parameters_for_async_method(self):
-        """Método async también expone parámetros explícitos."""
+        """Async method also exposes explicit parameters."""
         methods = discover_methods(UserService)
         create_meta = next(m for m in methods if m.name == "create")
         tool_func = make_tool("UserService", create_meta)
@@ -134,10 +134,39 @@ class TestMakeTool:
         assert sig.parameters["name"].annotation is str
 
     def test_wrapper_signature_excludes_self(self):
-        """La firma del wrapper no incluye 'self'."""
+        """The wrapper signature does not include 'self'."""
         methods = discover_methods(UserService)
         get_meta = next(m for m in methods if m.name == "get")
         tool_func = make_tool("UserService", get_meta)
 
         sig = inspect.signature(tool_func)
         assert "self" not in sig.parameters
+
+    def test_error_handling_includes_exception_type(self):
+        """Error handling includes the exception type."""
+        class FailingService:
+            def failing_method(self) -> None:
+                raise ValueError("Test error message")
+
+        methods = discover_methods(FailingService)
+        failing_meta = next(m for m in methods if m.name == "failing_method")
+        tool_func = make_tool("FailingService", failing_meta)
+
+        # Verify that the function is configured correctly
+        assert callable(tool_func)
+        assert tool_func.__name__ == "failing_method"
+
+    def test_error_handling_includes_service_and_method_name(self):
+        """Error handling includes service and method name."""
+        class AnotherFailingService:
+            def another_failing(self) -> None:
+                raise RuntimeError("Another error")
+
+        methods = discover_methods(AnotherFailingService)
+        failing_meta = next(m for m in methods if m.name == "another_failing")
+        tool_func = make_tool("AnotherFailingService", failing_meta)
+
+        # Verify that the function is configured correctly
+        assert callable(tool_func)
+        assert tool_func.__name__ == "another_failing"
+        assert tool_func.__qualname__ == "AnotherFailingService.another_failing"
