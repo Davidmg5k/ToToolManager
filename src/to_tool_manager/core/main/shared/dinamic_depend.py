@@ -19,7 +19,12 @@ class DinamicDepend:
             data[name] = value
 
     def __getattribute__(self, name: str) -> Any:
-        """Gets an attribute dynamically."""
+        """Gets an attribute dynamically.
+
+        Postcondition: raises DependencyNotSetError (an AttributeError
+        subclass) for missing attributes, so hasattr()/getattr(default)
+        follow the standard Python data-model contract.
+        """
         # For internal attributes, use object.__getattribute__
         if name.startswith('_'):
             return object.__getattribute__(self, name)
@@ -27,10 +32,3 @@ class DinamicDepend:
         if name in data:
             return data[name]
         raise DependencyNotSetError(name)
-
-    def __hasattr__(self, name: str) -> bool:
-        """Checks if an attribute exists."""
-        if name.startswith('_'):
-            return object.__getattribute__(self, name) is not None
-        data = object.__getattribute__(self, '_data')
-        return name in data

@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Sequence
+from typing import Any, Dict, Sequence
 
 from pydantic_ai import (
     Agent,
@@ -14,9 +14,8 @@ from pydantic_ai_harness.subagents import SubAgents
 from to_tool_manager.core.main.module import Module
 from to_tool_manager.core.main.service import Service
 from to_tool_manager.core.main.shared.dinamic_depend import DinamicDepend
-from to_tool_manager.core.middleware.middleware import Middleware, ToolMiddleware
+from to_tool_manager.core.middleware.middleware import Middleware
 from to_tool_manager.exception import (
-    AgentAlreadyBuiltError,
     AgentNotBuiltError,
     InvalidResourceTypeError,
     MiddlewareNotInitializedError,
@@ -134,7 +133,6 @@ class ToToolManager:
             return self.__services[name]
         if name in self.__modules:
             return self.__modules[name]
-        all_names = list(self.__services.keys()) + list(self.__modules.keys())
         raise ServiceNotFoundError(name)
 
     @property
@@ -176,32 +174,6 @@ class ToToolManager:
                 resolved.append(mw)
 
         return resolved
-
-    def _apply_middlewares(
-        self,
-        dispatch_call: Any,
-        middlewares: Sequence[Middleware],
-    ) -> Any:
-        """Applies a chain of middlewares around dispatch_call.
-
-        Middlewares are applied in reverse order so that the first
-        in the list is the one that executes first (outermost).
-        ToolMiddleware instances are skipped here because they operate
-        at the method level (handled in _build_dispatch_table).
-
-        Precondition: middlewares are valid
-        Postcondition: dispatch_call wrapped in middlewares
-        """
-        for mw in reversed(middlewares):
-            if isinstance(mw, ToolMiddleware):
-                continue
-            original = dispatch_call
-
-            async def _wrapped(*args: Any, _mw: Middleware = mw, _fn: Any = original, **kw: Any) -> Any:
-                return await _mw.dispatch(_fn, *args, **kw)
-
-            dispatch_call = _wrapped
-        return dispatch_call
 
     def add_middleware_to_service(self, service_name: str, middleware: Middleware) -> None:
         """Adds a middleware to a specific service.

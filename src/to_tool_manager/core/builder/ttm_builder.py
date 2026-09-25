@@ -340,8 +340,6 @@ class TTMBuilder:
         Precondition: build() has been called (services instantiated in DinamicDepend)
         Postcondition: list of flat functions for FastMCP
         """
-        import inspect
-
         mcp_tools = []
         service_objects = self.__manager.service_objects
 
@@ -370,7 +368,6 @@ class TTMBuilder:
         Postcondition: returns function without RunContext, or None if not convertible
         """
         import inspect
-        from pydantic_ai.tools import RunContext
 
         sig = inspect.signature(pydantic_ai_func)
         params = list(sig.parameters.values())

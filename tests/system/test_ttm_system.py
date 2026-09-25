@@ -438,7 +438,7 @@ class TestAgentExecutionWithLLM:
 
         result = await builder.agent.run(
             "¿Cuál es el estado de la orden ORD-001?",
-            deps=builder.deps,
+            deps=builder.dependency,
         )
         assert result is not None
         # The agent should have used the tool and return information
@@ -464,7 +464,7 @@ class TestAgentExecutionWithLLM:
 
         result = await builder.agent.run(
             "¿Cuál es el estado de la orden ORD-002?",
-            deps=builder.deps,
+            deps=builder.dependency,
         )
         assert result is not None
 
@@ -485,7 +485,7 @@ class TestAgentExecutionWithLLM:
 
         result = await builder.agent.run(
             "Consulta el estado de ORD-003",
-            deps=builder.deps,
+            deps=builder.dependency,
         )
         assert result is not None
 
@@ -510,7 +510,7 @@ class TestAgentExecutionWithLLM:
 
         result = await builder.agent.run(
             "¿Qué órdenes hay? Consulta la ORD-001",
-            deps=builder.deps,
+            deps=builder.dependency,
         )
         assert result is not None
 
@@ -558,7 +558,7 @@ class TestAcceptanceFullFlow:
         # Act - Execute with LLM
         result = await builder.agent.run(
             "Necesito saber el estado de la orden ORD-001 y si tiene tracking",
-            deps=builder.deps,
+            deps=builder.dependency,
         )
 
         # Assert - Valid result
@@ -603,7 +603,7 @@ class TestAcceptanceFullFlow:
         # Act - Execute
         result = await builder.agent.run(
             "¿Cuál es el estado de la ORD-003?",
-            deps=builder.deps,
+            deps=builder.dependency,
         )
 
         # Assert
@@ -625,7 +625,7 @@ class TestAcceptanceFullFlow:
 
         result = await builder.agent.run(
             "¿Cuál es el estado de la orden ORD-999?",
-            deps=builder.deps,
+            deps=builder.dependency,
         )
         assert result is not None
         # Must handle the error gracefully
