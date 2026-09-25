@@ -1,34 +1,119 @@
 ﻿# to-tool-manager
 
-> Convert plain Python service classes into AI tool specifications for LLM integration.
+> Turn plain Python classes into LLM-callable tools, with middleware, sub-agents and human-in-the-loop — without writing a single tool schema.
 
 **Version:** 0.9.5 | **Python:** >=3.12 | **License:** MIT
 
 ---
 
-## What is it?
+## Table of Contents
 
-`to-tool-manager` is a framework that lets you write ordinary Python classes (services) and automatically exposes their public methods as **tools** that LLMs can call via [pydantic-ai](https://github.com/pydantic/pydantic-ai).
+- [What it is](#what-it-is)
+- [Why it exists](#why-it-exists)
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Quickstart](#quickstart)
+- [How it works](#how-it-works)
+  - [Method discovery rules](#method-discovery-rules)
+  - [From class to tool](#from-class-to-tool)
+  - [Tool naming](#tool-naming)
+  - [Error handling](#error-handling)
+  - [Middleware resolution and ordering](#middleware-resolution-and-ordering)
+- [Core API](#core-api)
+  - [`Service`](#service)
+  - [`Module`](#module)
+  - [`ToToolManager`](#totoolmanager)
+  - [`TTMBuilder`](#ttmbuilder)
+  - [`DinamicDepend`](#dinamicdepend)
+  - [`Include` / `Exclude` / `MethodsType`](#include--exclude--methodstype)
+- [Middleware](#middleware)
+  - [`Middleware`](#middleware)
+  - [`ToolMiddleware`](#toolmiddleware)
+  - [`NodeMiddleware`](#nodemiddleware)
+  - [`NodeWrapper`](#nodewrapper)
+  - [`GraphMiddlewareRunner`](#graphmiddlewarerunner)
+- [Human-in-the-Loop](#human-in-the-loop)
+  - [`EventEmitter`](#eventemitter)
+  - [`HumanInTheLoop`](#humanintheloop)
+  - [`HumanInputRetry`](#humaninputretry)
+  - [`HumanInTheLoopMiddleware`](#humanintheloopmiddleware)
+  - [`HumanInTheLoopToolMiddleware`](#humaninthelooptoolmiddleware)
+- [Exceptions](#exceptions)
+- [Configuration](#configuration)
+- [Examples and use cases](#examples-and-use-cases)
+  - [Dependency injection into services](#dependency-injection-into-services)
+  - [Async services and DI](#async-services-and-di)
+  - [Error mapping and PII scrubbing](#error-mapping-and-pii-scrubbing)
+  - [Sub-agents with Module](#sub-agents-with-module)
+  - [Disabling inherited middleware](#disabling-inherited-middleware)
+  - [Exporting tools to an MCP server](#exporting-tools-to-an-mcp-server)
+  - [Gateways and approvals with HITL](#gateways-and-approvals-with-hitl)
+  - [Guarding graph transitions](#guarding-graph-transitions)
+- [Gotchas and troubleshooting](#gotchas-and-troubleshooting)
+- [Development](#development)
+- [License](#license)
+- [Links](#links)
 
-## What problem does it solve?
+---
 
-When building LLM-powered applications you need to:
+## What it is
 
-1. Write business logic (Python classes).
-2. Manually define JSON schemas or tool decorators for every method the LLM should call.
-3. Wire each tool into an agent.
-4. Add cross-cutting concerns (auth, logging, rate limiting, human-in-the-loop) without polluting business code.
+`to-tool-manager` is a thin, explicit layer over [pydantic-ai](https://github.com/pydantic/pydantic-ai). You keep your business logic in ordinary Python classes; the library discovers their public methods, derives the JSON schemas from their type hints and docstrings, and assembles a ready-to-use `Agent`.
 
-`to_tool_manager` eliminates all that boilerplate. You write a plain class, wrap it in a `Service`, and the framework **auto-discovers** its public methods, generates the tool schemas, and assembles a pydantic-ai `Agent` ready to use. Middlewares can be stacked at the service, module, or global level — including human-in-the-loop flows — without touching business logic.
+Four objects cover the whole surface:
 
-### Architecture at a glance
+| Object | Role |
+|---|---|
+| `Service` | Wraps one class and exposes its public methods as tools. |
+| `Module` | Groups services into a **sub-agent** with its own model, prompt and middleware layer. |
+| `ToToolManager` | Orchestrates services and modules into a single `Agent`. |
+| `TTMBuilder` | Fluent alternative to `ToToolManager` for declarative assembly. |
+
+Cross-cutting concerns (auth, logging, rate limiting, redaction, human approval) are expressed as **middleware** and attached at the service, module or builder level — never inside your business code.
 
 ```
-Python class  ──>  Service  ──>  Module (optional)  ──>  ToToolManager / TTMBuilder  ──>  Agent
-                     │                                                        │
-                     └── ToolMiddleware (per-method)              Global Middleware (per-call)
-                                                                  NodeMiddleware (graph transitions)
+Python class ──> Service ──> Module (optional) ──> ToToolManager / TTMBuilder ──> Agent
+                    │
+                    └── ToolMiddleware (per method, outermost first)
 ```
+
+---
+
+## Why it exists
+
+Building an LLM application normally forces you to repeat this loop for every capability:
+
+1. Write the business logic as a plain class.
+2. Hand-write a JSON schema for each method the model may call.
+3. Register each tool on the agent, wiring dependencies by hand.
+4. Repeat auth, logging, rate limiting and audit on every tool.
+5. Add human approval for dangerous operations — and re-implement the pause/resume plumbing.
+
+`to-tool-manager` collapses steps 2–5. You declare a class; the library generates the schemas, instantiates your object with the dependencies you provide, wraps each call in the middleware chain you declare, and hands you an `Agent`. Your service class stays free of framework imports and of concern-specific code.
+
+---
+
+## Requirements
+
+| Item | Value |
+|---|---|
+| Python | `>=3.12` (tested on 3.12 and 3.13) |
+| Build backend | `uv_build>=0.8.15,<0.9.0` |
+| Runtime deps | `pydantic-ai-slim[cli,openai]`, `pydantic-ai-harness`, `pydantic-ai-skills`, `pydantic-graph`, `subagents-pydantic-ai`, `fastmcp` |
+| Model access | Whatever provider your pydantic-ai model needs (OpenAI by default via the `openai` extra) |
+
+**Direct dependencies** (from `pyproject.toml`):
+
+| Package | Constraint |
+|---|---|
+| `pydantic-ai-slim[cli,openai]` | `>=2.37.0` |
+| `pydantic-ai-harness` | `>=0.28.0` |
+| `pydantic-ai-skills` | `>=1.4.0` |
+| `pydantic-graph` | `>=2.37.0` |
+| `subagents-pydantic-ai` | `>=0.2.21` |
+| `fastmcp` | `>=4.0.2` |
+
+`cryptography>=50.0.0` is pinned as a transitive override to pick up the PYSEC-2026-3552 fix regardless of what the auth stack resolves to.
 
 ---
 
@@ -44,360 +129,910 @@ Or with `uv`:
 uv add to-tool-manager
 ```
 
----
+From source:
 
-## Core Classes
-
-### 1. Service
-
-Wraps a Python class and auto-discovers its public methods as LLM tools.
-
-**Constructor Parameters**
-
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `name` | `str` | *(required)* | Unique identifier for the service |
-| `service` | `type` | *(required)* | The Python class to wrap |
-| `instructions` | `str` | *(required)* | Instructions for the LLM about when to use this service |
-| `middleware` | `List[ToolMiddleware \| Middleware] \| None` | `[]` | Middleware instances applied to this service |
-| `disable_middlewares` | `Tuple[str, ...]` | `()` | Names of middlewares to skip (inherited from parent layers) |
-| `include` | `MethodsType \| Include \| None` | `None` | Methods to include (takes priority over exclude) |
-| `exclude` | `MethodsType \| Exclude \| None` | `None` | Methods to exclude |
-| `args` | `Tuple[Any, ...]` | `()` | Positional args passed to `service.__init__()` |
-| `kwargs` | `Dict[str, Any]` | `{}` | Keyword args passed to `service.__init__()` |
-
-**Public Methods**
-
-| Method | Parameters | Returns | Exceptions | Description |
-|---|---|---|---|---|
-| `add_middleware(middleware)` | `middleware: ToolMiddleware` | `None` | — | Appends a middleware to the service's list |
-| `build_as_capability()` | — | `Capability` | — | Discovers public methods, applies ToolMiddlewares, creates pydantic-ai `Capability` with `Tool` wrappers |
-| `service_to_dependency(dinamic_depend)` | `dinamic_depend: DinamicDepend` | `None` | — | Registers the service instance as a dynamic dependency |
+```bash
+git clone https://github.com/Davidmg5k/ToToolManager.git
+cd ToToolManager
+uv sync --extra pydantic-ai
+```
 
 ---
 
-### 2. Module
-
-Groups multiple `Service` instances into a **sub-agent**. Each module can have its own model, instructions, and middleware layer.
-
-**Constructor Parameters**
-
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `name` | `str` | *(required)* | Unique identifier |
-| `services` | `Sequence[Service]` | *(required)* | Services to group |
-| `description` | `str` | *(required)* | Description for the sub-agent |
-| `capabilities` | `List[Capability] \| None` | `None` | Pre-built capabilities |
-| `middleware` | `List \| None` | `None` | Middlewares applied to all services in this module |
-| `disable_middlewares` | `Tuple[str, ...]` | `()` | Middleware names to disable |
-| `model` | `Model \| KnownModelName \| str \| None` | `None` | LLM model for this sub-agent |
-| `instructions` | `Any` | `None` | Agent instructions |
-| `system_prompt` | `str \| Sequence[str]` | `()` | System prompt |
-| `model_settings` | `AgentModelSettings \| None` | `None` | Model settings |
-| `retries` | `int \| AgentRetries \| None` | `None` | Retry configuration |
-| `validation_context` | `Any \| Callable \| None` | `None` | Validation context |
-| `tools` | `Sequence[Any]` | `()` | Additional tools |
-| `toolsets` | `Sequence[AgentToolset] \| None` | `None` | Additional toolsets |
-| `defer_model_check` | `bool` | `False` | Defer model validation |
-| `end_strategy` | `EndStrategy` | `'graceful'` | End strategy |
-| `metadata` | `Any` | `None` | Metadata |
-| `tool_timeout` | `float \| None` | `None` | Tool timeout in seconds |
-| `max_concurrency` | `Any` | `None` | Max concurrency limit |
-| `output_type` | `Any` | `str` | Output type |
-
-**Public Methods / Properties**
-
-| Method / Property | Parameters | Returns | Exceptions | Description |
-|---|---|---|---|---|
-| `agent` *(property)* | — | `Agent[DinamicDepend]` | `AgentNotBuiltError` | Returns the built agent (call `build_as_agent()` first) |
-| `agent` *(setter)* | `agent: Agent` | — | `AgentAlreadyBuiltError` | Sets the agent (raises if already built) |
-| `dependency` *(property)* | — | `DinamicDepend` | — | Returns the dynamic dependency container |
-| `build_as_agent()` | — | `SubAgent[DinamicDepend]` | `SelfDisableMiddlewareError` | Builds the module as a SubAgent with all its services' capabilities |
-
----
-
-### 3. ToToolManager
-
-Orchestrates `Service` and `Module` instances, resolves middleware chains, and builds the final pydantic-ai `Agent`.
-
-**Constructor Parameters**
-
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `name` | `str` | *(required)* | Orchestrator name |
-| `resources` | `Sequence[Service \| Module]` | *(required)* | Services and modules to orchestrate |
-| `middlewares` | `Sequence[Middleware] \| None` | `None` | Global middlewares applied to all tool calls |
-| `model` | `Model \| KnownModelName \| str \| None` | `None` | LLM model |
-| `instructions` | `Any` | `None` | Agent instructions |
-| `system_prompt` | `str \| Sequence[str]` | `()` | System prompt |
-| `model_settings` | `AgentModelSettings \| None` | `None` | Model settings |
-| `retries` | `int \| AgentRetries \| None` | `None` | Retry count |
-| `validation_context` | `Any` | `None` | Validation context |
-| `tools` | `Sequence[Any]` | `()` | Additional tools |
-| `toolsets` | `Sequence[AgentToolset] \| None` | `None` | Additional toolsets |
-| `defer_model_check` | `bool` | `False` | Defer model check |
-| `end_strategy` | `EndStrategy` | `'graceful'` | End strategy |
-| `metadata` | `Any` | `None` | Metadata |
-| `tool_timeout` | `float \| None` | `None` | Tool timeout |
-| `max_concurrency` | `AnyConcurrencyLimit` | `None` | Max concurrency |
-| `output_type` | `Any` | `str` | Output type |
-| `description` | `str \| None` | `None` | Description |
-
-**Public Methods / Properties**
-
-| Method / Property | Parameters | Returns | Exceptions | Description |
-|---|---|---|---|---|
-| `name` *(property)* | — | `str` | — | Returns orchestrator name |
-| `agent` *(property)* | — | `Agent[DinamicDepend]` | `AgentNotBuiltError` | Returns built agent |
-| `middlewares` *(property)* | — | `Sequence[Middleware]` | `MiddlewareNotInitializedError` | Returns middlewares list |
-| `services` *(property)* | — | `Dict[str, Service]` | — | Returns copy of registered services |
-| `modules` *(property)* | — | `Dict[str, Module]` | — | Returns copy of registered modules |
-| `get_service(name)` | `name: str` | `Service \| Module` | `ServiceNotFoundError` | Gets a service or module by name |
-| `build_agent(resources, middlewares)` | `resources: Sequence \| None`, `middlewares: Sequence \| None` | `Agent[DinamicDepend]` | `InvalidResourceTypeError` | Builds the pydantic-ai Agent |
-| `add_middleware_to_service(service_name, middleware)` | `service_name: str`, `middleware: Middleware` | `None` | `ServiceNotFoundError`, `MiddlewareTargetMismatchError` | Adds middleware to a specific service |
-| `add_middleware_to_module(module_name, middleware)` | `module_name: str`, `middleware: Middleware` | `None` | `ServiceNotFoundError`, `MiddlewareTargetMismatchError` | Adds middleware to a specific module |
-| `remove_middleware_to_service(service_name, middleware_type)` | `service_name: str`, `middleware_type: type` | `None` | `ServiceNotFoundError`, `MiddlewareTargetMismatchError` | Removes middleware by type from a service |
-| `remove_middleware_to_module(module_name, middleware_type)` | `module_name: str`, `middleware_type: type` | `None` | `ServiceNotFoundError`, `MiddlewareTargetMismatchError` | Removes middleware by type from a module |
-
----
-
-### 4. TTMBuilder
-
-Fluent builder API for declaratively assembling agents. Supports method chaining and context manager usage.
-
-**Constructor Parameters**
-
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `name` | `str` | *(required)* | Agent name |
-| `capabilities` | `List \| None` | `None` | Pre-built capabilities |
-| `toolsets` | `List \| None` | `None` | Pre-built toolsets |
-| `model` | `Model \| KnownModelName \| str \| None` | `None` | LLM model |
-| `instructions` | `Any` | `None` | Agent instructions |
-| `system_prompt` | `str \| Sequence[str]` | `()` | System prompt |
-| `model_settings` | `AgentModelSettings \| None` | `None` | Model settings |
-| `retries` | `int \| AgentRetries \| None` | `None` | Retry count |
-| `validation_context` | `Any` | `None` | Validation context |
-| `tools` | `Sequence[Any]` | `()` | Additional tools |
-| `defer_model_check` | `bool` | `False` | Defer model check |
-| `end_strategy` | `EndStrategy` | `'graceful'` | End strategy |
-| `metadata` | `Any` | `None` | Metadata |
-| `tool_timeout` | `float \| None` | `None` | Tool timeout |
-| `max_concurrency` | `AnyConcurrencyLimit` | `None` | Max concurrency |
-| `output_type` | `Any` | `str` | Output type |
-| `description` | `str \| None` | `None` | Description |
-
-**Fluent API Methods** (all return `self` for chaining)
-
-| Method | Parameters | Returns | Exceptions | Description |
-|---|---|---|---|---|
-| `add_service(name, service, instructions, ...)` | See below | `TTMBuilder` | — | Adds a service |
-| `add_module(name, services, description, ...)` | See below | `TTMBuilder` | `SelfDisableMiddlewareError` | Adds a module |
-| `add_middleware(middleware)` | `middleware: Middleware` | `TTMBuilder` | — | Adds a global middleware |
-| `remove_middleware_to_service(service_name, middleware_type)` | `service_name: str`, `middleware_type: type` | `TTMBuilder` | `ServiceNotFoundError` | Removes middleware from a service |
-| `add_skill(skill)` | `skill: Skill` | `TTMBuilder` | — | Adds a pydantic-ai-skill |
-| `add_ttm(manager)` | `manager: ToToolManager` | `TTMBuilder` | `ToToolManagerAlreadyRegisteredError` | Adds an existing ToToolManager |
-| `build(model)` | `model: str \| None = None` | `None` | — | Constructs the Agent (`model` param overrides `__init__` model) |
-| `to_mcp_tool(name, instructions)` | `name: str`, `instructions: str` | `FastMCP` | — | Converts to a FastMCP server |
-
-**`add_service` sub-parameters**
-
-| Parameter | Type | Default |
-|---|---|---|
-| `name` | `str` | *(required)* |
-| `service` | `type` | *(required)* |
-| `instructions` | `str` | *(required)* |
-| `middleware` | `List \| None` | `None` |
-| `disable_middlewares` | `Tuple[str, ...]` | `()` |
-| `include` | `MethodsType \| Include \| None` | `None` |
-| `exclude` | `MethodsType \| Exclude \| None` | `None` |
-| `args` | `tuple` | `()` |
-| `kwargs` | `dict \| None` | `None` |
-
-**Context Manager**
+## Quickstart
 
 ```python
-with TTMBuilder(name="Agent") as builder:
-    builder.add_service(...)
-    # build() is called automatically on __exit__
-agent = builder.agent
+from to_tool_manager import Service, ToToolManager
+
+
+class UserManager:
+    """In-memory user store."""
+
+    def __init__(self) -> None:
+        self._users: dict[str, str] = {}
+
+    def create(self, id: str, name: str) -> str:
+        """Create a user.
+
+        Args:
+            id: Unique user identifier.
+            name: Display name.
+        """
+        self._users[id] = name
+        return f"User {id} created: {name}"
+
+    def get(self, id: str) -> str:
+        """Return a user by id."""
+        return f"User {id}: {self._users.get(id, 'not found')}"
+
+
+manager = ToToolManager(
+    name="App",
+    resources=[
+        Service(
+            name="users",
+            service=UserManager,
+            instructions="Use for user creation and lookup.",
+        )
+    ],
+    model="openai:gpt-4o",
+)
+
+agent = manager.build_agent()   # ready to use
+```
+
+Run it with the pydantic-ai CLI:
+
+```bash
+pydantic-ai to_tool_manager.quickstart:agent
 ```
 
 ---
 
-## Middleware System
+## How it works
 
-Middlewares intercept tool calls (or graph node transitions) without touching business logic. They form a chain: the first middleware in the list is the outermost (executes first).
+### Method discovery rules
 
-### Tool Call Middleware Flow (Mermaid)
+`Service` inspects the wrapped class with `inspect.getmembers` and keeps only what satisfies **all** of these rules:
 
-```mermaid
-sequenceDiagram
-    participant LLM
-    participant Agent
-    participant MW1 as Global Middleware
-    participant MW2 as Service Middleware
-    participant TMW as ToolMiddleware
-    participant Tool as Tool Function
+| Rule | Behaviour | Source |
+|---|---|---|
+| Public only | Names starting with `_` are skipped. | `core/main/shared/discover.py:35` |
+| No dunders | `__init__`, `__str__`, … are skipped. | `core/main/shared/discover.py:35` |
+| **Declared in the class itself** | Methods inherited from a base class are **not** exposed. | `core/main/shared/discover.py:39` |
+| Functions only | Class attributes, properties and nested classes are ignored. | `core/main/shared/discover.py:34` |
+| `self` stripped | The first parameter is removed from the generated schema. | `core/main/shared/discover.py:43` |
 
-    LLM->>Agent: calls tool(args)
-    Agent->>MW1: dispatch(func, args)
-    MW1->>MW2: dispatch(func, args)
-    MW2->>TMW: dispatch(func, args)
-    TMW->>Tool: func(args)
-    Tool-->>TMW: result
-    TMW-->>MW2: result
-    MW2-->>MW1: result
-    MW1-->>Agent: result
-    Agent-->>LLM: tool result
+> **Inheritance is the most common surprise.** If `class AdminUser(UserManager)` adds nothing of its own, the agent sees *zero* tools. Re-declare, or wrap a dedicated flat class.
+
+Both `async def` and plain `def` methods are supported, and the generated tool keeps the same flavour.
+
+### From class to tool
+
+For every discovered method the library builds a wrapper:
+
+1. Wrap the method with each allowed `ToolMiddleware` (innermost first).
+2. Copy `__name__`, `__qualname__`, `__doc__` and the type annotations from the original method.
+3. Rebuild an explicit `inspect.Signature` — `ctx` plus the original parameters as keyword-only — so pydantic-ai emits a real JSON schema instead of a bare `**kwargs`.
+4. Register it as `Capability(id=<service name>, instructions=…, defer_loading=True)`.
+
+At call time the wrapper resolves the service instance from `ctx.deps.<service name>`, binds the method to it, and invokes it with keyword arguments.
+
+Because `defer_loading=True`, the tool schemas are only materialised into the model request when the capability is actually used.
+
+### Tool naming
+
+The tool name is the **bare method name**; the service name lives only in the wrapper's `__qualname__` (`users.create`).
+
+| Service | Method | Tool name | Wrapper `__qualname__` |
+|---|---|---|---|
+| `users` | `create` | `create` | `users.create` |
+| `orders` | `create` | `create` | `orders.create` |
+
+> Two services exposing a method with the same name produce two tools with the same name. Give methods distinct names, or split them into separate `Module` sub-agents so only one is loaded at a time.
+
+### Error handling
+
+Exceptions raised inside a service method are **caught and converted into a string** — they never propagate to the agent runtime:
+
+```text
+Error in <service>.<method>: <ExceptionType>: <message>
 ```
 
-### HITL (Human-in-the-Loop) Middleware Flow (Mermaid)
+```python
+class Boom:
+    def explode(self) -> str:
+        raise ValueError("kaboom")
+
+# Calling the generated tool returns the string:
+# 'Error in b.explode: ValueError: kaboom'
+```
+
+If you need typed failures, validate inside the method and return a structured result, or translate domain exceptions with a `ToolMiddleware`.
+
+### Middleware resolution and ordering
+
+Two rules govern the chain, and both are easy to get backwards:
+
+**1. Only `ToolMiddleware` wraps service methods.** `Service.build_as_capability` checks `isinstance(mw, ToolMiddleware)` before wrapping (`core/main/service.py:71`). A plain `Middleware` subclass placed in a service, module or builder middleware list is stored but never invoked. To intercept tool calls, always subclass `ToolMiddleware`.
+
+**2. The last middleware in the list is the outermost.** Each middleware wraps the result of the previous one, so the tail of the list runs first:
+
+```python
+Service(
+    ...,
+    middleware=[ToolMW(tag="A"), ToolMW(tag="B")],
+)
+# Execution order: B-before → A-before → method → A-after → B-after
+```
+
+Layers are appended, so **outer layers run first**:
+
+| Layer | Appended when | Relative position |
+|---|---|---|
+| `Service(middleware=[...])` | Service declaration | Innermost |
+| `Module(middleware=[...])` | `build_as_agent()` | Outer |
+| `TTMBuilder.add_middleware(...)` | `build()` | Outermost |
+
+---
+
+## Core API
+
+### `Service`
+
+A `@dataclass(slots=True)` describing one class whose public methods become tools. Not a pydantic-ai type — it is converted into a `Capability` on demand.
+
+**Description**: Wraps a class, holds its construction arguments, its middleware and its instructions. Precondition: `service` is a class with at least one public method declared in its own body. Postcondition: `build_as_capability()` returns a `Capability` holding one `Tool` per discovered method.
+
+**Return**: `None` — it is a declaration object; call `build_as_capability()` or let `Module`/`ToToolManager`/`TTMBuilder` do it for you.
+
+**Args** (all keyword arguments, as a dataclass):
+
+- `name`: `str` — *(required)* unique service identifier. Used as the `Capability` id, as the dependency attribute name and as the namespace in wrapper `__qualname__`s. Must be unique within a manager or builder.
+- `service`: `type` — *(required)* the class to wrap. Instantiated as `service(*args, **kwargs)`.
+- `instructions`: `str` — *(required)* guidance for the LLM about when to reach for this service. Passed verbatim to `Capability.instructions`.
+- `middleware`: `List[ToolMiddleware | Middleware] | None` = `[]` — middleware instances for this service. Only `ToolMiddleware` instances are actually applied.
+- `disable_middlewares`: `Tuple[str, ...]` = `()` — middleware names to skip when inherited from an outer layer. Matched against `Middleware.name`, which defaults to the class name.
+- `include`: `MethodsType | Include | None` = `None` — **currently not applied.** Accepted and stored, but the package never reads it. Use `ToolMiddleware(include=…)` — see [Gotchas](#gotchas-and-troubleshooting).
+- `exclude`: `MethodsType | Exclude | None` = `None` — **currently not applied**, same caveat as `include`.
+- `args`: `Tuple[Any, ...]` = `()` — positional arguments for `service.__init__`.
+- `kwargs`: `Dict[str, Any]` = `{}` — keyword arguments for `service.__init__`.
+
+**Methods**:
+
+#### `Service.add_middleware(middleware)` — method
+
+**Description**: Appends a middleware to this service's list. Precondition: none. Postcondition: `middleware` is the last element of `self.middleware`, creating the list if it was `None`.
+
+**Return**: `None`.
+
+**Args**:
+
+- `middleware`: `ToolMiddleware` — instance to append. Any `Middleware` subclass is accepted by the signature, but only `ToolMiddleware` instances are applied at build time.
+
+**Kwargs**: None.
+
+#### `Service.build_as_capability()` — method
+
+**Description**: Discovers public methods, wraps each with the allowed `ToolMiddleware` instances, and registers the results as a pydantic-ai `Capability`. Precondition: `self.service` is a class. Postcondition: returns a `Capability` with `id=self.name`, `instructions=self.instructions`, `defer_loading=True` and one `Tool` per discovered method.
+
+**Return**: `Capability` — the pydantic-ai capability to attach to an `Agent`. Does not raise for a class with no public methods; you simply get an empty capability.
+
+**Args**: None.
+
+**Kwargs**: None.
+
+#### `Service.service_to_dependency(dinamic_depend)` — method
+
+**Description**: Instantiates the service class and registers the instance on the dependency container. Precondition: `args`/`kwargs` satisfy the class constructor. Postcondition: `dinamic_depend.<name>` is the live service instance. Called for you during `build_agent()`, `build_as_agent()` and `TTMBuilder.add_service()`.
+
+**Return**: `None`.
+
+**Args**:
+
+- `dinamic_depend`: `DinamicDepend` — container that will hold the instance.
+
+**Kwargs**: None.
+
+---
+
+### `Module`
+
+A `@dataclass` grouping services into a sub-agent, each with its own model, prompt, retries and middleware layer.
+
+**Description**: Builds a pydantic-ai `Agent` for its services and wraps it in a `SubAgent`. Precondition: `services` is a non-empty sequence of `Service`. Postcondition: `self.agent` holds the built `Agent` and `self.dependency` the container with every service instance.
+
+**Return**: `None` — a declaration object; call `build_as_agent()` or let `ToToolManager`/`TTMBuilder` do it.
+
+**Args** (all keyword arguments, as a dataclass):
+
+- `name`: `str` — *(required)* sub-agent name.
+- `services`: `Sequence[Service]` — *(required)* services exposed by this sub-agent.
+- `description`: `str` — *(required)* description handed to the sub-agent `Agent`; this is what the parent model reads when deciding to delegate.
+- `capabilities`: `List[Capability] | None` = `None` — extra capabilities merged with the generated ones.
+- `middleware`: `List | None` = `None` — middlewares appended to every service on `build_as_agent()`, subject to both `Module.disable_middlewares` and each service's own `disable_middlewares`.
+- `disable_middlewares`: `Tuple[str, ...]` = `()` — names this module must not apply to its services. Disabling a middleware the module itself declares raises `SelfDisableMiddlewareError` **at construction time**.
+- `model`: `Model | KnownModelName | str | None` = `None` — model for the sub-agent; falls back to the parent's when `None`.
+- `instructions`: `Any` = `None` — agent instructions.
+- `system_prompt`: `str | Sequence[str]` = `()` — system prompt.
+- `model_settings`: `AgentModelSettings | None` = `None` — forwarded to `Agent`.
+- `retries`: `int | AgentRetries | None` = `None` — retry budget.
+- `validation_context`: `Any | Callable | None` = `None` — forwarded to `Agent`.
+- `tools`: `Sequence[Any]` = `()` — extra hand-written tools.
+- `toolsets`: `Sequence[AgentToolset] | None` = `None` — extra toolsets.
+- `defer_model_check`: `bool` = `False` — skip model validation at construction.
+- `end_strategy`: `EndStrategy` = `'graceful'` — `'graceful'`, `'exit'`, `'max'`… (pydantic-ai values).
+- `metadata`: `Any` = `None` — forwarded to `Agent`.
+- `tool_timeout`: `float | None` = `None` — per-tool timeout in seconds.
+- `max_concurrency`: `Any` = `None` — concurrency limit.
+- `output_type`: `Any` = `str` — output type of the sub-agent.
+
+**Properties and methods**:
+
+#### `Module.agent` — property
+
+**Description**: Returns the sub-agent's `Agent`.
+
+**Return**: `Agent[DinamicDepend]` — the built agent.
+
+**Raises**: `AgentNotBuiltError` — if `build_as_agent()` has not been called yet.
+
+**Args** / **Kwargs**: None.
+
+The setter accepts an `Agent` and raises `AgentAlreadyBuiltError` if one is already present.
+
+#### `Module.dependency` — property
+
+**Description**: Returns the container holding one instance per service of this module.
+
+**Return**: `DinamicDepend` — the dependency container, populated during `build_as_agent()`.
+
+**Args** / **Kwargs**: None.
+
+#### `Module.build_as_agent()` — method
+
+**Description**: Applies this module's middleware to each service (respecting both disable lists), builds each service's capability, registers every instance on `self.dependency`, constructs the `Agent` and returns it wrapped in a `SubAgent`.
+
+**Return**: `SubAgent[DinamicDepend]` — the sub-agent to hand to `ToToolManager` or `TTMBuilder`.
+
+**Raises**: `AgentAlreadyBuiltError` — on a second call; the `agent` setter refuses to overwrite. Build each `Module` exactly once.
+
+**Args**: None.
+
+**Kwargs**: None.
+
+---
+
+### `ToToolManager`
+
+Registers services and modules, then builds the top-level `Agent`.
+
+**Description**: Holds the resources, exposes them by name and assembles the final agent. Precondition: every item of `resources` is a `Service` or a `Module`. Postcondition: after `build_agent()`, `self.agent` is a valid `Agent` and every service instance is registered on the internal dependency container.
+
+**Return**: `None` — call `build_agent()`.
+
+**Args** (constructor; positional `name` and `resources` are allowed):
+
+- `name`: `str` — *(required)* agent name.
+- `resources`: `Sequence[Service | Module]` — *(required)* services and modules to orchestrate.
+- `middlewares`: `Sequence[Middleware] | None` = `None` — stored and exposed via `.middlewares`, but **not currently wired into tool-call dispatch**. Use `TTMBuilder.add_middleware()` for a middleware that actually runs.
+- `model`: `Model | KnownModelName | str | None` = `None` — LLM model.
+- `instructions`: `Any` = `None` — agent instructions.
+- `system_prompt`: `str | Sequence[str]` = `()` — system prompt.
+- `model_settings`: `AgentModelSettings | None` = `None` — forwarded to `Agent`.
+- `retries`: `int | AgentRetries | None` = `None` — retry budget.
+- `validation_context`: `Any` = `None` — forwarded to `Agent`.
+- `tools`: `Sequence[Any]` = `()` — extra hand-written tools.
+- `toolsets`: `Sequence[AgentToolset] | None` = `None` — extra toolsets; the `SubAgents` toolset is appended automatically.
+- `defer_model_check`: `bool` = `False` — skip model validation at construction.
+- `end_strategy`: `EndStrategy` = `'graceful'` — end strategy.
+- `metadata`: `Any` = `None` — forwarded to `Agent`.
+- `tool_timeout`: `float | None` = `None` — per-tool timeout in seconds.
+- `max_concurrency`: `AnyConcurrencyLimit` = `None` — concurrency limit.
+- `output_type`: `Any` = `str` — output type.
+- `description`: `str | None` = `None` — agent description.
+
+**Raises**: `InvalidResourceTypeError` — from the constructor, when an item of `resources` is neither `Service` nor `Module`.
+
+> **Duplicate names are not validated here.** Two resources sharing a name silently overwrite each other (`to_tool_manager.py:90-93`). `ServiceAlreadyRegisteredError` and `ModuleAlreadyRegisteredError` come from `TTMBuilder`, which does check.
+
+**Properties and methods**:
+
+#### `ToToolManager.name` — property
+
+**Description**: Returns the orchestrator name.
+
+**Return**: `str` — the name given to the constructor.
+
+**Args** / **Kwargs**: None.
+
+#### `ToToolManager.agent` — property
+
+**Description**: Returns the built agent.
+
+**Return**: `Agent[DinamicDepend]` — the agent created by `build_agent()`.
+
+**Raises**: `AgentNotBuiltError` — if `build_agent()` has not been called.
+
+**Args** / **Kwargs**: None.
+
+#### `ToToolManager.middlewares` — property
+
+**Description**: Returns the middleware sequence given to the constructor.
+
+**Return**: `Sequence[Middleware]` — the registered middlewares.
+
+**Raises**: `MiddlewareNotInitializedError` — if the manager was built with `middlewares=None` and `build_agent()` has not supplied a sequence.
+
+**Args** / **Kwargs**: None.
+
+#### `ToToolManager.services` — property
+
+**Description**: Returns a snapshot of the registered services.
+
+**Return**: `Dict[str, Service]` — a shallow copy keyed by service name; mutating it does not affect the manager.
+
+**Args** / **Kwargs**: None.
+
+#### `ToToolManager.modules` — property
+
+**Description**: Returns a snapshot of the registered modules.
+
+**Return**: `Dict[str, Module]` — a shallow copy keyed by module name.
+
+**Args** / **Kwargs**: None.
+
+#### `ToToolManager.get_service(name)` — method
+
+**Description**: Looks up a resource by name, checking services first and modules second.
+
+**Return**: `Service | Module` — the registered resource.
+
+**Args**:
+
+- `name`: `str` — service or module name.
+
+**Raises**: `ServiceNotFoundError` — when the name matches neither registry.
+
+**Kwargs**: None.
+
+#### `ToToolManager.build_agent(resources=None, middlewares=None)` — method
+
+**Description**: Registers every service instance as a dependency, builds each module into a `SubAgent`, collects them into a `SubAgents` toolset and constructs the top-level `Agent`. Calling it more than once is safe — the agent is replaced.
+
+**Return**: `Agent[DinamicDepend]` — the assembled agent, also available through `.agent`.
+
+**Args**:
+
+- `resources`: `Sequence[Service | Module] | None` = `None` — build from this set instead of the registered one. Items that are neither `Service` nor `Module` are **silently ignored**; they do not raise.
+- `middlewares`: `Sequence[Middleware] | None` = `None` — replaces the middleware sequence. Setting it also makes the `.middlewares` property readable.
+
+**Kwargs**: None.
+
+#### `ToToolManager.add_middleware_to_service(service_name, middleware)` — method
+
+**Description**: Appends a middleware to a registered service. Applied only if it is a `ToolMiddleware` and the capability is rebuilt afterwards.
+
+**Return**: `None`.
+
+**Args**:
+
+- `service_name`: `str` — name of a registered **service**.
+- `middleware`: `Middleware` — instance to append.
+
+**Raises**: `ServiceNotFoundError` — unknown name; `MiddlewareTargetMismatchError` — the name refers to a module.
+
+**Kwargs**: None.
+
+#### `ToToolManager.add_middleware_to_module(module_name, middleware)` — method
+
+**Description**: Appends a middleware to a registered module's list. Takes effect at the next `build_as_agent()`.
+
+**Return**: `None`.
+
+**Args**:
+
+- `module_name`: `str` — name of a registered **module**.
+- `middleware`: `Middleware` — instance to append.
+
+**Raises**: `ServiceNotFoundError` — unknown name; `MiddlewareTargetMismatchError` — the name refers to a service.
+
+**Kwargs**: None.
+
+#### `ToToolManager.remove_middleware_to_service(service_name, middleware_type)` — method
+
+**Description**: Removes every middleware of the given type from a service, keeping order.
+
+**Return**: `None`.
+
+**Args**:
+
+- `service_name`: `str` — name of a registered service.
+- `middleware_type`: `type` — class to filter out by `isinstance`.
+
+**Raises**: `ServiceNotFoundError` — unknown name; `MiddlewareTargetMismatchError` — the name refers to a module.
+
+**Kwargs**: None.
+
+#### `ToToolManager.remove_middleware_to_module(module_name, middleware_type)` — method
+
+**Description**: Removes every middleware of the given type from a module.
+
+**Return**: `None`.
+
+**Args**:
+
+- `module_name`: `str` — name of a registered module.
+- `middleware_type`: `type` — class to filter out by `isinstance`.
+
+**Raises**: `ServiceNotFoundError` — unknown name; `MiddlewareTargetMismatchError` — the name refers to a service.
+
+**Kwargs**: None.
+
+---
+
+### `TTMBuilder`
+
+Fluent, declarative assembly. Same output as `ToToolManager`, different ergonomics — and it is the only entry point that **validates duplicate names** and the only one whose `add_middleware` actually reaches tool calls.
+
+**Description**: Collects services, modules, skills and other managers, then builds the `Agent`. Precondition: `name` is a valid string. Postcondition: after `build()` (or on context-manager exit), `self.agent` is a valid `Agent`.
+
+**Return**: `None` — call `build()`.
+
+**Args** (constructor; `name` may be positional):
+
+- `name`: `str` — *(required)* agent name; also used as the fallback `instructions`.
+- `capabilities`: `List | None` = `None` — extra capabilities merged with generated ones.
+- `toolsets`: `List | None` = `None` — extra toolsets; skills and modules are prepended.
+- `model`: `Model | KnownModelName | str | None` = `None` — LLM model.
+- `instructions`: `Any` = `None` — agent instructions; when falsy, `name` is used instead.
+- `system_prompt`: `str | Sequence[str]` = `()` — system prompt.
+- `model_settings`: `AgentModelSettings | None` = `None` — forwarded to `Agent`.
+- `retries`: `int | AgentRetries | None` = `None` — retry budget.
+- `validation_context`: `Any` = `None` — forwarded to `Agent`.
+- `tools`: `Sequence[Any]` = `()` — extra hand-written tools.
+- `defer_model_check`: `bool` = `False` — skip model validation at construction.
+- `end_strategy`: `EndStrategy` = `'graceful'` — end strategy.
+- `metadata`: `Any` = `None` — forwarded to `Agent`.
+- `tool_timeout`: `float | None` = `None` — per-tool timeout in seconds.
+- `max_concurrency`: `AnyConcurrencyLimit` = `None` — concurrency limit.
+- `output_type`: `Any` = `str` — output type.
+- `description`: `str | None` = `None` — agent description.
+
+**Properties and methods**:
+
+#### `TTMBuilder.agent` — property
+
+**Description**: Returns the built agent.
+
+**Return**: `Agent` — the agent created by `build()`.
+
+**Raises**: `AgentNotBuiltError` — if `build()` has not been called.
+
+**Args** / **Kwargs**: None. The setter raises `AgentAlreadyBuiltError` if an agent is already set.
+
+#### `TTMBuilder.dependency` — property
+
+**Description**: Returns the container holding one instance per registered service.
+
+**Return**: `DinamicDepend` — populated as services are added.
+
+**Args** / **Kwargs**: None.
+
+#### `TTMBuilder.__enter__()` / `TTMBuilder.__exit__(...)` — context manager
+
+**Description**: Using the builder as a context manager calls `build()` on exit, including when the block raised.
+
+**Return**: `TTMBuilder` on `__enter__`; `None` on `__exit__`.
+
+**Kwargs**: `__exit__` accepts the standard `exc_type`, `exc`, `tb` triple.
+
+#### `TTMBuilder.add_service(...)` — method
+
+**Description**: Builds a `Service` from loose arguments, registers it and returns `self` for chaining. The service instance is created immediately and stored on the dependency container.
+
+**Return**: `TTMBuilder` — `self`.
+
+**Args**:
+
+- `name`: `str` — *(required)* unique service name.
+- `service`: `type` — *(required)* class to wrap.
+- `instructions`: `str` — *(required)* when the LLM should use this service.
+- `middleware`: `List | None` = `None` — defaults to `[]`.
+- `disable_middlewares`: `Tuple[str, ...]` = `()` — inherited middlewares to skip.
+- `include`: `MethodsType | Include | None` = `None` — **not currently applied** (same as `Service.include`).
+- `exclude`: `MethodsType | Exclude | None` = `None` — **not currently applied**.
+- `args`: `tuple` = `()` — positional constructor arguments.
+- `kwargs`: `dict | None` = `None` — keyword constructor arguments; defaults to `{}`.
+
+**Raises**: `ServiceAlreadyRegisteredError` — a service with that name is already registered.
+
+**Kwargs**: None.
+
+#### `TTMBuilder.add_module(...)` — method
+
+**Description**: Registers a `Module` (building its sub-agent immediately) and returns `self`.
+
+**Return**: `TTMBuilder` — `self`.
+
+**Args**:
+
+- `name`: `str` — *(required)* unique module name.
+- `services`: `Sequence[Service]` — *(required)* services of the sub-agent.
+- `description`: `str` — *(required)* delegation description for the parent model.
+- `middleware`: `List | None` = `None` — middlewares for the module.
+- `disable_middlewares`: `Tuple[str, ...]` = `()` — names the module must not apply.
+- `capabilities`: `List | None` = `None` — extra capabilities.
+- `model`, `instructions`, `system_prompt`, `model_settings`, `retries`, `validation_context`, `tools`, `toolsets`, `defer_model_check`, `end_strategy`, `metadata`, `tool_timeout`, `max_concurrency`, `output_type` — same meaning and defaults as the corresponding [`Module`](#module) fields.
+
+**Raises**: `ModuleAlreadyRegisteredError` — duplicate name; `SelfDisableMiddlewareError` — propagated from the `Module` constructor; `AgentAlreadyBuiltError` — if that module was already built.
+
+**Kwargs**: None.
+
+#### `TTMBuilder.add_middleware(middleware)` — method
+
+**Description**: Registers a builder-level middleware. On `build()` it is appended to every registered service, so it becomes the **outermost** middleware of each chain. Only `ToolMiddleware` instances are actually invoked.
+
+**Return**: `TTMBuilder` — `self`.
+
+**Args**:
+
+- `middleware`: `Middleware` — instance to register.
+
+**Kwargs**: None.
+
+#### `TTMBuilder.remove_middleware_to_service(service_name, middleware_type)` — method
+
+**Description**: Removes every middleware of the given type from a registered service.
+
+**Return**: `TTMBuilder` — `self`.
+
+**Args**:
+
+- `service_name`: `str` — name of a registered service.
+- `middleware_type`: `type` — class to filter out.
+
+**Raises**: `ServiceNotFoundError` — unknown service name.
+
+**Kwargs**: None.
+
+#### `TTMBuilder.add_skill(skill)` — method
+
+**Description**: Registers a `pydantic-ai-skills` `Skill`. Skills are collected into the toolset list, ahead of any toolsets passed to the constructor.
+
+**Return**: `TTMBuilder` — `self`.
+
+**Args**:
+
+- `skill`: `Skill` — the skill instance.
+
+**Kwargs**: None.
+
+#### `TTMBuilder.add_ttm(manager)` — method
+
+**Description**: Registers an existing `ToToolManager` so its resources can be composed into this agent.
+
+**Return**: `TTMBuilder` — `self`.
+
+**Args**:
+
+- `manager`: `ToToolManager` — the orchestrator to compose.
+
+**Raises**: `ToToolManagerAlreadyRegisteredError` — a manager with that name is already registered.
+
+**Kwargs**: None.
+
+#### `TTMBuilder.build(...)` — method
+
+**Description**: Assembles the final `Agent` from everything registered. Every parameter overrides the constructor value; anything left as `None` falls back to the constructor.
+
+**Return**: `None` — read the result from the `agent` property.
+
+**Args** (all optional, all default `None`):
+
+- `model`: `Model | KnownModelName | str | None` — overrides the constructor model.
+- `instructions`: `Any` — overrides instructions.
+- `system_prompt`: `str | Sequence[str] | None` — overrides the system prompt.
+- `model_settings`: `AgentModelSettings | None` — overrides model settings.
+- `retries`: `int | AgentRetries | None` — overrides retries.
+- `validation_context`: `Any` — overrides validation context.
+- `tools`: `Sequence[Any] | None` — overrides extra tools.
+- `defer_model_check`: `bool | None` — overrides model-check deferral.
+- `end_strategy`: `EndStrategy | None` — overrides end strategy.
+- `metadata`: `Any` — overrides metadata.
+- `tool_timeout`: `float | None` — overrides the tool timeout.
+- `max_concurrency`: `AnyConcurrencyLimit | None` — overrides the concurrency limit.
+- `output_type`: `Any` — overrides the output type.
+- `description`: `str | None` — overrides the description.
+
+**Kwargs**: None.
+
+#### `TTMBuilder.to_mcp_tool(name, instructions)` — method
+
+**Description**: Exports the builder's tools as a `FastMCP` server, exposing each service method as a flat tool with the original signature (the injected `ctx` parameter is stripped and the types are preserved). Tools belonging to `Module` sub-agents are skipped — the sub-agent manages them internally. Builds the agent first if needed.
+
+**Return**: `FastMCP` — a server instance you can run or mount.
+
+**Args**:
+
+- `name`: `str` — *(required)* MCP server name.
+- `instructions`: `str` — *(required)* server-level instructions.
+
+**Kwargs**: None.
+
+---
+
+### `DinamicDepend`
+
+The dependency container attached to every agent. Not re-exported from the package root; reach it through `TTMBuilder.dependency` or `Module.dependency`, and inside tools through `ctx.deps`.
+
+**Description**: Attribute bag whose keys are service names. Precondition: none. Postcondition: any attribute set on it is readable; reading a missing attribute raises `DependencyNotSetError`.
+
+**Return**: n/a (instantiated by the framework).
+
+**Args**: None.
+
+**Methods**:
+
+- `__setattr__(name, value)` — stores a service instance. Names starting with `_` bypass the bag and set a real instance attribute.
+- `__getattribute__(name)` — returns the stored instance.
+
+**Gotcha**: `DependencyNotSetError` also subclasses `AttributeError`, so `hasattr(deps, "x")` returns `False` and `getattr(deps, "x", default)` returns the default instead of raising.
+
+---
+
+### `Include` / `Exclude` / `MethodsType`
+
+Helpers for the `include`/`exclude` parameters of `ToolMiddleware`.
+
+**`Include`** — frozen dataclass wrapping a sequence of method names; iterable, sized, field `include: Sequence[str]`.
+**`Exclude`** — frozen dataclass wrapping a sequence of method names; iterable, sized, field `exclude: Sequence[str]`.
+**`MethodsType`** — type alias for `frozenset[str]`.
+
+All three are accepted interchangeably wherever a filter is expected: a bare `frozenset`, a list/tuple of names, or the wrapper object.
+
+---
+
+## Middleware
+
+Middlewares intercept tool calls or graph transitions without touching business logic. They are invoked in the order described in [Middleware resolution and ordering](#middleware-resolution-and-ordering).
+
+### `Middleware`
+
+**Description**: Abstract base class. Subclass it and implement `dispatch` to intercept tool calls. The concrete class name becomes `name`, which is what `disable_middlewares` matches. Precondition: `dispatch` is overridden. Postcondition: calling an instance with a function returns an `async` wrapper that routes through `dispatch`.
+
+**Return**: n/a (instantiate directly).
+
+**Args**: None.
+
+**Members**:
+
+- `dispatch(func, /, *args, **kw)` — **abstract, `async`**. Must be implemented. `func` is positional-only and always awaitable, so `await func(*args, **kw)` works for both sync and async targets.
+- `__call__(func)` — returns the `async` wrapper. If `func` is a coroutine function the wrapper awaits it; otherwise it is adapted so `dispatch` still receives an awaitable callable.
+- `call_func(func, *args, **kwargs)` — `staticmethod`, `async`. Helper to invoke a sync-or-async callable from inside `dispatch`. Pass it `ctx` explicitly if the wrapped tool takes a `RunContext`.
+- `name` — property returning the class name.
+
+```python
+from to_tool_manager import Middleware
+
+
+class TimingMiddleware(ToolMiddleware):  # subclass ToolMiddleware to be applied
+    async def dispatch(self, func, /, *args, **kw):
+        start = time.perf_counter()
+        try:
+            return await func(*args, **kw)
+        finally:
+            print(f"{func.__name__}: {time.perf_counter() - start:.3f}s")
+```
+
+### `ToolMiddleware`
+
+**Description**: `Middleware` plus per-method filtering. The `include`/`exclude` filters are evaluated when the tool table is built, so filtered methods are simply not exposed to the LLM. Subclass it — do not instantiate it directly.
+
+**Return**: n/a.
+
+**Args** (constructor):
+
+- `include`: `MethodsType | Include | None` = `None` — only these methods are wrapped. Takes priority over `exclude`.
+- `exclude`: `MethodsType | Exclude | None` = `None` — these methods are left unwrapped.
+
+**Properties and methods**:
+
+- `include` — property → `frozenset[str] | None`. `None` when unset.
+- `exclude` — property → `frozenset[str] | None`. `None` when unset.
+- `is_allowed(method_name)` → `bool`. `True` when `include` is set iff the name is in it; otherwise `True` when `exclude` is set iff the name is not in it; `True` when neither is set.
+
+```python
+class AuthMiddleware(ToolMiddleware):
+    async def dispatch(self, func, /, *args, **kw):
+        if not current_user().is_admin:
+            return "Forbidden: admin role required."
+        return await func(*args, **kw)
+
+
+# Only guard the destructive methods
+middleware=[AuthMiddleware(include=frozenset({"delete", "update_status"}))]
+```
+
+### `NodeMiddleware`
+
+**Description**: Abstract base for `pydantic_graph` transition guards. Intercepts a node→node transition and can approve or block it. Unlike tool middleware, only the hooks you override are meaningful — all three have safe defaults.
+
+**Return**: n/a.
+
+**Args**: None.
+
+**Members** (all `async`):
+
+- `before_transition(source_node_id, target_node_id, state)` → `bool`. `source_node_id` is `None` for the first transition. Return `True` to approve (default), `False` to block.
+- `before_run(node, ctx)` → `None`. Runs before the wrapped node; mutate `ctx.state` here. Default: no-op.
+- `after_run(node, ctx, next_node)` → `BaseNode | End`. Runs after the node, with the node's proposed successor. Return `next_node` to proceed (default) or a different node/`End` to redirect.
+- `name` — property returning the class name.
+
+### `NodeWrapper`
+
+**Description**: `BaseNode` subclass that runs a wrapped node through a `NodeMiddleware` chain. Because `pydantic_graph` instantiates nodes with no arguments, the wrapped type and the middleware list are supplied as **class attributes** of a dynamically created subclass.
+
+**Return**: n/a.
+
+**Args**: None.
+
+**Members**:
+
+- `_wrapped_node_type: type[BaseNode]` — class attribute: the node to wrap.
+- `_middlewares_attr: Sequence[NodeMiddleware]` — class attribute: the chain. `before_run` runs in order, `after_run` in reverse.
+- `run(ctx)` → `BaseNode | End`. Instantiates the wrapped node, runs the hooks, executes it, and returns the (possibly rewritten) successor.
+
+```python
+WrappedValidateUser = type(
+    "WrappedValidateUser",
+    (NodeWrapper,),
+    {"_wrapped_node_type": ValidateUser, "_middlewares_attr": [AuditMiddleware()]},
+)
+
+graph = Graph(nodes=(WrappedValidateUser, ProcessOrder))
+```
+
+### `GraphMiddlewareRunner`
+
+**Description**: Runs a `pydantic_graph` while consulting a `NodeMiddleware` chain before every transition. Approval is evaluated through `GraphRun.override_next`.
+
+**Return**: n/a.
+
+**Args** (constructor):
+
+- `graph`: `Graph[Any, Any, Any, Any]` — *(required)* the graph to run.
+- `middlewares`: `Sequence[NodeMiddleware]` — *(required)* consulted in order for each transition; the first `False` blocks.
+
+**Methods**:
+
+#### `GraphMiddlewareRunner.run(state=None, deps=None, inputs=None)` — method
+
+**Description**: Iterates the graph, checking `before_transition` before each node executes. If a middleware blocks, the run is overridden to `End(None)` and `None` is returned immediately.
+
+**Return**: `Any` — the `End.value` of the graph, or `None` when a middleware blocked the transition (which is indistinguishable from a graph that legitimately ends with `None`).
+
+**Args**:
+
+- `state`: `Any` = `None` — initial state.
+- `deps`: `Any` = `None` — initial dependencies.
+- `inputs`: `Any` = `None` — input data.
+
+**Kwargs**: None.
+
+---
+
+## Human-in-the-Loop
+
+HITL suspends a tool call, emits an event to your transport, waits for a human decision and retries when validation fails.
 
 ```mermaid
 sequenceDiagram
     participant LLM
     participant Agent
-    participant HITL_MW as HITL Middleware
-    participant HITL as HumanInTheLoop
+    participant MW as HITL Middleware
+    participant H as HumanInTheLoop
     participant Client as Client (SSE/WS)
     participant Tool as Tool Function
 
     LLM->>Agent: calls tool(args)
-    Agent->>HITL_MW: dispatch(func, args)
-    HITL_MW->>HITL: execute(event_fn)
-    HITL->>Client: emit(event_id, payload)
-    Client-->>HITL: human_response
-    HITL->>HITL: validate response
+    Agent->>MW: dispatch(func, args)
+    MW->>H: execute(event_fn)
+    H->>Client: emit(event_id, payload)
+    Client-->>H: human response
+    H->>H: validate response
     alt Validation passed
-        HITL-->>HITL_MW: ok
-        HITL_MW->>Tool: func(args)
-        Tool-->>HITL_MW: result
-        HITL_MW-->>Agent: result
+        H-->>MW: ok
+        MW->>Tool: func(args)
+        Tool-->>MW: result
+        MW-->>Agent: result
     else Validation failed
-        HITL-->>HITL_MW: HumanInputRetry
-        HITL_MW->>HITL: retry (up to max_retries)
+        H-->>MW: HumanInputRetry
+        MW->>H: retry (up to max_retries)
     end
 ```
 
-### Graph Node Middleware Flow (Mermaid)
+When retries are exhausted the middleware returns the string `"Maximum retries reached."` — it does not raise.
 
-```mermaid
-sequenceDiagram
-    participant Runner as GraphMiddlewareRunner
-    participant MW as NodeMiddleware
-    participant Node as Graph Node
+### `EventEmitter`
 
-    Runner->>MW: before_transition(source, target, state)
-    alt Approved
-        MW-->>Runner: True
-        Runner->>Node: run(ctx)
-        Node-->>Runner: next_node
-        Runner->>MW: after_run(node, ctx, next_node)
-        MW-->>Runner: next_node (or End)
-    else Blocked
-        MW-->>Runner: False
-        Runner->>Runner: override_next(End(None))
-    end
-```
+**Description**: Abstract base you implement to bridge HITL events to your transport (SSE, WebSocket, in-process callback).
 
----
+**Return**: n/a.
 
-### Middleware Classes
+**Args**: None.
 
-#### Middleware (ABC)
+**Methods**:
 
-Base abstract middleware for intercepting tool calls.
+- `emit(event_id, payload)` — **abstract, `async`**, returns `None`. `event_id` identifies the event; `payload` is a JSON-serialisable `dict`.
 
-| Method | Parameters | Returns | Description |
-|---|---|---|---|
-| `__call__(func)` | `func: Callable` | `Callable` | Wraps func; returns async wrapper that calls `self.dispatch(func, ...)` |
-| `call_func(func, *args, **kwargs)` *(static)* | `func: Callable`, `*args`, `**kwargs` | `Any` | Helper to call sync or async func from dispatch |
-| `name` *(property)* | — | `str` | Returns middleware name (auto-set to class name) |
-| `dispatch(func, /, *args, **kw)` *(abstract)* | `func: Callable`, `*args`, `**kw` | `Any` | **Must be implemented.** Intercepts the tool call. |
+### `HumanInTheLoop`
 
-#### ToolMiddleware
+**Description**: Coordinates the emit → wait → validate cycle. Precondition: `emitter` implements `EventEmitter` and `logic` is callable. Postcondition: an instance is ready for `execute()`.
 
-Extends `Middleware`. Adds method-level filtering via `include`/`exclude`.
+**Return**: n/a.
 
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `include` | `MethodsType \| Include \| None` | `None` | Methods to include |
-| `exclude` | `MethodsType \| Exclude \| None` | `None` | Methods to exclude |
+**Args** (constructor):
 
-| Method | Parameters | Returns | Description |
-|---|---|---|---|
-| `include` *(property)* | — | `frozenset[str] \| None` | Returns include filter as frozenset |
-| `exclude` *(property)* | — | `frozenset[str] \| None` | Returns exclude filter as frozenset |
-| `is_allowed(method_name)` | `method_name: str` | `bool` | Checks if method passes filter. **Include takes priority over exclude.** |
+- `emitter`: `EventEmitter` — your transport implementation.
+- `logic`: `Callable[..., Any]` — `async def logic(emit, event_fn, *args, **kwargs) -> None`. Receives an `emit` coroutine, a zero-argument `event_fn` that performs the tool call, and your injected arguments. Raise `HumanInputRetry` to trigger a retry.
+- `*args`: `Any` — positional arguments injected into `logic`.
+- `**kwargs`: `Any` — keyword arguments injected into `logic`. This is how you parameterise one coordinator per action, e.g. `HumanInTheLoop(emitter, logic, action="delete_user")`.
 
-#### NodeMiddleware (ABC)
+**Methods**:
 
-Base middleware for graph node transitions (`pydantic_graph`).
+- `execute(event_fn)` — `async`, returns `None`. Builds an `emit` coroutine bound to the emitter and invokes `logic(emit, event_fn, *args, **kwargs)`. Sync and async `logic` are both supported.
 
-| Method | Parameters | Returns | Description |
-|---|---|---|---|
-| `name` *(property)* | — | `str` | Returns middleware name |
-| `before_transition(source_node_id, target_node_id, state)` | `str \| None`, `str`, `Any` | `bool` | Hook before transition. Return `True` to approve, `False` to block. |
-| `before_run(node, ctx)` | `BaseNode`, `GraphRunContext` | `None` | Hook before node execution (for NodeWrapper). Modify state. |
-| `after_run(node, ctx, next_node)` | `BaseNode`, `GraphRunContext`, `BaseNode \| End` | `BaseNode \| End` | Hook after node execution. Return next_node or End. |
+### `HumanInputRetry`
 
-#### NodeWrapper
+**Description**: Raised by your `logic` when validation fails. The HITL middleware catches it and restarts the cycle, up to `max_retries`. Plain `Exception` subclass — it does not inherit from `TTMError`.
 
-Wraps a graph node with a chain of `NodeMiddleware` instances.
+**Return**: n/a.
 
-| Method | Parameters | Returns | Description |
-|---|---|---|---|
-| `run(ctx)` | `ctx: GraphRunContext` | `BaseNode \| End` | Executes wrapped node with before_run/after_run hooks from middlewares |
+**Args**: None.
 
-#### HumanInTheLoopMiddleware
+### `HumanInTheLoopMiddleware`
 
-Global HITL middleware — applies to **all** tool calls.
+**Description**: Applies the HITL cycle to **every** tool call of the services it is attached to.
 
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `hitl` | `HumanInTheLoop` | *(required)* | HITL coordinator |
-| `max_retries` | `int` | `3` | Max HITL retry attempts |
+**Return**: n/a.
 
-| Method | Parameters | Returns | Description |
-|---|---|---|---|
-| `dispatch(func, /, *args, **kw)` | `func: Callable`, `*args`, `**kw` | `Any` | Runs HITL cycle (emit → wait → validate) before executing the tool |
+**Args** (constructor):
 
-#### HumanInTheLoopToolMiddleware
+- `hitl`: `HumanInTheLoop` — *(required, keyword or positional)* the coordinator.
+- `max_retries`: `int` = `3` — number of emit/wait/validate cycles before giving up.
 
-Per-method HITL middleware with `include`/`exclude` filtering.
+**Methods**:
 
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `hitl` | `HumanInTheLoop` | *(required)* | HITL coordinator |
-| `max_retries` | `int` | `3` | Max HITL retry attempts |
-| `include` | `MethodsType \| Include \| None` | `None` | Methods to include |
-| `exclude` | `MethodsType \| Exclude \| None` | `None` | Methods to exclude |
+- `dispatch(func, /, *args, **kw)` — `async`. Runs the cycle, then invokes the tool.
 
-| Method | Parameters | Returns | Description |
-|---|---|---|---|
-| `dispatch(func, /, *args, **kw)` | `func: Callable`, `*args`, `**kw` | `Any` | Runs HITL cycle for filtered methods |
+### `HumanInTheLoopToolMiddleware`
 
-#### GraphMiddlewareRunner
+**Description**: `ToolMiddleware` variant of the above, restricted to selected methods. `include`/`exclude` keep the exact position of `ToolMiddleware.__init__`; the HITL-specific parameters are keyword-only so any positional call valid for `ToolMiddleware` stays valid here.
 
-Executes a `pydantic_graph` with a `NodeMiddleware` chain on each transition.
+**Return**: n/a.
 
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `graph` | `Graph[Any, Any, Any, Any]` | *(required)* | The graph to run |
-| `middlewares` | `Sequence[NodeMiddleware]` | *(required)* | Middlewares to apply on transitions |
+**Args** (constructor):
 
-| Method | Parameters | Returns | Description |
-|---|---|---|---|
-| `run(state, deps, inputs)` | `state: Any`, `deps: Any`, `inputs: Any` | `Any` | Runs the graph; each transition passes through the middleware chain. Returns `None` if any middleware blocks, or the final `End.value` on success. |
+- `include`: `MethodsType | Include | None` = `None` — only these methods require approval.
+- `exclude`: `MethodsType | Exclude | None` = `None` — these methods skip approval.
+
+**Kwargs** (keyword-only):
+
+- `hitl`: `HumanInTheLoop` — *(required)* the coordinator.
+- `max_retries`: `int` = `3` — cycles before giving up.
+
+**Methods**:
+
+- `dispatch(func, /, *args, **kw)` — `async`. Runs the cycle for allowed methods only.
 
 ---
 
 ## Exceptions
 
-All exceptions inherit from `TTMError` for generic capture.
+Every exception in the package inherits from `TTMError`, so a single `except TTMError` catches them all.
 
-```
+```text
 TTMError
 ├── ConfigurationError
 │   ├── InvalidResourceTypeError(got_type: str)
@@ -405,7 +1040,7 @@ TTMError
 ├── ServiceError
 │   ├── ServiceNotFoundError(name: str)
 │   ├── ServiceAlreadyRegisteredError(name: str)
-│   └── DependencyNotSetError(name: str)
+│   └── DependencyNotSetError(name: str)   ← also AttributeError
 ├── ModuleError
 │   └── ModuleAlreadyRegisteredError(name: str)
 ├── AgentError
@@ -419,33 +1054,79 @@ TTMError
     └── ToToolManagerNotFoundError(name: str)
 ```
 
-| Exception | Message Pattern | When it is raised |
+| Exception | Message | Raised when |
 |---|---|---|
-| `InvalidResourceTypeError` | `"Expected Service or Module, got {got_type}"` | A resource passed to `ToToolManager` is neither `Service` nor `Module` |
-| `SelfDisableMiddlewareError` | `"Cannot disable middleware '{name}' in the same class that declares it..."` | A `Module` tries to disable a middleware it declares itself |
-| `ServiceNotFoundError` | `"Unknown service '{name}'"` | Lookup by name fails in `ToToolManager` |
-| `ServiceAlreadyRegisteredError` | `"Service '{name}' already registered"` | Duplicate service name in `Manager` |
-| `DependencyNotSetError` | `"DinamicDepend has no attribute '{name}'"` | Accessing an unset dependency |
-| `ModuleAlreadyRegisteredError` | `"Module '{name}' already registered"` | Duplicate module name in `Manager` |
-| `AgentNotBuiltError` | `"Agent not built. Call build() first on {component}."` | Accessing `.agent` before calling `build()` / `build_agent()` |
-| `AgentAlreadyBuiltError` | `"Agent already built on {component}. Cannot rebuild."` | Attempting to rebuild an already-built agent |
-| `MiddlewareNotInitializedError` | `"Middleware sequence is not initialized (None)"` | Accessing `.middlewares` when none were provided |
-| `MiddlewareTargetMismatchError` | `"'{name}' is not a {expected}..."` | Adding middleware to wrong target type (e.g., module method on a service) |
-| `ToToolManagerAlreadyRegisteredError` | `"ToToolManager '{name}' already registered"` | Duplicate TTM name in `Manager` |
-| `ToToolManagerNotFoundError` | `"ToToolManager '{name}' not found"` | TTM lookup by name fails in `Manager` |
+| `InvalidResourceTypeError` | `Expected Service or Module, got {got_type}` | `ToToolManager(resources=[…])` receives an item of another type. **Not** raised by `build_agent(resources=…)`, which ignores unknown items. |
+| `SelfDisableMiddlewareError` | `Cannot disable middleware '{middleware_name}' in the same class that declares it. Disable it in the parent layer (ToToolManager or Module) instead.` | `Module(...)` construction, when `disable_middlewares` names one of its own middlewares. |
+| `ServiceNotFoundError` | `Unknown service '{name}'` | `ToToolManager.get_service`, `add_middleware_to_*`, `remove_middleware_to_*`, or `TTMBuilder.remove_middleware_to_service` for an unknown name. |
+| `ServiceAlreadyRegisteredError` | `Service '{name}' already registered` | `TTMBuilder.add_service` with a duplicate name. |
+| `DependencyNotSetError` | `DinamicDepend has no attribute '{name}'` | Reading a service name that was never registered. Also an `AttributeError`, so `hasattr` returns `False`. |
+| `ModuleAlreadyRegisteredError` | `Module '{name}' already registered` | `TTMBuilder.add_module` with a duplicate name. |
+| `AgentNotBuiltError` | `Agent not built. Call build() first on {component}.` | Reading `.agent` on `Module`, `ToToolManager` or `TTMBuilder` before building. |
+| `AgentAlreadyBuiltError` | `Agent already built on {component}. Cannot rebuild.` | Assigning `.agent` twice, or calling `Module.build_as_agent()` a second time. |
+| `MiddlewareNotInitializedError` | `Middleware sequence is not initialized (None)` | Reading `ToToolManager.middlewares` when none were configured. |
+| `MiddlewareTargetMismatchError` | `'{name}' is not a {expected}. Use the correct method for the target type.` | Calling `add/remove_middleware_to_service` on a module name, or `…_to_module` on a service name. |
+| `ToToolManagerAlreadyRegisteredError` | `ToToolManager '{name}' already registered` | `TTMBuilder.add_ttm` with a duplicate name. |
+| `ToToolManagerNotFoundError` | `ToToolManager '{name}' not found` | Internal `Manager` lookup by TTM name. Not reachable through the documented public flow. |
 
-Additionally, `HumanInputRetry` (extends `Exception`) is thrown by HITL logic when validation fails — the middleware catches it and retries.
+`HumanInputRetry` is raised by *your* HITL logic and caught by the middleware; it is not part of this hierarchy.
 
 ---
 
-## Examples
+## Configuration
 
-The following examples use two in-memory CRUD classes: `UserManager` and `OrderManager`.
+The library has **no configuration file, no environment variables and no global settings** — it reads neither. Every setting is a constructor argument, and the pydantic-ai parameters are forwarded verbatim to `Agent`.
 
-### Shared CRUD Classes
+Model selection and provider credentials are pydantic-ai's concern: pass `model="openai:gpt-4o"` explicitly, or let pydantic-ai resolve it from its own environment (`OPENAI_API_KEY`, …).
+
+### Shared `Agent` parameters
+
+These appear on `Module`, `ToToolManager` and `TTMBuilder` with identical meaning and defaults, and are forwarded to the pydantic-ai `Agent`.
+
+| Parameter | Type | Default | Effect |
+|---|---|---|---|
+| `model` | `Model \| KnownModelName \| str \| None` | `None` | Model for this agent. `None` inherits the parent's model. |
+| `instructions` | `Any` | `None` | Behavioural instructions. On `TTMBuilder` a falsy value falls back to `name`. |
+| `system_prompt` | `str \| Sequence[str]` | `()` | System prompt content. |
+| `model_settings` | `AgentModelSettings \| None` | `None` | Temperature, tokens, provider flags. |
+| `retries` | `int \| AgentRetries \| None` | `None` | Output validation retries. |
+| `validation_context` | `Any \| Callable \| None` | `None` | Context for output validators. |
+| `tools` | `Sequence[Any]` | `()` | Extra hand-written tools alongside generated ones. |
+| `toolsets` | `Sequence[AgentToolset] \| None` | `None` | Extra toolsets. The `SubAgents` toolset is appended automatically by `ToToolManager`. |
+| `defer_model_check` | `bool` | `False` | Defer model validation to first use. |
+| `end_strategy` | `EndStrategy` | `'graceful'` | How the run terminates. |
+| `metadata` | `Any` | `None` | Free-form metadata. |
+| `tool_timeout` | `float \| None` | `None` | Per-tool timeout in seconds. |
+| `max_concurrency` | `AnyConcurrencyLimit` | `None` | Concurrency limit for tool calls. |
+| `output_type` | `Any` | `str` | Structured output type. |
+
+### Middleware parameters
+
+| Parameter | Applies to | Type | Default | Effect |
+|---|---|---|---|---|
+| `include` | `ToolMiddleware`, `Service`, `TTMBuilder.add_service` | `MethodsType \| Include \| None` | `None` | Allow-list. **Effective only on `ToolMiddleware` and its subclasses.** |
+| `exclude` | `ToolMiddleware`, `Service`, `TTMBuilder.add_service` | `MethodsType \| Exclude \| None` | `None` | Deny-list. **Effective only on `ToolMiddleware` and its subclasses.** |
+| `max_retries` | HITL middlewares | `int` | `3` | HITL cycles before returning `"Maximum retries reached."`. |
+| `disable_middlewares` | `Service`, `Module`, `TTMBuilder.add_service/add_module` | `Tuple[str, ...]` | `()` | Names to skip when inherited from an outer layer. Matched against `Middleware.name` (the class name by default). |
+| `defer_loading` | `Capability` (set internally) | `bool` | `True` | Tool schemas materialise only when the capability is used. |
+
+### Name uniqueness
+
+Names are global within a manager or builder and are **not** validated by `ToToolManager`:
+
+| Component | Service names | Module names |
+|---|---|---|
+| `ToToolManager` | last registration wins, silently | last registration wins, silently |
+| `TTMBuilder` | `ServiceAlreadyRegisteredError` | `ModuleAlreadyRegisteredError` |
+
+---
+
+## Examples and use cases
+
+All examples assume these two in-memory services:
 
 ```python
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass
@@ -455,39 +1136,24 @@ class User:
     email: str
 
 
-@dataclass
-class Order:
-    id: str
-    user_id: str
-    product: str
-    quantity: int
-    status: str = "pending"
-
-
 class UserManager:
     """In-memory CRUD for users."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._users: dict[str, User] = {}
 
     def create(self, id: str, name: str, email: str) -> str:
+        """Create a user and return a confirmation."""
         self._users[id] = User(id=id, name=name, email=email)
         return f"User {id} created: {name}"
 
     def get(self, id: str) -> str:
+        """Return a user by id."""
         user = self._users.get(id)
-        if not user:
-            return f"User {id} not found."
-        return f"User {user.id}: {user.name} <{user.email}>"
-
-    def list_all(self) -> str:
-        if not self._users:
-            return "No users."
-        return "; ".join(f"{u.name} <{u.email}>" for u in self._users.values())
+        return f"User {user.id}: {user.name} <{user.email}>" if user else f"User {id} not found."
 
     def delete(self, id: str) -> str:
-        if id not in self._users:
-            return f"User {id} not found."
+        """Delete a user by id."""
         del self._users[id]
         return f"User {id} deleted."
 
@@ -495,253 +1161,255 @@ class UserManager:
 class OrderManager:
     """In-memory CRUD for orders."""
 
-    def __init__(self):
-        self._orders: dict[str, Order] = {}
+    def __init__(self) -> None:
+        self._orders: dict[str, str] = {}
 
     def create(self, id: str, user_id: str, product: str, quantity: int) -> str:
-        self._orders[id] = Order(id=id, user_id=user_id, product=product, quantity=quantity)
-        return f"Order {id} created: {quantity}x {product} for user {user_id}"
-
-    def get(self, id: str) -> str:
-        order = self._orders.get(id)
-        if not order:
-            return f"Order {id} not found."
-        return f"Order {order.id}: {order.quantity}x {order.product} [{order.status}]"
-
-    def list_all(self) -> str:
-        if not self._orders:
-            return "No orders."
-        return "; ".join(f"{o.id}: {o.quantity}x {o.product}" for o in self._orders.values())
+        """Place an order for a user."""
+        self._orders[id] = f"{user_id}: {quantity}x {product}"
+        return f"Order {id} created: {quantity}x {product}"
 
     def update_status(self, id: str, status: str) -> str:
-        order = self._orders.get(id)
-        if not order:
-            return f"Order {id} not found."
-        order.status = status
+        """Change the status of an order."""
+        self._orders[id] = status
         return f"Order {id} status updated to {status}"
-
-    def delete(self, id: str) -> str:
-        if id not in self._orders:
-            return f"Order {id} not found."
-        del self._orders[id]
-        return f"Order {id} deleted."
 ```
 
-### Shared Middlewares
+### Dependency injection into services
+
+Pass constructor arguments through `args`/`kwargs`; the library instantiates the class for you.
 
 ```python
-from to_tool_manager.core.middleware.middleware import Middleware, ToolMiddleware
+from to_tool_manager import Service, TTMBuilder
 
 
-class AuthMiddleware(ToolMiddleware):
-    """Simulates authentication check. Applies only to specified methods."""
+class UserRepository:
+    def __init__(self, session) -> None:
+        self._session = session
+
+
+class UserService:
+    """Business logic; knows nothing about the LLM."""
+
+    def __init__(self, repo: UserRepository) -> None:
+        self._repo = repo
+
+    async def get_user(self, id: str) -> str:
+        """Look up a user in the database."""
+        user = self._repo.find(id)
+        return f"{user.name} <{user.email}>"
+
+
+builder = TTMBuilder(name="App", model="openai:gpt-4o")
+builder.add_service(
+    name="user_service",
+    service=UserService,
+    instructions="Look up and manage user accounts.",
+    args=(UserRepository(session),),   # injected into UserService.__init__
+)
+builder.build()
+
+# The instance is available for direct use too
+service_instance = builder.dependency.user_service
+```
+
+Because the instance is registered on `DinamicDepend`, you can also reach it from inside a tool or a middleware via `ctx.deps.user_service`.
+
+### Async services and DI
+
+Sync and async methods are both exposed; the generated tool keeps the same flavour, and `Make sure` the service's own I/O is awaited.
+
+```python
+class NotificationService:
+    def __init__(self, transport) -> None:
+        self._transport = transport
+
+    async def send(self, to: str, body: str) -> str:
+        """Send an email notification."""
+        await self._transport.send(to=to, body=body)
+        return f"Notification sent to {to}"
+```
+
+### Error mapping and PII scrubbing
+
+Because exceptions are converted to strings, map your domain errors into actionable text and redact sensitive payloads — as two independent middlewares.
+
+```python
+from to_tool_manager import TTMBuilder, ToolMiddleware
+
+
+class DomainErrorMappingMiddleware(ToolMiddleware):
+    """Translate domain exceptions into LLM-readable, retry-aware messages."""
+
+    def __init__(self, mapping: dict, retryable: set | None = None) -> None:
+        super().__init__()
+        self._mapping = mapping
+        self._retryable = retryable or set()
 
     async def dispatch(self, func, /, *args, **kw):
-        print("[Auth] Verifying access...")
-        return await func(*args, **kw)
+        try:
+            return await func(*args, **kw)
+        except Exception as exc:
+            for error_type, code in self._mapping.items():
+                if isinstance(exc, error_type):
+                    hint = " Fix the input and retry." if error_type in self._retryable else ""
+                    return f"[{code}] {exc}.{hint}"
+            raise
 
 
-class LogMiddleware(Middleware):
-    """Logs every tool call. Applies globally to all methods."""
+class RedactPasswordsMiddleware(ToolMiddleware):
+    """Strip password fields before the payload reaches the model."""
 
     async def dispatch(self, func, /, *args, **kw):
-        print(f"[Log] Calling {func.__name__}")
         result = await func(*args, **kw)
-        print(f"[Log] {func.__name__} returned {len(str(result))} chars")
+        if isinstance(result, dict):
+            result.pop("password", None)
+            result.pop("hashed_password", None)
         return result
 
 
-class RateLimitMiddleware(Middleware):
-    """Simulates rate limiting. Applies globally."""
-
-    def __init__(self, max_calls: int = 10):
-        self._count = 0
-        self._max = max_calls
-
-    async def dispatch(self, func, /, *args, **kw):
-        self._count += 1
-        if self._count > self._max:
-            return "Rate limit exceeded. Try again later."
-        return await func(*args, **kw)
-```
-
----
-
-### Example 1 — Service with Module
-
-A single service wrapped in a `Module` (sub-agent), with a global `LogMiddleware`.
-
-```python
-from to_tool_manager.core.main.service import Service
-from to_tool_manager.core.main.module import Module
-from to_tool_manager.core.main.to_tool_manager import ToToolManager
-
-
-# Wrap the class
-user_service = Service(
+builder = TTMBuilder(name="App")
+builder.add_service(
     name="users",
-    service=UserManager,
-    instructions="Use this service for user CRUD operations.",
-)
-
-# Group into a module
-users_module = Module(
-    name="UsersModule",
-    services=[user_service],
-    description="Manages user data.",
-    middleware=[LogMiddleware()],
-)
-
-# Orchestrate with ToToolManager
-manager = ToToolManager(
-    name="App",
-    resources=[users_module],
-)
-
-agent = manager.build_agent()
-# agent is ready to use with an LLM
-```
-
----
-
-### Example 2 — Two Services with Module
-
-Two services inside one `Module`, each with its own `ToolMiddleware`.
-
-```python
-user_service = Service(
-    name="users",
-    service=UserManager,
-    instructions="User CRUD operations.",
+    service=UserService,
+    instructions="Manage user accounts.",
     middleware=[
-        AuthMiddleware(include=frozenset({"create", "delete"})),
+        DomainErrorMappingMiddleware(
+            {NotFoundException: "not_found", ValidationException: "validation_error"},
+            retryable={ValidationException},
+        ),
+        RedactPasswordsMiddleware(include=frozenset({"get_user"})),
+    ],
+    args=(repo,),
+)
+builder.build()
+```
+
+The outer middleware sees the inner one's return value last, so ordering determines who gets to post-process the result.
+
+### Sub-agents with Module
+
+`Module` builds a separate `Agent` that the parent delegates to. Use it when a domain needs its own model, prompt and retry budget.
+
+```python
+from to_tool_manager import Module, Service, ToToolManager
+
+commerce = Module(
+    name="commerce",
+    services=[
+        Service(name="orders", service=OrderManager,
+                instructions="Create and update orders."),
+        Service(name="inventory", service=InventoryService,
+                instructions="Check and adjust stock levels."),
+    ],
+    description=(
+        "Commerce sub-agent. Use it for anything involving products, "
+        "orders or payments."
+    ),
+    system_prompt="Always confirm stock availability before confirming an order.",
+    model="openai:gpt-4o-mini",     # cheaper model for a narrow domain
+    retries=3,
+)
+
+manager = ToToolManager(name="App", resources=[commerce], model="openai:gpt-4o")
+agent = manager.build_agent()
+```
+
+The parent model only sees `commerce` as a delegation target, which keeps the top-level tool list small and the prompts focused.
+
+### Disabling inherited middleware
+
+An outer layer's middleware can be switched off for a specific service or module by name.
+
+```python
+module = Module(
+    name="reports",
+    services=[
+        Service(
+            name="orders",
+            service=OrderManager,
+            instructions="Read-only order queries.",
+            disable_middlewares=("RateLimitMiddleware",),   # skip the outer limiter
+        ),
+    ],
+    description="Reporting sub-agent.",
+    middleware=[RateLimitMiddleware(max_calls=50)],
+)
+```
+
+A module may not disable a middleware it declares itself — doing so raises `SelfDisableMiddlewareError` at construction. Disable it in the parent layer instead.
+
+### Exporting tools to an MCP server
+
+`to_mcp_tool` republishes the builder's tools over MCP with flat signatures, ready for Claude Desktop or any MCP client.
+
+```python
+mcp = builder.to_mcp_tool(
+    name="ToToolManagerServer",
+    instructions="User and order management tools.",
+)
+
+if __name__ == "__main__":
+    mcp.run()   # stdio by default
+```
+
+Exported tool names use the `{service}__{method}` convention. Tools owned by `Module` sub-agents are not exported — the sub-agent handles them internally.
+
+### Gateways and approvals with HITL
+
+Gate destructive operations behind a human decision, emitting the request over your own transport.
+
+```python
+from typing import Any
+
+from to_tool_manager import HumanInTheLoop, HumanInTheLoopToolMiddleware, HumanInputRetry
+from to_tool_manager import EventEmitter
+
+
+class SSEEventEmitter(EventEmitter):
+    """Bridges HITL events onto a Server-Sent Events stream."""
+
+    def __init__(self, send_fn) -> None:
+        self._send = send_fn
+
+    async def emit(self, event_id: str, payload: dict[str, Any]) -> None:
+        await self._send({"event": event_id, "data": payload})
+
+
+async def approval_logic(emit, event_fn, action: str) -> None:
+    """Emit the request, wait for the answer, validate it."""
+    await emit("approval_request", {"action": action, "message": "Approve?"})
+
+    answer = await wait_for_human_answer()          # your transport-specific wait
+    if answer != "approve":
+        raise HumanInputRetry()                     # restart the cycle
+
+
+hitl = HumanInTheLoop(
+    emitter=SSEEventEmitter(send_fn=push_to_client),
+    logic=approval_logic,
+    action="delete_user",                           # injected into approval_logic
+)
+
+service = Service(
+    name="users",
+    service=UserManager,
+    instructions="User administration.",
+    middleware=[
+        HumanInTheLoopToolMiddleware(
+            include=frozenset({"delete"}),         # only delete needs approval
+            hitl=hitl,
+            max_retries=3,
+        )
     ],
 )
-
-order_service = Service(
-    name="orders",
-    service=OrderManager,
-    instructions="Order CRUD operations.",
-    middleware=[
-        AuthMiddleware(include=frozenset({"create", "update_status"})),
-    ],
-)
-
-commerce_module = Module(
-    name="Commerce",
-    services=[user_service, order_service],
-    description="E-commerce backend: users and orders.",
-    middleware=[LogMiddleware()],
-)
-
-manager = ToToolManager(
-    name="ECommerce",
-    resources=[commerce_module],
-)
-
-agent = manager.build_agent()
 ```
 
----
+`event_fn` is the tool call itself — invoke it inside your logic if you need to run the operation as part of the approved transaction.
 
-### Example 3 — Services + Module + ToToolManager
+### Guarding graph transitions
 
-Services at different levels: some inside a `Module`, some directly registered in `ToToolManager`.
-
-```python
-user_service = Service(
-    name="users",
-    service=UserManager,
-    instructions="User CRUD.",
-    middleware=[AuthMiddleware(include=frozenset({"delete"}))],
-)
-
-order_service = Service(
-    name="orders",
-    service=OrderManager,
-    instructions="Order CRUD.",
-)
-
-# Module for commerce
-commerce_module = Module(
-    name="Commerce",
-    services=[user_service, order_service],
-    description="Commerce sub-agent.",
-    middleware=[LogMiddleware()],
-)
-
-# Manager with module + additional global middleware
-manager = ToToolManager(
-    name="FullApp",
-    resources=[commerce_module],
-    middlewares=[RateLimitMiddleware(max_calls=50)],
-)
-
-# Dynamically add middleware to a specific service
-manager.add_middleware_to_service(
-    "orders",
-    AuthMiddleware(include=frozenset({"update_status"})),
-)
-
-agent = manager.build_agent()
-```
-
----
-
-### Example 4 — Services + Module + TTMBuilder
-
-Using the fluent builder API to assemble everything declaratively.
-
-```python
-from to_tool_manager.core.builder.ttm_builder import TTMBuilder
-
-
-with TTMBuilder(name="ECommerceAgent") as builder:
-    # Add services
-    builder.add_service(
-        name="users",
-        service=UserManager,
-        instructions="User CRUD operations.",
-        middleware=[AuthMiddleware(include=frozenset({"create", "delete"}))],
-    )
-
-    builder.add_service(
-        name="orders",
-        service=OrderManager,
-        instructions="Order CRUD operations.",
-    )
-
-    # Add a module
-    builder.add_module(
-        name="Commerce",
-        services=[
-            Service(
-                name="users_v2",
-                service=UserManager,
-                instructions="User management v2.",
-            ),
-            Service(
-                name="orders_v2",
-                service=OrderManager,
-                instructions="Order management v2.",
-            ),
-        ],
-        description="Commerce sub-agent with additional services.",
-        middleware=[LogMiddleware()],
-    )
-
-    # Global middlewares
-    builder.add_middleware(RateLimitMiddleware(max_calls=100))
-
-# build() called automatically on __exit__
-agent = builder.agent
-```
-
----
-
-### Example 5 — Graph with GraphMiddlewareRunner
-
-Using `pydantic_graph` with `NodeMiddleware` to control node transitions.
+`GraphMiddlewareRunner` applies a middleware chain to every transition of a `pydantic_graph`, so you can block a pipeline step without touching the nodes.
 
 ```python
 from __future__ import annotations
@@ -750,11 +1418,9 @@ from dataclasses import dataclass
 
 from pydantic_graph import BaseNode, End, Graph, GraphRunContext
 
-from to_tool_manager.core.middleware.middleware import NodeMiddleware
-from to_tool_manager.middleware.graph_runner import GraphMiddlewareRunner
+from to_tool_manager import GraphMiddlewareRunner, NodeMiddleware
 
 
-# --- State ---
 @dataclass
 class PipelineState:
     user_id: str
@@ -762,7 +1428,6 @@ class PipelineState:
     result: str | None = None
 
 
-# --- Nodes ---
 @dataclass
 class ValidateUser(BaseNode[PipelineState]):
     async def run(self, ctx: GraphRunContext[PipelineState]) -> ProcessOrder:
@@ -777,163 +1442,116 @@ class ProcessOrder(BaseNode[PipelineState, None, str]):
         return End(ctx.state.result)
 
 
-# --- Middleware ---
 class AuditMiddleware(NodeMiddleware):
-    """Logs every node transition and blocks if user_id is empty."""
+    """Log every transition and block an empty user id."""
 
     async def before_transition(self, source_node_id, target_node_id, state):
         print(f"[Audit] {source_node_id} -> {target_node_id}")
-        if hasattr(state, "user_id") and not state.user_id:
-            print("[Audit] BLOCKED: empty user_id")
-            return False
-        return True
+        return bool(getattr(state, "user_id", None))
 
 
-# --- Graph ---
-pipeline_graph = Graph(nodes=(ValidateUser, ProcessOrder))
+pipeline = Graph(nodes=(ValidateUser, ProcessOrder))
 
 
-async def run_pipeline(user_id: str) -> str:
-    runner = GraphMiddlewareRunner(
-        graph=pipeline_graph,
-        middlewares=[AuditMiddleware()],
-    )
-    state = PipelineState(user_id=user_id)
-    return await runner.run(state=state)
+async def run_pipeline(user_id: str) -> str | None:
+    runner = GraphMiddlewareRunner(graph=pipeline, middlewares=[AuditMiddleware()])
+    return await runner.run(state=PipelineState(user_id=user_id))
 
 
-# Usage:
-# result = await run_pipeline("user-42")   # runs normally
-# result = await run_pipeline("")           # blocked by AuditMiddleware
+# run_pipeline("user-42") -> 'Order processed for user user-42'
+# run_pipeline("")         -> None   (blocked before the first transition)
 ```
 
 ---
 
-## HITL Example
+## Gotchas and troubleshooting
 
-A complete Human-in-the-Loop flow using SSE events to require human approval before executing a tool.
+### My service exposes no tools
+
+Inherited methods are not discovered — only methods declared in the class body itself (`core/main/shared/discover.py:39`). Verify with:
 
 ```python
-from typing import Any
-
-from to_tool_manager.provider.human_in_the_loop import (
-    EventEmitter,
-    HumanInTheLoop,
-)
-from to_tool_manager.middleware.hitl import (
-    HumanInTheLoopMiddleware,
-    HumanInTheLoopToolMiddleware,
-)
-
-
-# 1. Implement EventEmitter for your framework
-class SSEEventEmitter(EventEmitter):
-    def __init__(self, send_fn):
-        self._send = send_fn
-
-    async def emit(self, event_id: str, payload: dict[str, Any]) -> None:
-        await self._send({"event": event_id, "data": payload})
-
-
-# 2. Define the HITL logic
-async def approval_logic(emit, event_fn, action: str):
-    """Emits an approval request, waits for response, validates."""
-    await emit("approval_request", {
-        "action": action,
-        "message": f"Do you approve this action: {action}?",
-    })
-    # In a real app, this would wait for a websocket/SSE response.
-    # If rejected, raise HumanInputRetry to retry the cycle.
-
-
-# 3. Create HITL coordinator
-emitter = SSEEventEmitter(send_fn=your_send_function)
-hitl = HumanInTheLoop(
-    emitter=emitter,
-    logic=approval_logic,
-    action="delete_user",  # injected into logic
-)
-
-# 4a. Global HITL — applies to ALL tools
-global_hitl_mw = HumanInTheLoopMiddleware(hitl=hitl, max_retries=3)
-
-# 4b. Per-method HITL — applies only to filtered methods
-selective_hitl_mw = HumanInTheLoopToolMiddleware(
-    hitl=hitl,
-    max_retries=3,
-    include=frozenset({"delete", "update_status"}),
-)
-
-# 5. Use in Service or ToToolManager
-service = Service(
-    name="orders",
-    service=OrderManager,
-    instructions="Order management.",
-    middleware=[selective_hitl_mw],
-)
+from to_tool_manager.core.main.shared.discover import discover_methods
+print([m.name for m in discover_methods(MyService)])
 ```
 
----
+Also confirm the method is a plain function (not a `property` or class attribute) and does not start with `_`.
 
-## Public API
+### My middleware never runs
+
+Subclass `ToolMiddleware`, not `Middleware`. `Service.build_as_capability` only wraps `ToolMiddleware` instances (`core/main/service.py:71`), so a plain `Middleware` in a service, module or builder list is stored but never invoked.
+
+`ToToolManager(middlewares=[...])` is stored and readable but is not wired into dispatch either. Use `TTMBuilder.add_middleware(...)`, which appends to every service on `build()`.
+
+### `include` / `exclude` on `Service` do nothing
+
+`Service(include=…, exclude=…)` and `TTMBuilder.add_service(include=…, exclude=…)` are accepted and stored, but no code in the package reads them, so no method is filtered. Attach the filter to a `ToolMiddleware` instead:
 
 ```python
-from to_tool_manager import (
-    # Core
-    Service,
-    Module,
-    ToToolManager,
-    TTMBuilder,
+# Does not filter:
+Service(name="users", service=UserManager, instructions="…", exclude=frozenset({"delete"}))
 
-    # Middleware
-    Middleware,
-    ToolMiddleware,
-    NodeMiddleware,
-    GraphMiddlewareRunner,
-
-    # HITL
-    EventEmitter,
-    HumanInTheLoop,
-    HumanInTheLoopMiddleware,
-    HumanInTheLoopToolMiddleware,
-    HumanInputRetry,
-
-    # Exceptions
-    TTMError,
-    ConfigurationError,
-    InvalidResourceTypeError,
-    SelfDisableMiddlewareError,
-    ServiceError,
-    ServiceNotFoundError,
-    ServiceAlreadyRegisteredError,
-    DependencyNotSetError,
-    ModuleError,
-    ModuleAlreadyRegisteredError,
-    AgentError,
-    AgentNotBuiltError,
-    AgentAlreadyBuiltError,
-    MiddlewareError,
-    MiddlewareNotInitializedError,
-    MiddlewareTargetMismatchError,
-    BuilderError,
-    ToToolManagerAlreadyRegisteredError,
-    ToToolManagerNotFoundError,
-)
+# Filters (the middleware only wraps the methods it allows):
+Service(name="users", service=UserManager, instructions="…",
+        middleware=[GuardMiddleware(exclude=frozenset({"delete"}))])
 ```
+
+### Two tools with the same name
+
+Tool names are bare method names, so `users.create` and `orders.create` are both exposed as `create`. Rename the methods, or move one into a `Module` so only one capability is loaded at a time.
+
+### Middleware order is the reverse of the list
+
+The last middleware in the list wraps the others, so it runs first. Outer layers (module, builder) run before inner ones (service). See [Middleware resolution and ordering](#middleware-resolution-and-ordering).
+
+### `Module.build_as_agent()` raises on the second call
+
+The `agent` setter refuses to overwrite, so a module builds exactly once. Create a fresh `Module` per build, or let a single `TTMBuilder`/`ToToolManager` own it.
+
+### My exception never reaches my code
+
+Service exceptions are caught by the generated wrapper and returned as the string `Error in <service>.<method>: <Type>: <message>`. Handle errors inside the method, or map them with a `ToolMiddleware`.
+
+### `hasattr(deps, "name")` is always `False` for missing services
+
+`DependencyNotSetError` subclasses `AttributeError`, so `hasattr` swallows it and `getattr(deps, "name", None)` returns the default. Catch `DependencyNotSetError` explicitly if you need to distinguish "no such service" from a service whose value is `None`.
+
+### A blocked graph run returns `None`
+
+`GraphMiddlewareRunner.run` returns `None` both when a middleware blocks and when the graph legitimately ends with `None`. Log inside `before_transition` if you need to tell them apart.
 
 ---
 
-## Dependencies
+## Development
 
-- `pydantic-ai-slim[cli,openai]>=2.37.0`
-- `pydantic-ai-harness>=0.28.0`
-- `pydantic-ai-skills>=1.4.0`
-- `pydantic-graph>=2.37.0`
-- `subagents-pydantic-ai>=0.2.21`
-- `fastmcp>=4.0.2`
+```bash
+git clone https://github.com/Davidmg5k/ToToolManager.git
+cd ToToolManager
+uv sync --extra pydantic-ai
+```
+
+| Task | Command |
+|---|---|
+| Run the test suite | `uv run pytest -q` |
+| Type-check | `uv run --with pyright pyright src/` |
+| Dependency audit | `uv run --with pip-audit pip-audit` |
+| Coverage | `uv run pytest --cov` (gate: `fail_under = 79`) |
+
+The suite is organised as `tests/unit`, `tests/integration`, `tests/system`, `tests/use_cases` and `tests/perf`. CI runs tests on Python 3.12 and 3.13, plus pyright and pip-audit (`.github/workflows/ci.yml`).
+
+A complete multi-domain FastAPI demo — users, orders, inventory, payments, notifications, auth and a chat UI — lives in [`example/`](example/README.md).
+
+---
+
+## License
+
+MIT — Copyright (c) 2026 Conectar Wali SAS. See [LICENSE](LICENSE).
 
 ---
 
 ## Links
 
 - **Repository:** https://github.com/Davidmg5k/ToToolManager
+- **Issues:** https://github.com/Davidmg5k/ToToolManager/issues
+- **Changelog:** https://github.com/Davidmg5k/ToToolManager/blob/main/CHANGELOG.md
+- **Example app:** [`example/README.md`](example/README.md)
