@@ -92,14 +92,20 @@ class HumanInTheLoopToolMiddleware(ToolMiddleware):
 
     def __init__(
         self,
-        hitl: HumanInTheLoop,
-        max_retries: int = 3,
         include: MethodsType | Include | None = None,
         exclude: MethodsType | Exclude | None = None,
+        *,
+        hitl: HumanInTheLoop,
+        max_retries: int = 3,
     ) -> None:
         """
         Precondition: hitl is a valid HumanInTheLoop, max_retries > 0
         Postcondition: hitl, max_retries, include, exclude initialized
+
+        Signature contract: ``include`` and ``exclude`` keep the exact
+        position and defaults of ``ToolMiddleware.__init__`` (LSP). The
+        HITL-specific parameters are added as keyword-only so positional
+        calls valid for ``ToolMiddleware`` remain valid here.
         """
         super().__init__(include=include, exclude=exclude)
         self.__hitl = hitl

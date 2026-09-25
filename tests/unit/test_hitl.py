@@ -196,7 +196,7 @@ class TestHumanInTheLoopToolMiddleware:
     def test_include_filters_methods(self):
         """ToolMiddleware filtering is preserved."""
         hitl = _make_hitl(_make_failing_logic(0))
-        mw = HumanInTheLoopToolMiddleware(hitl, include=["create"])
+        mw = HumanInTheLoopToolMiddleware(include=["create"], hitl=hitl)
 
         assert mw.is_allowed("create") is True
         assert mw.is_allowed("get") is False
@@ -204,15 +204,27 @@ class TestHumanInTheLoopToolMiddleware:
     def test_exclude_filters_methods(self):
         """Exclude rules keep other methods allowed."""
         hitl = _make_hitl(_make_failing_logic(0))
-        mw = HumanInTheLoopToolMiddleware(hitl, exclude=["delete"])
+        mw = HumanInTheLoopToolMiddleware(exclude=["delete"], hitl=hitl)
 
         assert mw.is_allowed("delete") is False
         assert mw.is_allowed("create") is True
 
+    def test_signature_preserves_tool_middleware_positional_contract(self):
+        """LSP: positional call valid for ToolMiddleware stays valid.
+
+        ToolMiddleware.__init__(include, exclude) -> the override keeps
+        include/exclude as the first positional parameters.
+        """
+        hitl = _make_hitl(_make_failing_logic(0))
+        mw = HumanInTheLoopToolMiddleware(["create"], hitl=hitl)
+
+        assert mw.is_allowed("create") is True
+        assert mw.is_allowed("get") is False
+
     async def test_dispatch_executes_tool_when_valid(self):
         """With include filters, allowed tools run through HITL."""
         hitl = _make_hitl(_make_failing_logic(0))
-        mw = HumanInTheLoopToolMiddleware(hitl, include=["run"])
+        mw = HumanInTheLoopToolMiddleware(include=["run"], hitl=hitl)
 
         async def tool(*, a):
             return a + 1
@@ -224,7 +236,7 @@ class TestHumanInTheLoopToolMiddleware:
     async def test_dispatch_returns_error_when_retries_exhausted(self):
         """Per-method middleware still returns the exhausted message."""
         hitl = _make_hitl(_make_failing_logic(99))
-        mw = HumanInTheLoopToolMiddleware(hitl, max_retries=1)
+        mw = HumanInTheLoopToolMiddleware(hitl=hitl, max_retries=1)
 
         result = await mw.dispatch(lambda: "no")
 
