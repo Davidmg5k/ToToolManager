@@ -187,6 +187,8 @@ Run it with the pydantic-ai CLI:
 pydantic-ai to_tool_manager.quickstart:agent
 ```
 
+> Building the agent validates the model, so it needs provider credentials to be present. While developing offline, swap the model for pydantic-ai's built-in test model: `model="test"`. It needs no API key and still exercises discovery, middleware and tool wrapping.
+
 ---
 
 ## How it works
@@ -873,6 +875,8 @@ middleware=[AuthMiddleware(include=frozenset({"delete", "update_status"}))]
 
 **Description**: `BaseNode` subclass that runs a wrapped node through a `NodeMiddleware` chain. Because `pydantic_graph` instantiates nodes with no arguments, the wrapped type and the middleware list are supplied as **class attributes** of a dynamically created subclass.
 
+> **Import path:** `NodeWrapper` is **not** re-exported from the package root — import it from `to_tool_manager.core.middleware.middleware`. For guarding transitions in a real graph, prefer `GraphMiddlewareRunner` and `before_transition`; see the caveat below.
+
 **Return**: n/a.
 
 **Args**: None.
@@ -881,17 +885,41 @@ middleware=[AuthMiddleware(include=frozenset({"delete", "update_status"}))]
 
 - `_wrapped_node_type: type[BaseNode]` — class attribute: the node to wrap.
 - `_middlewares_attr: Sequence[NodeMiddleware]` — class attribute: the chain. `before_run` runs in order, `after_run` in reverse.
-- `run(ctx)` → `BaseNode | End`. Instantiates the wrapped node, runs the hooks, executes it, and returns the (possibly rewritten) successor.
+- `run(ctx)` → `BaseNode | End`. Instantiates the wrapped node, runs `before_run` on each middleware, executes the node, then runs `after_run` in reverse and returns the (possibly rewritten) successor.
 
 ```python
-WrappedValidateUser = type(
-    "WrappedValidateUser",
+import asyncio
+
+from pydantic_graph import BaseNode, End, GraphRunContext
+
+from to_tool_manager.core.middleware.middleware import NodeMiddleware, NodeWrapper
+
+
+@dataclass
+class Real(BaseNode[State]):
+    async def run(self, ctx) -> End[str]:
+        return End("final")
+
+
+class AuditMiddleware(NodeMiddleware):
+    async def before_run(self, node, ctx):
+        print("before node")
+
+    async def after_run(self, node, ctx, next_node):
+        print("after node")
+        return next_node
+
+
+WrappedReal = type(
+    "WrappedReal",
     (NodeWrapper,),
-    {"_wrapped_node_type": ValidateUser, "_middlewares_attr": [AuditMiddleware()]},
+    {"_wrapped_node_type": Real, "_middlewares_attr": [AuditMiddleware()]},
 )
 
-graph = Graph(nodes=(WrappedValidateUser, ProcessOrder))
+result = await WrappedReal().run(ctx)     # -> End('final'), hooks fired around the node
 ```
+
+**Caveat**: `NodeWrapper.run` is annotated as returning `BaseNode | End`, and `GraphBuilder` cannot infer edges from a plain `BaseNode` union — it raises `GraphSetupError` when a `NodeWrapper` is registered with `builder.node(...)`. Use `GraphMiddlewareRunner` for graph-level guards.
 
 ### `GraphMiddlewareRunner`
 
@@ -1077,7 +1105,13 @@ TTMError
 
 The library has **no configuration file, no environment variables and no global settings** — it reads neither. Every setting is a constructor argument, and the pydantic-ai parameters are forwarded verbatim to `Agent`.
 
-Model selection and provider credentials are pydantic-ai's concern: pass `model="openai:gpt-4o"` explicitly, or let pydantic-ai resolve it from its own environment (`OPENAI_API_KEY`, …).
+Model selection and provider credentials are pydantic-ai's concern: pass `model="openai:gpt-4o"` explicitly, or let pydantic-ai resolve it from its own environment (`OPENAI_API_KEY`, …). Building an agent validates the model, so credentials must be present at build time — use `model="test"` to develop offline.
+
+| Value | Behaviour |
+|---|---|
+| `"openai:gpt-4o"`, `"anthropic:…"`, … | Real provider. Requires that provider's credentials at build time. |
+| `"test"` | pydantic-ai's built-in test model. No credentials needed; ideal for local development and CI. |
+| `None` | Inherits the parent model (`Module` inside an agent) or pydantic-ai's default resolution. |
 
 ### Shared `Agent` parameters
 
@@ -1217,7 +1251,7 @@ Because the instance is registered on `DinamicDepend`, you can also reach it fro
 
 ### Async services and DI
 
-Sync and async methods are both exposed; the generated tool keeps the same flavour, and `Make sure` the service's own I/O is awaited.
+Sync and async methods are both exposed, and the generated tool keeps the same flavour — await the service's own I/O inside the method.
 
 ```python
 class NotificationService:
@@ -1232,7 +1266,7 @@ class NotificationService:
 
 ### Error mapping and PII scrubbing
 
-Because exceptions are converted to strings, map your domain errors into actionable text and redact sensitive payloads — as two independent middlewares.
+Because exceptions are converted to strings, map your domain errors into actionable text and redact sensitive payloads — as two independent middlewares. Continuing the previous example, with `NotFoundException` and `ValidationException` from your own error module:
 
 ```python
 from to_tool_manager import TTMBuilder, ToolMiddleware
@@ -1294,6 +1328,15 @@ The outer middleware sees the inner one's return value last, so ordering determi
 ```python
 from to_tool_manager import Module, Service, ToToolManager
 
+
+class InventoryService:
+    """Stock levels for the catalogue."""
+
+    def check(self, sku: str) -> str:
+        """Return the available quantity for a SKU."""
+        return f"{sku}: 12 in stock"
+
+
 commerce = Module(
     name="commerce",
     services=[
@@ -1322,6 +1365,24 @@ The parent model only sees `commerce` as a delegation target, which keeps the to
 An outer layer's middleware can be switched off for a specific service or module by name.
 
 ```python
+from to_tool_manager import Middleware, Module, Service, ToolMiddleware
+
+
+class RateLimitMiddleware(ToolMiddleware):
+    """Allow at most `max_calls` tool calls per process."""
+
+    def __init__(self, max_calls: int = 10) -> None:
+        super().__init__()
+        self._calls = 0
+        self._max = max_calls
+
+    async def dispatch(self, func, /, *args, **kw):
+        self._calls += 1
+        if self._calls > self._max:
+            return "Rate limit exceeded. Try again later."
+        return await func(*args, **kw)
+
+
 module = Module(
     name="reports",
     services=[
@@ -1416,7 +1477,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from pydantic_graph import BaseNode, End, Graph, GraphRunContext
+from pydantic_graph import BaseNode, End, GraphBuilder, GraphRunContext
 
 from to_tool_manager import GraphMiddlewareRunner, NodeMiddleware
 
@@ -1450,12 +1511,22 @@ class AuditMiddleware(NodeMiddleware):
         return bool(getattr(state, "user_id", None))
 
 
-pipeline = Graph(nodes=(ValidateUser, ProcessOrder))
+# pydantic_graph does not infer an entry edge, so wire the start node explicitly.
+builder = GraphBuilder(name="order_pipeline", state_type=PipelineState, output_type=str)
+builder.add(
+    builder.edge_from(builder.start_node).to(ValidateUser),
+    builder.node(ValidateUser),
+    builder.node(ProcessOrder),
+)
+pipeline = builder.build()
 
 
 async def run_pipeline(user_id: str) -> str | None:
     runner = GraphMiddlewareRunner(graph=pipeline, middlewares=[AuditMiddleware()])
-    return await runner.run(state=PipelineState(user_id=user_id))
+    return await runner.run(
+        state=PipelineState(user_id=user_id),
+        inputs=ValidateUser(),      # the start node runs this first
+    )
 
 
 # run_pipeline("user-42") -> 'Order processed for user user-42'
