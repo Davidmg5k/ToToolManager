@@ -2,7 +2,7 @@
 
 > Convert plain Python service classes into AI tool specifications for LLM integration.
 
-**Version:** 0.9.1 | **Python:** >=3.12 | **License:** MIT
+**Version:** 0.9.5 | **Python:** >=3.12 | **License:** MIT
 
 ---
 
