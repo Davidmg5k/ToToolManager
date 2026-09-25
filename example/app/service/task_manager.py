@@ -80,7 +80,6 @@ class ChatTaskManager:
         *,
         model: str,
         system_prompt: str,
-        deps: Any = None,
         title: str | None = None,
     ) -> str:
         key = str(chat_id)
@@ -101,7 +100,7 @@ class ChatTaskManager:
             self._run(
                 task, chat_id, message,
                 model=model, system_prompt=system_prompt,
-                deps=deps, title=title,
+                title=title,
             )
         )
         return task_id
@@ -132,7 +131,6 @@ class ChatTaskManager:
         *,
         model: str,
         system_prompt: str,
-        deps: Any = None,
         title: str | None = None,
     ) -> None:
         task.status = ChatTaskStatus.RUNNING
@@ -155,19 +153,43 @@ class ChatTaskManager:
                 build_communication_module,
             )
             from app.security.middleware_ai.sanitize import SensitiveFieldMiddlewareAI
-            from to_tool_manager import ToToolManager
-            from to_tool_manager.adapters.pydantic_ai import build_agent
+            from to_tool_manager import TTMBuilder
 
-            manager = ToToolManager([
-                    build_user_service(tools_session),
-                    build_commerce_module(tools_session),
-                    build_communication_module(tools_session),
-                ],
-                middlewares=[SensitiveFieldMiddlewareAI()]
+            user_svc = build_user_service(tools_session)
+            commerce = build_commerce_module(tools_session)
+            communication = build_communication_module(tools_session)
+
+            builder = TTMBuilder(
+                name="Assistant Agent Application",
+                model=model,
+                system_prompt=system_prompt,
             )
-            agent = build_agent(model=model, manager=manager, system_prompt=system_prompt)
+            builder.add_service(
+                name=user_svc.name,
+                service=user_svc.service,
+                instructions=user_svc.instructions,
+                middleware=user_svc.middleware,
+                args=user_svc.args,
+                kwargs=user_svc.kwargs,
+            )
+            builder.add_module(
+                name=commerce.name,
+                services=commerce.services,
+                description=commerce.description,
+                system_prompt=commerce.system_prompt,
+            )
+            builder.add_module(
+                name=communication.name,
+                services=communication.services,
+                description=communication.description,
+                system_prompt=communication.system_prompt,
+            )
+            builder.add_middleware(SensitiveFieldMiddlewareAI())
+            builder.build()
 
-            stream = agent.run_stream(message, deps=deps)
+            agent = builder.agent
+
+            stream = agent.run_stream(message, deps=builder.dependency)
             async with stream as result:
                 async for token in result.stream_text(delta=True):
                     full_response_tokens.append(token)

@@ -76,10 +76,9 @@ class TestChatSessionCRUD:
 
 class TestChatSend:
 
-    @patch("app.router.api.chat.build_agent")
-    def test_send_message_starts_task(self, mock_build_agent, client):
-        mock_agent = AsyncMock()
-        mock_build_agent.return_value = mock_agent
+    @patch("app.router.api.chat.chat_task_manager")
+    async def test_send_message_starts_task(self, mock_task_manager, client):
+        mock_task_manager.start = AsyncMock(return_value="task-123")
 
         create_resp = client.post("/api/chat/sessions", data={"title": "AI Chat"})
         chat_id = create_resp.json()["data"]["chat_id"]
@@ -92,6 +91,13 @@ class TestChatSend:
         data = response.json()["data"]
         assert "task_id" in data
         assert data["status"] == "started"
+
+        # El mensaje del usuario se persiste antes de escalar la tarea
+        mock_task_manager.start.assert_awaited_once()
+        call_kwargs = mock_task_manager.start.await_args.kwargs
+        assert str(call_kwargs["chat_id"]) == chat_id
+        assert call_kwargs["message"] == "Hello AI"
+        assert call_kwargs["model"] == "groq:openai/gpt-oss-120b"
 
     def test_send_empty_message(self, client):
         create_resp = client.post("/api/chat/sessions", data={"title": "Empty Msg"})

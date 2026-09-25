@@ -1,6 +1,7 @@
 from pydantic import ValidationError
 from app.security.middleware_ai.sanitize import RemoverPasswordsMiddlewareAI
-from to_tool_manager import Service, Module, ErrorMap
+from app.security.middleware_ai.error_mapper import DomainErrorMappingMiddleware
+from to_tool_manager import Service, Module
 
 from app.service import (
     UserService,
@@ -26,22 +27,26 @@ from app.exception import (
     ValidationException,
 )
 
+
 def build_user_service(session) -> Service:
     repo = UserRepository(session)
     return Service(
         name="user_service",
         service=UserService,
-        description="Manages user accounts: create, retrieve, update, and delete users.",
-        error_map=(
-            ErrorMap()
-            .map(NotFoundException, category="not_found")
-            .map(AlreadyExistsException, category="already_exists")
-            .map(ValidationException, category="validation_error", retryable=True)
-            .map(ValidationError, category="validation_error", retryable=True)
-        ),
+        instructions="Manages user accounts: create, retrieve, update, and delete users.",
+        middleware=[
+            DomainErrorMappingMiddleware(
+                {
+                    NotFoundException: "not_found",
+                    AlreadyExistsException: "already_exists",
+                    ValidationException: "validation_error",
+                    ValidationError: "validation_error",
+                },
+                retryable={ValidationException, ValidationError},
+            ),
+            RemoverPasswordsMiddlewareAI(include=["get_user"]),
+        ],
         args=(repo,),
-        singleton=True,
-        middlewares=[RemoverPasswordsMiddlewareAI(include=["get_user"])]
     )
 
 
@@ -50,15 +55,16 @@ def build_order_service(session) -> Service:
     return Service(
         name="order_service",
         service=OrderService,
-        description="Manages customer orders: create, update, cancel, and query orders.",
-        error_map=(
-            ErrorMap()
-            .map(NotFoundException, category="not_found")
-            .map(ConflictException, category="conflict")
-            .map(ValidationException, category="validation_error", retryable=True)
-        ),
+        instructions="Manages customer orders: create, update, cancel, and query orders.",
+        middleware=[DomainErrorMappingMiddleware(
+            {
+                NotFoundException: "not_found",
+                ConflictException: "conflict",
+                ValidationException: "validation_error",
+            },
+            retryable={ValidationException},
+        )],
         args=(repo,),
-        singleton=True,
     )
 
 
@@ -67,14 +73,15 @@ def build_auth_service(session) -> Service:
     return Service(
         name="auth_service",
         service=AuthService,
-        description="Handles authentication: login, token refresh, and token validation.",
-        error_map=(
-            ErrorMap()
-            .map(UnauthorizedException, category="unauthorized")
-            .map(ValidationException, category="validation_error", retryable=True)
-        ),
+        instructions="Handles authentication: login, token refresh, and token validation.",
+        middleware=[DomainErrorMappingMiddleware(
+            {
+                UnauthorizedException: "unauthorized",
+                ValidationException: "validation_error",
+            },
+            retryable={ValidationException},
+        )],
         args=(repo,),
-        singleton=True,
     )
 
 
@@ -83,15 +90,16 @@ def build_inventory_service(session) -> Service:
     return Service(
         name="inventory_service",
         service=InventoryService,
-        description="Manages product inventory: products, stock levels, and stock adjustments.",
-        error_map=(
-            ErrorMap()
-            .map(NotFoundException, category="not_found")
-            .map(InsufficientStockException, category="insufficient_stock")
-            .map(ValidationException, category="validation_error", retryable=True)
-        ),
+        instructions="Manages product inventory: products, stock levels, and stock adjustments.",
+        middleware=[DomainErrorMappingMiddleware(
+            {
+                NotFoundException: "not_found",
+                InsufficientStockException: "insufficient_stock",
+                ValidationException: "validation_error",
+            },
+            retryable={InsufficientStockException, ValidationException},
+        )],
         args=(repo,),
-        singleton=True,
     )
 
 
@@ -101,16 +109,17 @@ def build_payment_service(session) -> Service:
     return Service(
         name="payment_service",
         service=PaymentService,
-        description="Processes payments: create, refund, and query payment records.",
-        error_map=(
-            ErrorMap()
-            .map(NotFoundException, category="not_found")
-            .map(PaymentFailedException, category="payment_failed", retryable=True)
-            .map(ConflictException, category="conflict")
-            .map(ValidationException, category="validation_error", retryable=True)
-        ),
+        instructions="Processes payments: create, refund, and query payment records.",
+        middleware=[DomainErrorMappingMiddleware(
+            {
+                NotFoundException: "not_found",
+                PaymentFailedException: "payment_failed",
+                ConflictException: "conflict",
+                ValidationException: "validation_error",
+            },
+            retryable={PaymentFailedException, ValidationException},
+        )],
         args=(repo, order_repo),
-        singleton=True,
     )
 
 
@@ -119,15 +128,16 @@ def build_notification_service(session) -> Service:
     return Service(
         name="notification_service",
         service=NotificationService,
-        description="Sends notifications via email, SMS, or push channels.",
-        error_map=(
-            ErrorMap()
-            .map(NotFoundException, category="not_found")
-            .map(NotificationDeliveryException, category="delivery_failed", retryable=True)
-            .map(ValidationException, category="validation_error", retryable=True)
-        ),
+        instructions="Sends notifications via email, SMS, or push channels.",
+        middleware=[DomainErrorMappingMiddleware(
+            {
+                NotFoundException: "not_found",
+                NotificationDeliveryException: "delivery_failed",
+                ValidationException: "validation_error",
+            },
+            retryable={NotificationDeliveryException, ValidationException},
+        )],
         args=(repo,),
-        singleton=True,
     )
 
 

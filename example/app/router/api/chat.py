@@ -16,7 +16,7 @@ from app.response import ok, error
 from app.service import ChatSessionRepository, ChatMessageRepository, chat_task_manager
 from app.types.chat import CreateChatSession, CreateChatMessage
 from app.security.middleware_ai.sanitize import SensitiveFieldMiddlewareAI
-from to_tool_manager import ToToolManager
+from to_tool_manager import TTMBuilder
 
 chat_router = APIRouter(prefix="/api/chat", tags=["api", "chat"])
 
@@ -38,17 +38,38 @@ SYSTEM_PROMPT = (
 
 def _build_manager():
     session = Session(engine)
-    manager = ToToolManager(
+    builder = TTMBuilder(
         name="Assistant Agent Application",
         system_prompt=SYSTEM_PROMPT,
-        resources=[
-            build_user_service(session),
-            build_commerce_module(session),
-            build_communication_module(session),
-        ],
-        middlewares=[SensitiveFieldMiddlewareAI()]
     )
-    return manager, session
+    # user_service va directo al builder (mantiene middleware y args del Service)
+    user_svc = build_user_service(session)
+    builder.add_service(
+        name=user_svc.name,
+        service=user_svc.service,
+        instructions=user_svc.instructions,
+        middleware=user_svc.middleware,
+        args=user_svc.args,
+        kwargs=user_svc.kwargs,
+    )
+    # Los módulos conservan sus servicios internos (con middlewares y args)
+    commerce = build_commerce_module(session)
+    builder.add_module(
+        name=commerce.name,
+        services=commerce.services,
+        description=commerce.description,
+        system_prompt=commerce.system_prompt,
+    )
+    communication = build_communication_module(session)
+    builder.add_module(
+        name=communication.name,
+        services=communication.services,
+        description=communication.description,
+        system_prompt=communication.system_prompt,
+    )
+    builder.add_middleware(SensitiveFieldMiddlewareAI())
+    builder.build()
+    return builder, session
 
 
 def _get_chat_controller():
@@ -262,9 +283,9 @@ async def chat_events(chat_id: str):
 async def chat(request: Request):
     form = await request.form()
     message = form.get("message", "")
-    manager, tools_session = _build_manager()
+    builder, tools_session = _build_manager()
     try:
-        result = await manager.agent.run(str(message), deps=manager.dep)
+        result = await builder.agent.run(str(message), deps=builder.dependency)
         return ok({"role": "assistant", "content": result.output})
     finally:
         tools_session.close()
