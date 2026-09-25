@@ -1,10 +1,9 @@
+import asyncio
 import inspect
-import pytest
-from pydantic_ai.tools import RunContext
+from types import SimpleNamespace
 
-from to_tool_manager.core.main.shared.discover import MethodMeta, discover_methods
+from to_tool_manager.core.main.shared.discover import discover_methods
 from to_tool_manager.core.main.shared.tool_factory import make_tool
-from to_tool_manager.core.main.shared.dinamic_depend import DinamicDepend
 
 
 class UserService:
@@ -155,6 +154,38 @@ class TestMakeTool:
         # Verify that the function is configured correctly
         assert callable(tool_func)
         assert tool_func.__name__ == "failing_method"
+
+    def test_sync_wrapper_returns_error_message_on_exception(self):
+        """Sync wrapper returns an error string when the method raises (tool_factory.py:42-43)."""
+        class FailingService:
+            def failing_method(self) -> None:
+                raise ValueError("boom")
+
+        methods = discover_methods(FailingService)
+        failing_meta = next(m for m in methods if m.name == "failing_method")
+        tool_func = make_tool("FailingService", failing_meta)
+
+        dep = SimpleNamespace()
+        dep.FailingService = FailingService()
+        ctx = SimpleNamespace(deps=dep)
+        result = tool_func(ctx)
+        assert result == "Error in FailingService.failing_method: ValueError: boom"
+
+    def test_async_wrapper_returns_error_message_on_exception(self):
+        """Async wrapper returns an error string when the async method raises (tool_factory.py:33-34)."""
+        class FailingAsyncService:
+            async def failing_method(self) -> None:
+                raise RuntimeError("kaboom")
+
+        methods = discover_methods(FailingAsyncService)
+        failing_meta = next(m for m in methods if m.name == "failing_method")
+        tool_func = make_tool("FailingAsyncService", failing_meta)
+
+        dep = SimpleNamespace()
+        dep.FailingAsyncService = FailingAsyncService()
+        ctx = SimpleNamespace(deps=dep)
+        result = asyncio.run(tool_func(ctx))
+        assert result == "Error in FailingAsyncService.failing_method: RuntimeError: kaboom"
 
     def test_error_handling_includes_service_and_method_name(self):
         """Error handling includes service and method name."""

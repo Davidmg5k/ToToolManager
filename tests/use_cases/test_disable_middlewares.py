@@ -1,9 +1,7 @@
-import pytest
 from to_tool_manager.core.main.service import Service
 from to_tool_manager.core.main.module import Module
 from to_tool_manager.core.main.to_tool_manager import ToToolManager
 from to_tool_manager.core.builder.ttm_builder import TTMBuilder
-from to_tool_manager.core.middleware.middleware import Middleware, ToolMiddleware
 from tests.conftest import ConcreteToolMiddleware
 
 

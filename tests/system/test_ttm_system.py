@@ -24,7 +24,6 @@ Test model: groq:openai/gpt-oss-120b
 
 import pytest
 from dotenv import load_dotenv
-from pydantic_ai import Agent
 
 from to_tool_manager.core.builder.ttm_builder import TTMBuilder
 from to_tool_manager.core.main.service import Service
@@ -372,11 +371,6 @@ class TestTTMBuilderWithLLM:
             service=OrderService,
             instructions="Order management",
             args=(FakeOrderDB(),)
-        )
-        module = Module(
-            name="Commerce",
-            services=[service],
-            description="Commerce module"
         )
         builder = TTMBuilder(name="ModuleAgent")
         builder.add_module(

@@ -1,8 +1,9 @@
 import pytest
 from to_tool_manager.core.main.module import Module
 from to_tool_manager.core.main.service import Service
-from to_tool_manager.core.middleware.middleware import Middleware, ToolMiddleware
+from to_tool_manager.core.main.shared.dinamic_depend import DinamicDepend
 from to_tool_manager.exception import (
+    AgentAlreadyBuiltError,
     AgentNotBuiltError,
     SelfDisableMiddlewareError,
 )
@@ -405,3 +406,107 @@ class TestModuleSelfDisableValidation:
             middleware=[AuthMiddleware()]
         )
         assert len(module.middleware) == 1
+
+
+class TestModuleEdgePaths:
+    """Tests for less-common Module paths (coverage of setter, dependency, non-Middleware)."""
+
+    def test_agent_setter_rejects_second_build(self):
+        """Setting agent a second time raises AgentAlreadyBuiltError (module.py:70)"""
+        service = Service(
+            name="User",
+            service=UserService,
+            instructions="User management"
+        )
+        module = Module(
+            name="Commerce",
+            services=[service],
+            description="Commerce module"
+        )
+        module.build_as_agent()
+        with pytest.raises(AgentAlreadyBuiltError):
+            module.build_as_agent()
+
+    def test_dependency_property_returns_dependency(self):
+        """dependency property exposes the module dependency (module.py:75)"""
+        service = Service(
+            name="User",
+            service=UserService,
+            instructions="User management"
+        )
+        module = Module(
+            name="Commerce",
+            services=[service],
+            description="Commerce module"
+        )
+        assert isinstance(module.dependency, DinamicDepend)
+
+    def test_non_middleware_skipped_in_self_disable_validation(self):
+        """Non-Middleware entries are skipped in _validate_no_self_disable (module.py:90)"""
+        service = Service(
+            name="User",
+            service=UserService,
+            instructions="User management"
+        )
+        # A non-Middleware object in middleware must not raise SelfDisableMiddlewareError
+        module = Module(
+            name="Commerce",
+            services=[service],
+            description="Commerce module",
+            middleware=[object()],
+            disable_middlewares=("AuthMiddleware",)
+        )
+        # Disable names pointing at non-Middleware entries are ignored
+        assert module.disable_middlewares == ("AuthMiddleware",)
+
+    def test_non_middleware_skipped_in_apply(self):
+        """Non-Middleware entries are skipped in _apply_module_middlewares (module.py:154)"""
+        service = Service(
+            name="User",
+            service=UserService,
+            instructions="User management"
+        )
+        module = Module(
+            name="Commerce",
+            services=[service],
+            description="Commerce module",
+            middleware=[object()]
+        )
+        module.build_as_agent()
+        assert service.middleware == []
+
+    def test_module_disable_skips_appending_own_late_added_middleware(self):
+        """A module middleware whose name is in disable_middlewares is skipped (module.py:157)"""
+        service = Service(
+            name="User",
+            service=UserService,
+            instructions="User management"
+        )
+        module = Module(
+            name="Commerce",
+            services=[service],
+            description="Commerce module",
+            middleware=[AuthMiddleware()]
+        )
+        # Disable the middleware AFTER construction so self-disable validation
+        # does not trigger; build_as_agent must still skip appending it.
+        module.disable_middlewares = ("AuthMiddleware",)
+        module.build_as_agent()
+        assert not any(isinstance(mw, AuthMiddleware) for mw in service.middleware)
+
+    def test_service_middleware_none_initialized(self):
+        """None service middleware is initialized before appending (module.py:161)"""
+        service = Service(
+            name="User",
+            service=UserService,
+            instructions="User management",
+            middleware=None
+        )
+        module = Module(
+            name="Commerce",
+            services=[service],
+            description="Commerce module",
+            middleware=[AuthMiddleware()]
+        )
+        module.build_as_agent()
+        assert any(isinstance(mw, AuthMiddleware) for mw in service.middleware)

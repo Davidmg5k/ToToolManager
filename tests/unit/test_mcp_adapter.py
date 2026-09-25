@@ -1,4 +1,3 @@
-import pytest
 from to_tool_manager.core.builder.ttm_builder import TTMBuilder
 
 

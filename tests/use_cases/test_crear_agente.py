@@ -1,4 +1,3 @@
-import pytest
 from to_tool_manager.core.main.service import Service
 from to_tool_manager.core.main.module import Module
 from to_tool_manager.core.main.to_tool_manager import ToToolManager

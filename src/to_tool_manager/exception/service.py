@@ -39,5 +39,8 @@ class DependencyNotSetError(ServiceError, AttributeError):
     """
 
     def __init__(self, name: str) -> None:
-        self.name = name
         super().__init__(f"DinamicDepend has no attribute '{name}'")
+        # NOTE: assignment must happen AFTER super().__init__: CPython reserves
+        # the `name` slot on AttributeError subclasses, so a pre-super write is
+        # silently discarded (err.name would be None despite a valid message).
+        self.name = name

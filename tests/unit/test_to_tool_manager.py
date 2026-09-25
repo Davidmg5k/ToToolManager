@@ -2,9 +2,12 @@ import pytest
 from to_tool_manager.core.main.to_tool_manager import ToToolManager
 from to_tool_manager.core.main.service import Service
 from to_tool_manager.core.main.module import Module
-from to_tool_manager.core.middleware.middleware import Middleware, ToolMiddleware
+from to_tool_manager.core.middleware.middleware import Middleware
 from to_tool_manager.exception import (
     AgentNotBuiltError,
+    InvalidResourceTypeError,
+    MiddlewareNotInitializedError,
+    MiddlewareTargetMismatchError,
     ServiceNotFoundError,
 )
 from tests.conftest import ConcreteToolMiddleware
@@ -270,5 +273,213 @@ class TestToToolManagerAgentParams:
             retries=3,
         )
         agent = manager.build_agent()
+        assert agent is not None
+        assert agent.name == "TestManager"
+
+
+class TestToToolManagerEdgePaths:
+    """Tests for less-common ToToolManager paths (F4 coverage)."""
+
+    def test_invalid_resource_type_raises(self):
+        """ToToolManager raises for invalid resource type (to_tool_manager.py:95)."""
+        with pytest.raises(InvalidResourceTypeError, match="str"):
+            ToToolManager(name="TestManager", resources=["not-a-resource"])
+
+    def test_middlewares_property_raises_when_none(self):
+        """middlewares property raises MiddlewareNotInitializedError (to_tool_manager.py:120-122)."""
+        manager = ToToolManager(name="TestManager", resources=[])
+        with pytest.raises(MiddlewareNotInitializedError):
+            _ = manager.middlewares
+
+    def test_get_service_returns_module(self):
+        """get_service returns module when name matches a module (to_tool_manager.py:135)."""
+        service = Service(
+            name="User",
+            service=UserService,
+            instructions="User management"
+        )
+        module = Module(
+            name="Commerce",
+            services=[service],
+            description="Commerce module"
+        )
+        manager = ToToolManager(name="TestManager", resources=[module])
+        retrieved = manager.get_service("Commerce")
+        assert isinstance(retrieved, Module)
+        assert retrieved.name == "Commerce"
+
+    def test_add_middleware_to_service(self):
+        """add_middleware_to_service appends middleware to a service (to_tool_manager.py:184-189)."""
+        service = Service(
+            name="User",
+            service=UserService,
+            instructions="User management"
+        )
+        manager = ToToolManager(name="TestManager", resources=[service])
+        mw = ConcreteToolMiddleware()
+        manager.add_middleware_to_service("User", mw)
+        assert mw in service.middleware
+
+    def test_add_middleware_to_service_init_none(self):
+        """add_middleware_to_service initializes None middleware list (to_tool_manager.py:186-187)."""
+        service = Service(
+            name="User",
+            service=UserService,
+            instructions="User management",
+            middleware=None
+        )
+        manager = ToToolManager(name="TestManager", resources=[service])
+        mw = ConcreteToolMiddleware()
+        manager.add_middleware_to_service("User", mw)
+        assert mw in service.middleware
+
+    def test_add_middleware_to_service_target_mismatch(self):
+        """add_middleware_to_service raises on module target (to_tool_manager.py:190)."""
+        service = Service(
+            name="User",
+            service=UserService,
+            instructions="User management"
+        )
+        module = Module(
+            name="Commerce",
+            services=[service],
+            description="Commerce module"
+        )
+        manager = ToToolManager(name="TestManager", resources=[module])
+        with pytest.raises(MiddlewareTargetMismatchError, match="Service"):
+            manager.add_middleware_to_service("Commerce", ConcreteToolMiddleware())
+
+    def test_add_middleware_to_module(self):
+        """add_middleware_to_module appends middleware to a module (to_tool_manager.py:198-203)."""
+        service = Service(
+            name="User",
+            service=UserService,
+            instructions="User management"
+        )
+        module = Module(
+            name="Commerce",
+            services=[service],
+            description="Commerce module"
+        )
+        manager = ToToolManager(name="TestManager", resources=[module])
+        mw = ConcreteToolMiddleware()
+        manager.add_middleware_to_module("Commerce", mw)
+        assert mw in module.middleware
+
+    def test_add_middleware_to_module_init_none(self):
+        """add_middleware_to_module initializes None middleware list (to_tool_manager.py:200-201)."""
+        service = Service(
+            name="User",
+            service=UserService,
+            instructions="User management"
+        )
+        module = Module(
+            name="Commerce",
+            services=[service],
+            description="Commerce module",
+            middleware=None
+        )
+        manager = ToToolManager(name="TestManager", resources=[module])
+        mw = ConcreteToolMiddleware()
+        manager.add_middleware_to_module("Commerce", mw)
+        assert mw in module.middleware
+
+    def test_add_middleware_to_module_target_mismatch(self):
+        """add_middleware_to_module raises on service target (to_tool_manager.py:204)."""
+        service = Service(
+            name="User",
+            service=UserService,
+            instructions="User management"
+        )
+        manager = ToToolManager(name="TestManager", resources=[service])
+        with pytest.raises(MiddlewareTargetMismatchError, match="Module"):
+            manager.add_middleware_to_module("User", ConcreteToolMiddleware())
+
+    def test_remove_middleware_to_service(self):
+        """remove_middleware_to_service removes by type (to_tool_manager.py:212-215)."""
+        mw = ConcreteToolMiddleware()
+        service = Service(
+            name="User",
+            service=UserService,
+            instructions="User management",
+            middleware=[mw]
+        )
+        manager = ToToolManager(name="TestManager", resources=[service])
+        manager.remove_middleware_to_service("User", ConcreteToolMiddleware)
+        assert service.middleware == []
+
+    def test_remove_middleware_to_service_target_mismatch(self):
+        """remove_middleware_to_service raises on module target (to_tool_manager.py:217)."""
+        service = Service(
+            name="User",
+            service=UserService,
+            instructions="User management"
+        )
+        module = Module(
+            name="Commerce",
+            services=[service],
+            description="Commerce module"
+        )
+        manager = ToToolManager(name="TestManager", resources=[module])
+        with pytest.raises(MiddlewareTargetMismatchError, match="Service"):
+            manager.remove_middleware_to_service("Commerce", ConcreteToolMiddleware)
+
+    def test_remove_middleware_to_module(self):
+        """remove_middleware_to_module removes by type (to_tool_manager.py:225-228)."""
+        mw = ConcreteToolMiddleware()
+        service = Service(
+            name="User",
+            service=UserService,
+            instructions="User management"
+        )
+        module = Module(
+            name="Commerce",
+            services=[service],
+            description="Commerce module",
+            middleware=[mw]
+        )
+        manager = ToToolManager(name="TestManager", resources=[module])
+        manager.remove_middleware_to_module("Commerce", ConcreteToolMiddleware)
+        assert module.middleware == []
+
+    def test_remove_middleware_to_module_target_mismatch(self):
+        """remove_middleware_to_module raises on service target (to_tool_manager.py:230)."""
+        service = Service(
+            name="User",
+            service=UserService,
+            instructions="User management"
+        )
+        manager = ToToolManager(name="TestManager", resources=[service])
+        with pytest.raises(MiddlewareTargetMismatchError, match="Module"):
+            manager.remove_middleware_to_module("User", ConcreteToolMiddleware)
+
+    def test_build_agent_with_provided_resources(self):
+        """build_agent accepts resources and middlewares overrides (to_tool_manager.py:245-251, 258)."""
+        service = Service(
+            name="User",
+            service=UserService,
+            instructions="User management"
+        )
+        manager = ToToolManager(name="TestManager", resources=[])
+        mw = ConcreteToolMiddleware()
+        agent = manager.build_agent(resources=[service], middlewares=[mw])
+        assert agent is not None
+        assert agent.name == "TestManager"
+        assert manager.middlewares == [mw]
+
+    def test_build_agent_with_provided_module(self):
+        """build_agent builds sub-agents from provided modules (to_tool_manager.py:250-251, 267)."""
+        service = Service(
+            name="User",
+            service=UserService,
+            instructions="User management"
+        )
+        module = Module(
+            name="Commerce",
+            services=[service],
+            description="Commerce module"
+        )
+        manager = ToToolManager(name="TestManager", resources=[])
+        agent = manager.build_agent(resources=[module])
         assert agent is not None
         assert agent.name == "TestManager"

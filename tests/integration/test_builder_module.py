@@ -1,8 +1,5 @@
-import pytest
 from to_tool_manager.core.builder.ttm_builder import TTMBuilder
 from to_tool_manager.core.main.service import Service
-from to_tool_manager.core.main.module import Module
-from to_tool_manager.core.middleware.middleware import Middleware
 from tests.conftest import ConcreteToolMiddleware
 
 
@@ -71,11 +68,6 @@ class TestTTMBuilderWithModule:
             name="User",
             service=UserService,
             instructions="User management"
-        )
-        order_service = Service(
-            name="Order",
-            service=OrderService,
-            instructions="Order management"
         )
         builder = TTMBuilder(name="TestBuilder")
         builder.add_module(

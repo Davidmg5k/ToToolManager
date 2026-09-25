@@ -1,5 +1,3 @@
-import pytest
-from to_tool_manager.core.middleware.middleware import Middleware, ToolMiddleware
 from to_tool_manager.infra.types.main.service import Include, Exclude
 from tests.conftest import ConcreteToolMiddleware
 

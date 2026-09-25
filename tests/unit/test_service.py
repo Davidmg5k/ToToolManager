@@ -1,7 +1,5 @@
 import inspect
-import pytest
 from to_tool_manager.core.main.service import Service
-from to_tool_manager.core.middleware.middleware import ToolMiddleware
 from tests.conftest import ConcreteToolMiddleware
 
 
@@ -62,6 +60,19 @@ class TestService:
             service=UserService,
             instructions="User management"
         )
+        mw = ConcreteToolMiddleware()
+        service.add_middleware(mw)
+        assert mw in service.middleware
+
+    def test_add_middleware_initializes_none_list(self):
+        """add_middleware() turns a None middleware list into [] (service.py:46)"""
+        service = Service(
+            name="User",
+            service=UserService,
+            instructions="User management",
+            middleware=None
+        )
+        assert service.middleware is None
         mw = ConcreteToolMiddleware()
         service.add_middleware(mw)
         assert mw in service.middleware

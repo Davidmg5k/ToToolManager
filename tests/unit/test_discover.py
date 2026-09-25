@@ -1,4 +1,3 @@
-import pytest
 from to_tool_manager.core.main.shared.discover import discover_methods, MethodMeta
 
 
@@ -47,6 +46,20 @@ class PrivateMethodService:
         return "dunder"
 
 
+class BaseService:
+    """Base service with a public method to be inherited."""
+
+    def inherited_method(self) -> str:
+        return "inherited"
+
+
+class ChildService(BaseService):
+    """Subclass that does NOT redefine the inherited method."""
+
+    def own_method(self) -> str:
+        return "own"
+
+
 class TestDiscoverMethods:
     """Tests for discover_methods."""
 
@@ -56,6 +69,13 @@ class TestDiscoverMethods:
         names = [m.name for m in methods]
         assert "create" in names
         assert "get" in names
+
+    def test_excludes_inherited_methods(self):
+        """Excludes methods not defined directly in the class (discover.py:40)."""
+        methods = discover_methods(ChildService)
+        names = [m.name for m in methods]
+        assert names == ["own_method"]
+        assert "inherited_method" not in names
 
     def test_discovers_async_methods(self):
         """Discovers async methods from a class."""

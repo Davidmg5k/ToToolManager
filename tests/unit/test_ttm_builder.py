@@ -1,9 +1,15 @@
+import asyncio
 import pytest
 from to_tool_manager.core.builder.ttm_builder import TTMBuilder
 from to_tool_manager.core.main.service import Service
-from to_tool_manager.infra.types.main.service import Include, Exclude
-from to_tool_manager.infra.types.main.signature import MethodsType
-from to_tool_manager.exception import AgentNotBuiltError, SelfDisableMiddlewareError
+from to_tool_manager.core.main.shared.dinamic_depend import DinamicDepend
+from to_tool_manager.core.middleware.middleware import Middleware
+from to_tool_manager.infra.types.main.service import Exclude, Include
+from to_tool_manager.exception import (
+    AgentAlreadyBuiltError,
+    AgentNotBuiltError,
+    SelfDisableMiddlewareError,
+)
 
 
 class UserService:
@@ -525,3 +531,247 @@ class TestTTMBuilderToMcpTool:
         tool_names = {t.name for t in tools}
         assert "external_tool" in tool_names
         assert "User__create" in tool_names
+
+
+class AsyncUserService:
+    """Example async service for MCP wrapper tests."""
+
+    async def create(self, name: str) -> str:
+        return f"Created {name}"
+
+
+class TestTTMBuilderExtraPaths:
+    """Tests for less-common TTMBuilder paths (F5 coverage)."""
+
+    def test_agent_setter_rejects_second_build(self):
+        """Assigning agent a second time raises AgentAlreadyBuiltError (ttm_builder.py:103-105)."""
+        builder = TTMBuilder(name="TestBuilder")
+        builder.add_service(
+            name="User",
+            service=UserService,
+            instructions="User management"
+        )
+        builder.build()
+        with pytest.raises(AgentAlreadyBuiltError):
+            builder.agent = builder.agent
+
+    def test_agent_setter_assigns_before_build(self):
+        """Assigning an agent before build() stores it (ttm_builder.py:105)."""
+        from pydantic_ai import Agent
+
+        builder = TTMBuilder(name="TestBuilder")
+        agent = Agent(name="External", deps_type=DinamicDepend)
+        builder.agent = agent
+        assert builder.agent is agent
+
+    def test_dependency_property(self):
+        """dependency property exposes the builder dependency (ttm_builder.py:114)."""
+        builder = TTMBuilder(name="TestBuilder")
+        assert isinstance(builder.dependency, DinamicDepend)
+
+    def test_build_applies_general_middlewares(self):
+        """build() applies registered general middlewares to services (ttm_builder.py:184, 463-464)."""
+        class M(Middleware):
+            async def dispatch(self, func, /, *args, **kw):
+                return await func(*args, **kw)
+
+        builder = TTMBuilder(name="TestBuilder")
+        builder.add_service(
+            name="User",
+            service=UserService,
+            instructions="User management"
+        )
+        builder.add_middleware(M())
+        builder.build()
+        svc = builder._TTMBuilder__manager.service_objects["User"]
+        assert len(svc.middleware) == 1
+
+    def test_add_middleware_returns_self_and_registers(self):
+        """add_middleware() appends and returns self (ttm_builder.py:281-282)."""
+        class M(Middleware):
+            async def dispatch(self, func, /, *args, **kw):
+                return await func(*args, **kw)
+
+        builder = TTMBuilder(name="TestBuilder")
+        mw = M()
+        assert builder.add_middleware(mw) is builder
+        assert builder._TTMBuilder__middlewares == [mw]
+
+    def test_remove_middleware_to_service(self):
+        """remove_middleware_to_service() removes a middleware by type (ttm_builder.py:292-293)."""
+        class M(Middleware):
+            async def dispatch(self, func, /, *args, **kw):
+                return await func(*args, **kw)
+
+        builder = TTMBuilder(name="TestBuilder")
+        builder.add_service(
+            name="User",
+            service=UserService,
+            instructions="User management"
+        )
+        builder.add_middleware(M())
+        builder.build()
+        assert builder.remove_middleware_to_service("User", M) is builder
+        svc = builder._TTMBuilder__manager.service_objects["User"]
+        assert svc.middleware == []
+
+    def test_add_skill_returns_self(self):
+        """add_skill() registers the skill and returns self (ttm_builder.py:301-302)."""
+        from pydantic_ai_skills import Skill
+
+        builder = TTMBuilder(name="TestBuilder")
+        skill = Skill(name="math", description="Math skill", content="content")
+        assert builder.add_skill(skill) is builder
+        assert builder._TTMBuilder__manager._Manager__skills == [skill]
+
+    def test_add_ttm_returns_self(self):
+        """add_ttm() registers a ToToolManager and returns self (ttm_builder.py:310-311)."""
+        from to_tool_manager.core.main.to_tool_manager import ToToolManager
+
+        service = Service(
+            name="User",
+            service=UserService,
+            instructions="User management"
+        )
+        ttm = ToToolManager(name="Orchestrator", resources=[service])
+        builder = TTMBuilder(name="TestBuilder")
+        assert builder.add_ttm(ttm) is builder
+        assert builder._TTMBuilder__manager._Manager__ttm == {"Orchestrator": ttm}
+
+    def test_to_mcp_tool_skips_subagents_capability(self):
+        """to_mcp_tool skips SubAgents capabilities from modules (ttm_builder.py:351)."""
+        builder = TTMBuilder(name="TestBuilder")
+        service = Service(
+            name="User",
+            service=UserService,
+            instructions="User management"
+        )
+        builder.add_module(
+            name="Commerce",
+            services=[service],
+            description="Commerce module"
+        )
+        app = builder.to_mcp_tool(name="MCPTest", instructions="Test")
+        assert app is not None
+        assert builder.agent is not None
+
+    def test_to_mcp_tool_skips_non_tool_capability_tools(self):
+        """to_mcp_tool skips tools that are not pydantic_ai Tool instances (ttm_builder.py:357)."""
+        from pydantic_ai import Capability
+
+        def raw_tool(query: str) -> str:
+            return f"Result: {query}"
+
+        external_cap = Capability(
+            id="external",
+            instructions="External tool",
+            tools=[raw_tool],
+        )
+        builder = TTMBuilder(name="TestBuilder", capabilities=[external_cap])
+        app = builder.to_mcp_tool(name="MCPTest", instructions="Test")
+        assert app is not None
+
+    def test_make_mcp_wrapper_returns_func_without_dotted_qualname(self):
+        """__make_mcp_wrapper returns the function as-is when qualname has no dot (ttm_builder.py:392)."""
+        builder = TTMBuilder(name="TestBuilder")
+        builder.add_service(
+            name="User",
+            service=UserService,
+            instructions="User management"
+        )
+        service_objects = builder._TTMBuilder__manager.service_objects
+
+        def fake_wrapper(ctx, name: str) -> str:
+            return name
+
+        fake_wrapper.__qualname__ = "SingleName"
+        result = builder._TTMBuilder__make_mcp_wrapper(fake_wrapper, service_objects)
+        assert result is fake_wrapper
+
+    def test_make_mcp_wrapper_returns_func_when_service_not_registered(self):
+        """__make_mcp_wrapper returns the function when service is not registered (ttm_builder.py:397)."""
+        builder = TTMBuilder(name="TestBuilder")
+        builder.add_service(
+            name="User",
+            service=UserService,
+            instructions="User management"
+        )
+        service_objects = builder._TTMBuilder__manager.service_objects
+
+        def fake_wrapper(ctx, name: str) -> str:
+            return name
+
+        fake_wrapper.__qualname__ = "Ghost.create"
+        result = builder._TTMBuilder__make_mcp_wrapper(fake_wrapper, service_objects)
+        assert result is fake_wrapper
+
+    def test_make_mcp_wrapper_returns_func_when_instance_missing(self):
+        """__make_mcp_wrapper returns the function when dep instance is missing (ttm_builder.py:403)."""
+        builder = TTMBuilder(name="TestBuilder")
+        service = Service(
+            name="User",
+            service=UserService,
+            instructions="User management"
+        )
+        # Register the Service object but skip dependency registration
+        builder._TTMBuilder__manager._Manager__service_objects["Ghost"] = service
+
+        def fake_wrapper(ctx, name: str) -> str:
+            return name
+
+        fake_wrapper.__qualname__ = "Ghost.create"
+        result = builder._TTMBuilder__make_mcp_wrapper(
+            fake_wrapper, builder._TTMBuilder__manager.service_objects
+        )
+        assert result is fake_wrapper
+
+    def test_make_mcp_wrapper_returns_func_when_method_missing(self):
+        """__make_mcp_wrapper returns the function when method does not exist (ttm_builder.py:409)."""
+        builder = TTMBuilder(name="TestBuilder")
+        builder.add_service(
+            name="User",
+            service=UserService,
+            instructions="User management"
+        )
+        service_objects = builder._TTMBuilder__manager.service_objects
+
+        def fake_wrapper(ctx, name: str) -> str:
+            return name
+
+        fake_wrapper.__qualname__ = "User.missing_method"
+        result = builder._TTMBuilder__make_mcp_wrapper(fake_wrapper, service_objects)
+        assert result is fake_wrapper
+
+    def test_make_mcp_wrapper_sync_wrapper_can_be_invoked(self):
+        """Sync MCP wrapper executes the bound method (ttm_builder.py:421-422)."""
+        builder = TTMBuilder(name="TestBuilder")
+        builder.add_service(
+            name="User",
+            service=UserService,
+            instructions="User management"
+        )
+        service_objects = builder._TTMBuilder__manager.service_objects
+
+        def fake_wrapper(ctx, name: str) -> str:
+            return name
+
+        fake_wrapper.__qualname__ = "User.create"
+        wrapper = builder._TTMBuilder__make_mcp_wrapper(fake_wrapper, service_objects)
+        assert wrapper(name="Alice") == "Created Alice"
+
+    def test_make_mcp_wrapper_async_wrapper_can_be_invoked(self):
+        """Async MCP wrapper executes the bound async method (ttm_builder.py:413-418)."""
+        builder = TTMBuilder(name="TestBuilder")
+        builder.add_service(
+            name="AsyncUser",
+            service=AsyncUserService,
+            instructions="Async user management"
+        )
+        service_objects = builder._TTMBuilder__manager.service_objects
+
+        def fake_wrapper(ctx, name: str) -> str:
+            return name
+
+        fake_wrapper.__qualname__ = "AsyncUser.create"
+        wrapper = builder._TTMBuilder__make_mcp_wrapper(fake_wrapper, service_objects)
+        assert asyncio.run(wrapper(name="Bob")) == "Created Bob"
