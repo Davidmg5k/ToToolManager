@@ -88,4 +88,9 @@ fail_under = 79
 show_missing = true
 
 [tool.pytest.ini_options]
-asyncio_mode = "auto"
+   asyncio_mode = "auto"
+   # Test modules import shared fixtures as `from tests.conftest import ...`.
+   # That needs the repo root importable. `python -m pytest` puts the CWD on
+   # sys.path, but the `pytest` console script does not, so a bare
+   # `pytest`/`uv run pytest` fails collection with `No module named 'tests'`.
+   pythonpath = ["."]

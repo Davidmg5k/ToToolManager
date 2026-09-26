@@ -7,6 +7,7 @@ from pydantic_ai import (
     AgentRetries,
     AgentToolset,
     AnyConcurrencyLimit,
+    Capability,
     EndStrategy,
 )
 from pydantic_ai.models import Model, KnownModelName
@@ -421,12 +422,13 @@ class TTMBuilder:
 
         capabilities = self.__get_capabilities()
         for capability in capabilities:
-            # SubAgents (modules) — manage their tools internally via the framework
-            from pydantic_ai_harness.subagents import SubAgents
-            if isinstance(capability, SubAgents):
+            # Sub-agents (modules and plain delegates) manage their tools
+            # internally through the framework and expose no `tools` sequence,
+            # so the positive check is what skips them -- and anything else that
+            # is not a service `Capability`.
+            if not isinstance(capability, Capability):
                 continue
 
-            # Capability (service) — create flat wrappers
             from pydantic_ai.tools import Tool
             for tool in capability.tools:
                 if not isinstance(tool, Tool):

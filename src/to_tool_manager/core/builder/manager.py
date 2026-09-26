@@ -1,6 +1,7 @@
 from typing import Dict, List, Sequence
 
 from pydantic_ai import Capability
+from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai_harness.subagents import SubAgent, SubAgents
 from pydantic_ai_skills import Skill
 
@@ -62,7 +63,13 @@ class Manager:
 
         Reference: REQ-009
         """
-        caps = list(self.__services.values())
+        # Heterogeneous list: services are `Capability`, the roster is an
+        # `AbstractCapability`. `AbstractCapability` is the common base, and the
+        # deps type must be spelled out because it is invariant -- a bare
+        # `Capability` would reject `SubAgents[DinamicDepend]`.
+        caps: List[AbstractCapability[DinamicDepend]] = list(
+            self.__services.values()
+        )
         sub_agents = self.__sub_agents
 
         if len(sub_agents) > 0:
