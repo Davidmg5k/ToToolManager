@@ -13,6 +13,7 @@ from to_tool_manager.exception import (
     ModuleAlreadyRegisteredError,
     ServiceAlreadyRegisteredError,
     ServiceNotFoundError,
+    SubAgentAlreadyRegisteredError,
     ToToolManagerAlreadyRegisteredError,
     ToToolManagerNotFoundError,
 )
@@ -28,7 +29,7 @@ class Manager:
     def __init__(self) -> None:
         self.__services: Dict[str, Capability] = {}
         self.__service_objects: Dict[str, Service] = {}
-        self.__modules: Dict[str, SubAgent[DinamicDepend]] = {}
+        self.__sub_agents: Dict[str, SubAgent[DinamicDepend]] = {}
         self.__skills: List[Skill] = []
         self.__ttm: Dict[str, ToToolManager] = {}
 
@@ -53,12 +54,19 @@ class Manager:
 
         Precondition: capabilities is None or a valid list
         Postcondition: returns combined list
+
+        Modules and plain sub-agents share one roster, so they are exposed to
+        the model through a single `SubAgents` capability and a single delegate
+        tool. Two capabilities would collide on the tool name and their
+        conflicting policies would be rejected at build time.
+
+        Reference: REQ-009
         """
         caps = list(self.__services.values())
-        modules = self.__modules
+        sub_agents = self.__sub_agents
 
-        if len(modules) > 0:
-            caps.append(SubAgents(agents=list(modules.values())))
+        if len(sub_agents) > 0:
+            caps.append(SubAgents(agents=list(sub_agents.values())))
 
         if capabilities is None:
             return caps
@@ -89,13 +97,42 @@ class Manager:
     def add_module(self, module: Module):
         """Adds a module to the manager.
 
-        Precondition: module.name is unique
+        Precondition: module.name is unique in the sub-agent roster
         Postcondition: module registered as SubAgent
+
+        Reference: REQ-002
+        """
+        self.__register_sub_agent(module, ModuleAlreadyRegisteredError)
+
+    def add_sub_agent(self, module: Module):
+        """Adds a sub-agent to the manager.
+
+        Precondition: module.name is unique in the sub-agent roster
+        Postcondition: module registered as SubAgent
+
+        Reference: REQ-009
+        """
+        self.__register_sub_agent(module, SubAgentAlreadyRegisteredError)
+
+    def __register_sub_agent(
+        self,
+        module: Module,
+        already_registered_error: type[ModuleAlreadyRegisteredError],
+    ) -> None:
+        """Registers a module as a SubAgent, failing if the name is taken.
+
+        The error type is the caller's, so each public entry point reports a
+        duplicate in its own vocabulary while sharing one uniqueness check.
+
+        Precondition: module.name is not already in the sub-agent roster
+        Postcondition: module built as SubAgent and stored under its name
+
+        Reference: REQ-002, REQ-009
         """
         name = module.name
-        if name in self.__modules:
-            raise ModuleAlreadyRegisteredError(name)
-        self.__modules[name] = module.build_as_agent()
+        if name in self.__sub_agents:
+            raise already_registered_error(name)
+        self.__sub_agents[name] = module.build_as_agent()
 
     def add_skill(self, skill: Skill):
         """Adds a skill to the manager.

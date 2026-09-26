@@ -10,6 +10,7 @@ from pydantic_ai import (
     EndStrategy,
 )
 from pydantic_ai.models import Model, KnownModelName
+from pydantic_ai.usage import UsageLimits
 from pydantic_ai_skills import Skill
 
 from to_tool_manager.core.main.module import Module
@@ -214,6 +215,76 @@ class TTMBuilder:
         ), self.__dep)
         return self
 
+    def add_sub_agent(self,
+        name: str,
+        description: str = '',
+        capabilities: List | None = None,
+        model: Model | KnownModelName | str | None = None,
+        instructions: Any = None,
+        system_prompt: str | Sequence[str] = (),
+        model_settings: AgentModelSettings | None = None,
+        retries: int | AgentRetries | None = None,
+        validation_context: Any = None,
+        tools: Sequence[Any] = (),
+        toolsets: Sequence[AgentToolset] | None = None,
+        defer_model_check: bool = False,
+        end_strategy: EndStrategy = 'graceful',
+        metadata: Any = None,
+        tool_timeout: float | None = None,
+        max_concurrency: AnyConcurrencyLimit = None,
+        output_type: Any = str,
+        models: Sequence[str] | None = None,
+        usage_limits: UsageLimits | None = None,
+        timeout_seconds: float | None = None,
+        max_calls: int | None = None,
+        on_failure: str | None = None,
+        contain_errors: bool | None = None,
+    ) -> 'TTMBuilder':
+        """Registers a sub-agent the main agent can delegate to.
+
+        A sub-agent is a delegate, not a module: it carries no services of its
+        own. What it does carry is the `pydantic_ai.Agent` parameters -- its own
+        model, prompt, tools or toolsets -- plus the per-delegate run controls
+        `SubAgent` understands. Every run control left as None inherits the
+        `SubAgents` capability default.
+
+        To delegate a group of services, use `add_module` instead.
+
+        `models` names keys of the `SubAgents` menu, so the main agent picks the
+        model per delegation; the first key listed is the delegate's default.
+
+        Precondition: name is unique in the sub-agent roster
+        Postcondition: sub-agent registered, returns self
+
+        Reference: REQ-009
+        """
+        self.__manager.add_sub_agent(Module(
+            name=name,
+            description=description,
+            capabilities=capabilities,
+            model=model,
+            instructions=instructions,
+            system_prompt=system_prompt,
+            model_settings=model_settings,
+            retries=retries,
+            validation_context=validation_context,
+            tools=tools,
+            toolsets=toolsets,
+            defer_model_check=defer_model_check,
+            end_strategy=end_strategy,
+            metadata=metadata,
+            tool_timeout=tool_timeout,
+            max_concurrency=max_concurrency,
+            output_type=output_type,
+            models=models,
+            usage_limits=usage_limits,
+            timeout_seconds=timeout_seconds,
+            max_calls=max_calls,
+            on_failure=on_failure,
+            contain_errors=contain_errors,
+        ))
+        return self
+
     def add_module(self,
         name: str,
         services: Sequence[Service],
@@ -238,12 +309,15 @@ class TTMBuilder:
     ) -> 'TTMBuilder':
         """Adds a module to the builder.
 
+        A module is a sub-agent built from a group of services, so unlike
+        `add_sub_agent` it requires them. Both land in the same sub-agent roster.
+
         Precondition: name is unique, services is not empty
         Postcondition: module added to manager, returns self
 
         Reference: REQ-002
         """
-        module = Module(
+        self.__manager.add_module(Module(
             name=name,
             services=services,
             description=description,
@@ -264,8 +338,10 @@ class TTMBuilder:
             tool_timeout=tool_timeout,
             max_concurrency=max_concurrency,
             output_type=output_type,
-        )
-        self.__manager.add_module(module)
+        ))
+        # SubAgents forwards the parent's deps to the delegate, and service tools
+        # resolve their instance from ctx.deps, so the parent's dependency must
+        # carry the module's services too -- not only the Module's own.
         for svc in services:
             svc.service_to_dependency(self.__dep)
         return self

@@ -13,7 +13,8 @@ Hierarchy:
     │   ├── ServiceAlreadyRegisteredError
     │   └── DependencyNotSetError
     ├── ModuleError
-    │   └── ModuleAlreadyRegisteredError
+    │   ├── ModuleAlreadyRegisteredError
+    │   │   └── SubAgentAlreadyRegisteredError
     ├── AgentError
     │   ├── AgentNotBuiltError
     │   └── AgentAlreadyBuiltError
@@ -40,6 +41,7 @@ from to_tool_manager.exception.service import (
 from to_tool_manager.exception.module import (
     ModuleError,
     ModuleAlreadyRegisteredError,
+    SubAgentAlreadyRegisteredError,
 )
 from to_tool_manager.exception.agent import (
     AgentError,
@@ -68,6 +70,7 @@ __all__ = [
     "DependencyNotSetError",
     "ModuleError",
     "ModuleAlreadyRegisteredError",
+    "SubAgentAlreadyRegisteredError",
     "AgentError",
     "AgentNotBuiltError",
     "AgentAlreadyBuiltError",

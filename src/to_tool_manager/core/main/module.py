@@ -10,6 +10,7 @@ from pydantic_ai import (
     EndStrategy,
 )
 from pydantic_ai.models import Model, KnownModelName
+from pydantic_ai.usage import UsageLimits
 from pydantic_ai_harness.subagents import SubAgent
 
 from to_tool_manager.core.main.service import Service
@@ -25,16 +26,20 @@ from to_tool_manager.exception import (
 
 @dataclass
 class Module:
-    """Groups services as a sub-agent.
+    """Specification of a sub-agent: a named Agent plus its per-delegate run controls.
 
-    Precondition: name is unique, services is not empty
+    With `services`, it groups them as a sub-agent (REQ-002, REQ-007). Without,
+    it describes a plain delegate built only from the Agent parameters --
+    the shape `TTMBuilder.add_sub_agent` registers.
+
+    Precondition: name is unique within the sub-agent roster
     Postcondition: Module can be built as SubAgent via build_as_agent()
 
-    Reference: REQ-002, REQ-007
+    Reference: REQ-002, REQ-007, REQ-009
     """
     name: str
-    services: Sequence[Service]
-    description: str
+    services: Sequence[Service] = ()
+    description: str = ''
     capabilities: List[Capability] | None = None
     middleware: List | None = None
     disable_middlewares: Tuple[str, ...] = field(default_factory=tuple)
@@ -52,6 +57,15 @@ class Module:
     tool_timeout: float | None = None
     max_concurrency: Any = None
     output_type: Any = str
+
+    # Per-delegate run controls, forwarded verbatim to `SubAgent`.
+    # None means "inherit the SubAgents capability default".
+    models: Sequence[str] | None = None
+    usage_limits: UsageLimits | None = None
+    timeout_seconds: float | None = None
+    max_calls: int | None = None
+    on_failure: str | None = None
+    contain_errors: bool | None = None
 
     def __post_init__(self):
         self.__agent: Agent[DinamicDepend] | None = None
@@ -95,13 +109,15 @@ class Module:
     def build_as_agent(self) -> SubAgent[DinamicDepend]:
         """Builds the module as a SubAgent with its services.
 
-        Precondition: services is not empty
+        Precondition: none -- an empty `services` yields a plain delegate
         Postcondition: SubAgent created with capabilities from each service
+                       and the declared per-delegate run controls
 
         Flow: For each service -> filter disabled middlewares ->
-               add module middlewares -> build capability
+               add module middlewares -> build capability ->
+               wrap the Agent with the SubAgent run controls
 
-        Reference: REQ-002, REQ-007
+        Reference: REQ-002, REQ-007, REQ-009
         """
         cp = self.capabilities
         capabilities = [] + cp if cp else []
@@ -135,7 +151,15 @@ class Module:
         )
 
         self.agent = agent
-        return SubAgent(agent)
+        return SubAgent(
+            agent,
+            models=self.models,
+            usage_limits=self.usage_limits,
+            timeout_seconds=self.timeout_seconds,
+            max_calls=self.max_calls,
+            on_failure=self.on_failure,
+            contain_errors=self.contain_errors,
+        )
 
     def _apply_module_middlewares(self, service: Service) -> None:
         """Applies module middlewares to a service, respecting disable_middlewares.

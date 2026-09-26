@@ -45,6 +45,7 @@
   - [Async services and DI](#async-services-and-di)
   - [Error mapping and PII scrubbing](#error-mapping-and-pii-scrubbing)
   - [Sub-agents with Module](#sub-agents-with-module)
+  - [Sub-agents with `add_sub_agent`](#sub-agents-with-add_sub_agent)
   - [Disabling inherited middleware](#disabling-inherited-middleware)
   - [Exporting tools to an MCP server](#exporting-tools-to-an-mcp-server)
   - [Gateways and approvals with HITL](#gateways-and-approvals-with-hitl)
@@ -340,17 +341,17 @@ A `@dataclass(slots=True)` describing one class whose public methods become tool
 
 ### `Module`
 
-A `@dataclass` grouping services into a sub-agent, each with its own model, prompt, retries and middleware layer.
+A `@dataclass` describing a sub-agent: a named `Agent` plus its per-delegate run controls. With `services` it groups them as a module; without, it describes a plain delegate built only from the `Agent` parameters. [`TTMBuilder.add_sub_agent`](#ttmbuilderadd_sub_agent--method) registers the no-services form without going through this class.
 
-**Description**: Builds a pydantic-ai `Agent` for its services and wraps it in a `SubAgent`. Precondition: `services` is a non-empty sequence of `Service`. Postcondition: `self.agent` holds the built `Agent` and `self.dependency` the container with every service instance.
+**Description**: Builds a pydantic-ai `Agent` and wraps it in a `SubAgent`. Precondition: none — an empty `services` yields a plain delegate. Postcondition: `self.agent` holds the built `Agent` and `self.dependency` the container with every service instance.
 
 **Return**: `None` — a declaration object; call `build_as_agent()` or let `ToToolManager`/`TTMBuilder` do it.
 
 **Args** (all keyword arguments, as a dataclass):
 
 - `name`: `str` — *(required)* sub-agent name.
-- `services`: `Sequence[Service]` — *(required)* services exposed by this sub-agent.
-- `description`: `str` — *(required)* description handed to the sub-agent `Agent`; this is what the parent model reads when deciding to delegate.
+- `services`: `Sequence[Service]` = `()` — services exposed by this sub-agent.
+- `description`: `str` = `''` — description handed to the sub-agent `Agent`; this is what the parent model reads when deciding to delegate.
 - `capabilities`: `List[Capability] | None` = `None` — extra capabilities merged with the generated ones.
 - `middleware`: `List | None` = `None` — middlewares appended to every service on `build_as_agent()`, subject to both `Module.disable_middlewares` and each service's own `disable_middlewares`.
 - `disable_middlewares`: `Tuple[str, ...]` = `()` — names this module must not apply to its services. Disabling a middleware the module itself declares raises `SelfDisableMiddlewareError` **at construction time**.
@@ -368,6 +369,15 @@ A `@dataclass` grouping services into a sub-agent, each with its own model, prom
 - `tool_timeout`: `float | None` = `None` — per-tool timeout in seconds.
 - `max_concurrency`: `Any` = `None` — concurrency limit.
 - `output_type`: `Any` = `str` — output type of the sub-agent.
+
+**Per-delegate run controls** — forwarded verbatim to the `SubAgent` wrapper. `None` means "inherit the `SubAgents` capability default".
+
+- `models`: `Sequence[str] | None` = `None` — **not usable yet.** It would name keys of the `SubAgents` model menu, but the package builds that capability with no menu (`core/builder/manager.py:71`), so any value raises `ValueError` at build time. Leave it `None` — see [Gotchas](#gotchas-and-troubleshooting).
+- `usage_limits`: `UsageLimits | None` = `None` — request/token budget for one delegation. Setting it makes the delegate's tokens stop aggregating into the parent's `usage`.
+- `timeout_seconds`: `float | None` = `None` — wall-clock budget for one delegation; exceeding it returns a soft steering message to the parent instead of hanging.
+- `max_calls`: `int | None` = `None` — maximum delegations to this sub-agent per parent run.
+- `on_failure`: `str | None` = `None` — steering message returned to the parent when this delegate degrades, replacing the built-in default. Setting it also makes delegate failures soft: an error comes back as a normal tool result instead of raising `ModelRetry` in the parent.
+- `contain_errors`: `bool | None` = `None` — whether an unexpected delegate crash is contained as a bounded `ModelRetry` instead of aborting the parent run.
 
 **Properties and methods**:
 
@@ -651,9 +661,53 @@ Fluent, declarative assembly. Same output as `ToToolManager`, different ergonomi
 
 **Kwargs**: None.
 
+#### `TTMBuilder.add_sub_agent(...)` — method
+
+**Description**: Registers a sub-agent the main agent can delegate to, and returns `self`. A sub-agent is a **delegate, not a module**: it carries no services of its own. What it carries is the `pydantic_ai.Agent` parameters — its own model, prompt, tools or toolsets — plus the per-delegate run controls `SubAgent` understands. To delegate a group of services, use [`add_module`](#ttmbuilderadd_module--method) instead.
+
+Modules and sub-agents share **one roster**, so a name is taken whichever way it was registered, and they are exposed through a single `SubAgents` capability — hence a single `delegate_task` tool.
+
+**Return**: `TTMBuilder` — `self`.
+
+**Args**:
+
+- `name`: `str` — *(required)* unique sub-agent name; also the name the parent model delegates to.
+- `description`: `str` = `''` — what the parent model reads when deciding to delegate.
+- `capabilities`: `List | None` = `None` — extra capabilities.
+- `model`, `instructions`, `system_prompt`, `model_settings`, `retries`, `validation_context`, `tools`, `toolsets`, `defer_model_check`, `end_strategy`, `metadata`, `tool_timeout`, `max_concurrency`, `output_type` — same meaning and defaults as the corresponding [`Module`](#module) fields.
+- `models`: `Sequence[str] | None` = `None` — **not usable yet**; any value raises `ValueError` at build time. See [Gotchas](#gotchas-and-troubleshooting).
+- `usage_limits`: `UsageLimits | None` = `None` — request/token budget for one delegation.
+- `timeout_seconds`: `float | None` = `None` — wall-clock budget for one delegation.
+- `max_calls`: `int | None` = `None` — maximum delegations to this sub-agent per parent run.
+- `on_failure`: `str | None` = `None` — steering message returned to the parent when this delegate degrades. It also makes delegate failures soft, returning an error as a normal tool result instead of raising `ModelRetry` in the parent.
+- `contain_errors`: `bool | None` = `None` — whether an unexpected delegate crash is contained instead of aborting the parent run.
+
+Every run control left as `None` inherits the `SubAgents` capability default.
+
+**Raises**: `SubAgentAlreadyRegisteredError` — name already in the roster (whether taken by a module or another sub-agent).
+
+**Kwargs**: None.
+
+```python
+from to_tool_manager import TTMBuilder
+
+builder = TTMBuilder("root", model="openai:gpt-4o")
+builder.add_sub_agent(
+    name="researcher",
+    description="Investigates a topic and reports findings",
+    model="openai:gpt-4o-mini",     # cheaper model for a narrow job
+    # SubAgent run controls
+    timeout_seconds=30.0,
+    max_calls=3,
+    on_failure="Retry with a narrower question",
+    contain_errors=True,
+)
+builder.build()
+```
+
 #### `TTMBuilder.add_module(...)` — method
 
-**Description**: Registers a `Module` (building its sub-agent immediately) and returns `self`.
+**Description**: Registers a `Module` (building its sub-agent immediately) and returns `self`. A module is a sub-agent built from a group of services, so unlike `add_sub_agent` it requires them. Both land in the same sub-agent roster.
 
 **Return**: `TTMBuilder` — `self`.
 
@@ -1071,6 +1125,7 @@ TTMError
 │   └── DependencyNotSetError(name: str)   ← also AttributeError
 ├── ModuleError
 │   └── ModuleAlreadyRegisteredError(name: str)
+│       └── SubAgentAlreadyRegisteredError(name: str)
 ├── AgentError
 │   ├── AgentNotBuiltError(component: str)
 │   └── AgentAlreadyBuiltError(component: str)
@@ -1090,6 +1145,7 @@ TTMError
 | `ServiceAlreadyRegisteredError` | `Service '{name}' already registered` | `TTMBuilder.add_service` with a duplicate name. |
 | `DependencyNotSetError` | `DinamicDepend has no attribute '{name}'` | Reading a service name that was never registered. Also an `AttributeError`, so `hasattr` returns `False`. |
 | `ModuleAlreadyRegisteredError` | `Module '{name}' already registered` | `TTMBuilder.add_module` with a duplicate name. |
+| `SubAgentAlreadyRegisteredError` | `Sub-agent '{name}' already registered in the sub-agent roster` | `TTMBuilder.add_sub_agent` with a name already held by a module or another sub-agent. Subclasses `ModuleAlreadyRegisteredError`, so guarding the roster with the latter keeps catching it. |
 | `AgentNotBuiltError` | `Agent not built. Call build() first on {component}.` | Reading `.agent` on `Module`, `ToToolManager` or `TTMBuilder` before building. |
 | `AgentAlreadyBuiltError` | `Agent already built on {component}. Cannot rebuild.` | Assigning `.agent` twice, or calling `Module.build_as_agent()` a second time. |
 | `MiddlewareNotInitializedError` | `Middleware sequence is not initialized (None)` | Reading `ToToolManager.middlewares` when none were configured. |
@@ -1148,10 +1204,12 @@ These appear on `Module`, `ToToolManager` and `TTMBuilder` with identical meanin
 
 Names are global within a manager or builder and are **not** validated by `ToToolManager`:
 
-| Component | Service names | Module names |
-|---|---|---|
-| `ToToolManager` | last registration wins, silently | last registration wins, silently |
-| `TTMBuilder` | `ServiceAlreadyRegisteredError` | `ModuleAlreadyRegisteredError` |
+| Component | Service names | Module names | Sub-agent names |
+|---|---|---|---|
+| `ToToolManager` | last registration wins, silently | last registration wins, silently | n/a — no `add_sub_agent`; a `Module` with no `services` is a plain delegate |
+| `TTMBuilder` | `ServiceAlreadyRegisteredError` | `ModuleAlreadyRegisteredError` | `SubAgentAlreadyRegisteredError` |
+
+Modules and sub-agents occupy **one roster**, so the collision is symmetric: `add_module` and `add_sub_agent` reject each other's names, each reporting the duplicate in its own vocabulary.
 
 ---
 
@@ -1359,6 +1417,35 @@ agent = manager.build_agent()
 ```
 
 The parent model only sees `commerce` as a delegation target, which keeps the top-level tool list small and the prompts focused.
+
+### Sub-agents with `add_sub_agent`
+
+`add_sub_agent` registers a delegate: an agent with its own model, prompt, tools or toolsets, and **no services of its own**. Use it when the delegate brings its own capabilities, or needs a per-delegation budget rather than a domain of services. To delegate a group of services, reach for [`add_module`](#ttmbuilderadd_module--method) instead.
+
+```python
+from to_tool_manager import TTMBuilder
+
+# A delegate that reasons, or carries its own tools/toolsets.
+with TTMBuilder("root", model="openai:gpt-4o") as builder:
+    builder.add_sub_agent(
+        name="researcher",
+        description="Investigates a topic and reports findings with sources.",
+        instructions="Research the task, then answer with concrete sources.",
+        model="openai:gpt-4o-mini",      # cheaper model for a narrow job
+        timeout_seconds=30.0,            # never hang the parent on it
+        max_calls=3,                     # at most 3 delegations per run
+        on_failure="Retry with a narrower question.",
+        contain_errors=True,             # a crash retries instead of killing the run
+    )
+
+agent = builder.agent      # build() runs on context-manager exit
+```
+
+The run controls are what make this more than a module: `timeout_seconds` and `max_calls` bound what one delegate can cost the parent run, and `on_failure` / `contain_errors` decide whether a failing delegate degrades the answer or ends the run.
+
+Modules and sub-agents occupy one roster, so the parent sees every delegate through a single `delegate_task` tool, and a name is taken whichever way it was registered.
+
+A module's services are registered on the **parent's** dependency as well as the module's own, because pydantic-ai forwards the parent `deps` into the delegate run and the generated tools resolve their instance from there. Registering a module through the builder handles that; constructing the `Agent` yourself from `Manager` capabilities does not, and the delegate's tools fail at call time with `DependencyNotSetError`.
 
 ### Disabling inherited middleware
 
@@ -1578,6 +1665,19 @@ The last middleware in the list wraps the others, so it runs first. Outer layers
 ### `Module.build_as_agent()` raises on the second call
 
 The `agent` setter refuses to overwrite, so a module builds exactly once. Create a fresh `Module` per build, or let a single `TTMBuilder`/`ToToolManager` own it.
+
+### `models` on a sub-agent raises `ValueError`
+
+The `models` run control is accepted by `Module` and `TTMBuilder.add_sub_agent`, but no value works yet. It names keys of the `SubAgents` model menu, and the package creates that capability without one (`core/builder/manager.py:71`), so the harness validates the restriction against an empty menu and raises:
+
+```python
+builder.add_sub_agent(name="researcher", description="…", models=["fast"])
+builder.build()
+# ValueError: Sub-agent 'researcher' restricts `models` to unknown option(s)
+# 'fast'. Add them to `SubAgents(models=...)`; configured options: (none configured).
+```
+
+Leave `models` as `None`. Give the delegate its own `model=` instead, which is the per-delegate model choice that is reachable today.
 
 ### My exception never reaches my code
 
