@@ -2,7 +2,7 @@
 
 > Turn plain Python classes into LLM-callable tools, with middleware, sub-agents and human-in-the-loop — without writing a single tool schema.
 
-**Version:** 0.9.5 | **Python:** >=3.12 | **License:** MIT
+**Version:** 0.9.6 | **Python:** >=3.12 | **License:** MIT
 
 ---
 
@@ -25,6 +25,7 @@
   - [`ToToolManager`](#totoolmanager)
   - [`TTMBuilder`](#ttmbuilder)
   - [`DinamicDepend`](#dinamicdepend)
+  - [`BaseAgent`](#baseagent)
   - [`Include` / `Exclude` / `MethodsType`](#include--exclude--methodstype)
 - [Middleware](#middleware)
   - [`Middleware`](#middleware)
@@ -834,6 +835,114 @@ The dependency container attached to every agent. Not re-exported from the packa
 - `__getattribute__(name)` — returns the stored instance.
 
 **Gotcha**: `DependencyNotSetError` also subclasses `AttributeError`, so `hasattr(deps, "x")` returns `False` and `getattr(deps, "x", default)` returns the default instead of raising.
+
+---
+
+### `BaseAgent`
+
+Abstract base class for platform agents. It hides the `TTMBuilder` lifecycle behind a two-step flow — construct a subclass with the builder's configuration, then call `init_agent()` — so a concrete agent is defined by a single `_composer()` hook instead of repeated wiring code. Lives at `to_tool_manager.util.base_agent`; not re-exported from the package root.
+
+**Description**: Stores a `TTMBuilder` configuration and builds the agent on demand. Precondition: `name` is a valid string and the subclass implements `_composer`. Postcondition: after `init_agent()`, `agent` and `dependency` are readable; before it, both raise `RuntimeError`.
+
+**Return**: n/a — abstract class; instantiate a subclass.
+
+**Args** (constructor — exactly the same names, order, types and defaults as [`TTMBuilder`](#ttmbuilder)):
+
+- `name`: `str` — *(required)* agent name; also used as the fallback `instructions`.
+- `capabilities`: `List | None` = `None` — extra capabilities merged with generated ones.
+- `toolsets`: `List | None` = `None` — extra toolsets; skills and modules are prepended.
+- `model`: `Model | KnownModelName | str | None` = `None` — LLM model.
+- `instructions`: `Any` = `None` — agent instructions; when falsy, `name` is used instead.
+- `system_prompt`: `str | Sequence[str]` = `()` — system prompt.
+- `model_settings`: `AgentModelSettings | None` = `None` — forwarded to `Agent`.
+- `retries`: `int | AgentRetries | None` = `None` — retry budget.
+- `validation_context`: `Any` = `None` — forwarded to `Agent`.
+- `tools`: `Sequence[Any]` = `()` — extra hand-written tools.
+- `defer_model_check`: `bool` = `False` — skip model validation at construction.
+- `end_strategy`: `EndStrategy` = `'graceful'` — end strategy.
+- `metadata`: `Any` = `None` — forwarded to `Agent`.
+- `tool_timeout`: `float | None` = `None` — per-tool timeout in seconds.
+- `max_concurrency`: `AnyConcurrencyLimit` = `None` — concurrency limit.
+- `output_type`: `Any` = `str` — output type.
+- `description`: `str | None` = `None` — agent description.
+
+**Properties and methods**:
+
+#### `BaseAgent.init_agent()` — method
+
+**Description**: Opens a `TTMBuilder` context with the constructor values, calls `_composer()` so the subclass registers its services, modules, middlewares and skills, and lets the context manager run `build()` on exit. Calling it again rebuilds from scratch on a fresh builder, replacing what `agent` and `dependency` return afterwards.
+
+**Return**: `None` — read the results from the `agent` and `dependency` properties.
+
+**Raises**: propagates any exception raised by `_composer()` or `TTMBuilder.build()`; in that case `agent` and `dependency` keep raising `RuntimeError`.
+
+**Args** / **Kwargs**: None.
+
+#### `BaseAgent.agent` — property
+
+**Description**: Returns the agent built by the last `init_agent()` call.
+
+**Return**: `Agent` — the built `pydantic_ai.Agent`.
+
+**Raises**: `RuntimeError` — if `init_agent()` has not been called yet, or its last call failed.
+
+**Args** / **Kwargs**: None.
+
+#### `BaseAgent.dependency` — property
+
+**Description**: Returns the dependency container populated by the last `init_agent()` call — one instance per service registered in `_composer()`, the same object tools receive as `ctx.deps`.
+
+**Return**: `DinamicDepend` — the populated container.
+
+**Raises**: `RuntimeError` — if `init_agent()` has not been called yet, or its last call failed.
+
+**Args** / **Kwargs**: None.
+
+#### `BaseAgent._composer(ttm_builder)` — abstract method
+
+**Description**: Template method invoked by `init_agent()` while the builder is open and unbuilt. Register services, modules, sub-agents, middlewares and skills here. Do **not** call `TTMBuilder.build()` — the context manager owns the build step.
+
+**Return**: `None`.
+
+**Args**:
+
+- `ttm_builder`: `TTMBuilder` — *(required)* the builder opened by `init_agent()`.
+
+**Kwargs**: None.
+
+```python
+from to_tool_manager import TTMBuilder
+from to_tool_manager.util.base_agent import BaseAgent
+
+
+class UserManager:
+    """In-memory user store."""
+
+    def get(self, id: str) -> str:
+        return f"User {id}"
+
+
+class UserAgent(BaseAgent):
+    """Declarative composition of the user agent."""
+
+    def _composer(self, ttm_builder: TTMBuilder) -> None:
+        ttm_builder.add_service(
+            name="users",
+            service=UserManager,
+            instructions="Use for user lookup.",
+        )
+
+
+wrapper = UserAgent(
+    name="App",
+    model="test",                     # offline test model; swap for "openai:gpt-4o"
+    instructions="You manage users.",
+)
+wrapper.init_agent()
+
+agent = wrapper.agent                 # pydantic_ai.Agent, ready to run
+deps = wrapper.dependency             # DinamicDepend with the "users" service
+```
 
 ---
 
