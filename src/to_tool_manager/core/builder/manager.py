@@ -1,4 +1,4 @@
-from typing import Dict, List, Sequence
+from typing import Callable, Dict, List, Sequence
 
 from pydantic_ai import Capability
 from pydantic_ai.capabilities import AbstractCapability
@@ -15,6 +15,7 @@ from to_tool_manager.exception import (
     ServiceAlreadyRegisteredError,
     ServiceNotFoundError,
     SubAgentAlreadyRegisteredError,
+    SubAgentNameRequiredError,
     ToToolManagerAlreadyRegisteredError,
     ToToolManagerNotFoundError,
 )
@@ -109,37 +110,54 @@ class Manager:
 
         Reference: REQ-002
         """
-        self.__register_sub_agent(module, ModuleAlreadyRegisteredError)
+        self.__register_delegate(
+            module.name,
+            ModuleAlreadyRegisteredError,
+            module.build_as_agent,
+        )
 
-    def add_sub_agent(self, module: Module):
-        """Adds a sub-agent to the manager.
+    def add_sub_agent(self, sub_agent: SubAgent[DinamicDepend]):
+        """Adds a delegate Agent to the manager.
 
-        Precondition: module.name is unique in the sub-agent roster
-        Postcondition: module registered as SubAgent
+        The delegate arrives already built: its name -- the key of the roster
+        and what the parent model delegates to -- is the wrapped agent's own
+        name.
+
+        Precondition: the wrapped agent carries a name, unique in the roster
+        Postcondition: delegate registered under its resolved name
 
         Reference: REQ-009
         """
-        self.__register_sub_agent(module, SubAgentAlreadyRegisteredError)
+        name = sub_agent.resolved_name
+        if name is None:
+            raise SubAgentNameRequiredError()
+        self.__register_delegate(
+            name,
+            SubAgentAlreadyRegisteredError,
+            lambda: sub_agent,
+        )
 
-    def __register_sub_agent(
+    def __register_delegate(
         self,
-        module: Module,
+        name: str,
         already_registered_error: type[ModuleAlreadyRegisteredError],
+        build_delegate: Callable[[], SubAgent[DinamicDepend]],
     ) -> None:
-        """Registers a module as a SubAgent, failing if the name is taken.
+        """Registers a delegate in the sub-agent roster, failing if the name is taken.
 
-        The error type is the caller's, so each public entry point reports a
-        duplicate in its own vocabulary while sharing one uniqueness check.
+        The uniqueness check runs before the delegate is built, so a duplicate
+        is reported as such instead of surfacing as whatever the build itself
+        fails on. The error type is the caller's, so each public entry point
+        reports a duplicate in its own vocabulary while sharing one check.
 
-        Precondition: module.name is not already in the sub-agent roster
-        Postcondition: module built as SubAgent and stored under its name
+        Precondition: name is not already in the sub-agent roster
+        Postcondition: delegate stored under its name
 
         Reference: REQ-002, REQ-009
         """
-        name = module.name
         if name in self.__sub_agents:
             raise already_registered_error(name)
-        self.__sub_agents[name] = module.build_as_agent()
+        self.__sub_agents[name] = build_delegate()
 
     def add_skill(self, skill: Skill):
         """Adds a skill to the manager.

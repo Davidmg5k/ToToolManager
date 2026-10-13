@@ -15,6 +15,7 @@ Hierarchy:
     ├── ModuleError
     │   ├── ModuleAlreadyRegisteredError
     │   │   └── SubAgentAlreadyRegisteredError
+    │   └── SubAgentNameRequiredError
     ├── AgentError
     │   ├── AgentNotBuiltError
     │   └── AgentAlreadyBuiltError
@@ -42,6 +43,7 @@ from to_tool_manager.exception.module import (
     ModuleError,
     ModuleAlreadyRegisteredError,
     SubAgentAlreadyRegisteredError,
+    SubAgentNameRequiredError,
 )
 from to_tool_manager.exception.agent import (
     AgentError,
@@ -71,6 +73,7 @@ __all__ = [
     "ModuleError",
     "ModuleAlreadyRegisteredError",
     "SubAgentAlreadyRegisteredError",
+    "SubAgentNameRequiredError",
     "AgentError",
     "AgentNotBuiltError",
     "AgentAlreadyBuiltError",

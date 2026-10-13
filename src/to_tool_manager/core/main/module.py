@@ -29,8 +29,9 @@ class Module:
     """Specification of a sub-agent: a named Agent plus its per-delegate run controls.
 
     With `services`, it groups them as a sub-agent (REQ-002, REQ-007). Without,
-    it describes a plain delegate built only from the Agent parameters --
-    the shape `TTMBuilder.add_sub_agent` registers.
+    it builds a delegate from its Agent parameters alone -- an Agent with no
+    capabilities of its own. A delegate that is already a built `Agent` needs
+    no `Module`: `TTMBuilder.add_sub_agent` registers it directly.
 
     Precondition: name is unique within the sub-agent roster
     Postcondition: Module can be built as SubAgent via build_as_agent()

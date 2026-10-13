@@ -11,7 +11,7 @@ from pydantic_ai import (
     EndStrategy,
 )
 from pydantic_ai.models import Model, KnownModelName
-from pydantic_ai.usage import UsageLimits
+from pydantic_ai_harness.subagents import SubAgent
 from pydantic_ai_skills import Skill
 
 from to_tool_manager.core.main.module import Module
@@ -216,74 +216,25 @@ class TTMBuilder:
         ), self.__dep)
         return self
 
-    def add_sub_agent(self,
-        name: str,
-        description: str = '',
-        capabilities: List | None = None,
-        model: Model | KnownModelName | str | None = None,
-        instructions: Any = None,
-        system_prompt: str | Sequence[str] = (),
-        model_settings: AgentModelSettings | None = None,
-        retries: int | AgentRetries | None = None,
-        validation_context: Any = None,
-        tools: Sequence[Any] = (),
-        toolsets: Sequence[AgentToolset] | None = None,
-        defer_model_check: bool = False,
-        end_strategy: EndStrategy = 'graceful',
-        metadata: Any = None,
-        tool_timeout: float | None = None,
-        max_concurrency: AnyConcurrencyLimit = None,
-        output_type: Any = str,
-        models: Sequence[str] | None = None,
-        usage_limits: UsageLimits | None = None,
-        timeout_seconds: float | None = None,
-        max_calls: int | None = None,
-        on_failure: str | None = None,
-        contain_errors: bool | None = None,
-    ) -> 'TTMBuilder':
-        """Registers a sub-agent the main agent can delegate to.
+    def add_sub_agent(self, agent: Agent) -> 'TTMBuilder':
+        """Registers an already built Agent as a delegate.
 
-        A sub-agent is a delegate, not a module: it carries no services of its
-        own. What it does carry is the `pydantic_ai.Agent` parameters -- its own
-        model, prompt, tools or toolsets -- plus the per-delegate run controls
-        `SubAgent` understands. Every run control left as None inherits the
-        `SubAgents` capability default.
+        The delegate is the `pydantic_ai.Agent` you constructed, so its model,
+        prompt, tools and toolsets travel with it -- the builder only wraps it
+        as a `SubAgent` and puts it on the roster. It carries no services of
+        its own; to delegate a group of services, use `add_module` instead.
 
-        To delegate a group of services, use `add_module` instead.
+        The agent's `name` becomes the roster key and the name the parent
+        model delegates to. Build it with `deps_type=DinamicDepend` if its
+        tools read the framework's dependency container: the parent forwards
+        its own `DinamicDepend` into every delegate run.
 
-        `models` names keys of the `SubAgents` menu, so the main agent picks the
-        model per delegation; the first key listed is the delegate's default.
-
-        Precondition: name is unique in the sub-agent roster
-        Postcondition: sub-agent registered, returns self
+        Precondition: agent.name is set and unique in the sub-agent roster
+        Postcondition: agent registered as a delegate, returns self
 
         Reference: REQ-009
         """
-        self.__manager.add_sub_agent(Module(
-            name=name,
-            description=description,
-            capabilities=capabilities,
-            model=model,
-            instructions=instructions,
-            system_prompt=system_prompt,
-            model_settings=model_settings,
-            retries=retries,
-            validation_context=validation_context,
-            tools=tools,
-            toolsets=toolsets,
-            defer_model_check=defer_model_check,
-            end_strategy=end_strategy,
-            metadata=metadata,
-            tool_timeout=tool_timeout,
-            max_concurrency=max_concurrency,
-            output_type=output_type,
-            models=models,
-            usage_limits=usage_limits,
-            timeout_seconds=timeout_seconds,
-            max_calls=max_calls,
-            on_failure=on_failure,
-            contain_errors=contain_errors,
-        ))
+        self.__manager.add_sub_agent(SubAgent(agent))
         return self
 
     def add_module(self,

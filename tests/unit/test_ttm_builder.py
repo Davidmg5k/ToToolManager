@@ -1,5 +1,6 @@
 import asyncio
 import pytest
+from pydantic_ai import Agent
 from to_tool_manager.core.builder.ttm_builder import TTMBuilder
 from to_tool_manager.core.main.service import Service
 from to_tool_manager.core.main.shared.dinamic_depend import DinamicDepend
@@ -11,6 +12,7 @@ from to_tool_manager.exception import (
     ModuleAlreadyRegisteredError,
     SelfDisableMiddlewareError,
     SubAgentAlreadyRegisteredError,
+    SubAgentNameRequiredError,
 )
 
 
@@ -321,77 +323,52 @@ class TestTTMBuilderAddModuleParams:
 
 
 class TestTTMBuilderAddSubAgent:
-    """Tests for add_sub_agent (REQ-009)."""
+    """Tests for add_sub_agent (REQ-009): the delegate arrives as a built Agent."""
 
     @staticmethod
     def _roster(builder) -> dict:
         return builder._TTMBuilder__manager._Manager__sub_agents
 
+    @staticmethod
+    def _delegate(name: str = "Researcher", **kwargs) -> Agent:
+        """A delegate Agent in the shape the parent can forward its deps into."""
+        return Agent(name=name, deps_type=DinamicDepend, **kwargs)
+
     def test_add_sub_agent_returns_self(self):
         """add_sub_agent returns self (fluent API)"""
         builder = TTMBuilder(name="TestBuilder")
-        result = builder.add_sub_agent(name="Researcher", description="Researches topics")
+        result = builder.add_sub_agent(self._delegate())
         assert result is builder
 
-    def test_add_sub_agent_without_services_builds(self):
-        """A sub-agent needs nothing but its own parameters to be delegable."""
+    def test_add_sub_agent_registers_the_given_agent(self):
+        """The very Agent handed in is the delegate -- not a rebuild of its parameters."""
         builder = TTMBuilder(name="TestBuilder")
-        builder.add_sub_agent(
-            name="Researcher",
-            description="Researches topics",
-            instructions="You research things",
-        )
+        agent = self._delegate("Researcher", instructions="You research things")
+        builder.add_sub_agent(agent)
         builder.build()
         assert builder.agent is not None
-        assert "Researcher" in self._roster(builder)
+        assert self._roster(builder)["Researcher"].agent is agent
 
-    def test_add_sub_agent_forwards_run_controls(self):
-        """Every SubAgent run control reaches the SubAgent (module.py build_as_agent)."""
-        from pydantic_ai.usage import UsageLimits
-
-        builder = TTMBuilder(name="TestBuilder")
-        builder.add_sub_agent(
-            name="Researcher",
+    def test_add_sub_agent_keeps_the_agent_parameters(self):
+        """Model, prompt and output type travel with the Agent; the builder adds nothing."""
+        agent = self._delegate(
+            "Researcher",
             description="Researches topics",
-            timeout_seconds=12.5,
-            max_calls=3,
-            on_failure="Retry with a narrower scope",
-            usage_limits=UsageLimits(request_limit=5),
-            contain_errors=True,
-        )
-        sub_agent = self._roster(builder)["Researcher"]
-        assert sub_agent.timeout_seconds == 12.5
-        assert sub_agent.max_calls == 3
-        assert sub_agent.on_failure == "Retry with a narrower scope"
-        assert sub_agent.usage_limits == UsageLimits(request_limit=5)
-        assert sub_agent.contain_errors is True
-
-    def test_add_sub_agent_forwards_agent_params(self):
-        """The pydantic_ai.Agent parameters reach the delegate's Agent."""
-        builder = TTMBuilder(name="TestBuilder")
-        builder.add_sub_agent(
-            name="Researcher",
-            description="Researches topics",
-            instructions="You research things",
-            tool_timeout=30.0,
-            retries=3,
             output_type=dict,
         )
-        agent = self._roster(builder)["Researcher"].agent
-        assert agent.name == "Researcher"
-        assert agent.description == "Researches topics"
-        assert agent._max_output_retries == 3
-        assert agent._tool_timeout == 30.0
-        assert agent.output_type is dict
+        builder = TTMBuilder(name="TestBuilder")
+        builder.add_sub_agent(agent)
+        delegate = self._roster(builder)["Researcher"]
+        assert delegate.agent is agent
+        assert delegate.agent.description == "Researches topics"
+        assert delegate.agent.output_type is dict
 
-    def test_add_sub_agent_takes_no_services(self):
-        """A sub-agent is a delegate, not a module: services is not part of it."""
+    def test_add_sub_agent_takes_only_the_agent(self):
+        """The caller builds the delegate, so registration params are not part of it."""
         import inspect
 
         params = inspect.signature(TTMBuilder.add_sub_agent).parameters
-        assert 'services' not in params
-        assert 'middleware' not in params
-        assert 'disable_middlewares' not in params
+        assert list(params) == ["self", "agent"]
 
     def test_add_module_still_requires_services(self):
         """add_module keeps demanding services (REQ-002)."""
@@ -403,18 +380,24 @@ class TestTTMBuilderAddSubAgent:
     def test_add_sub_agent_name_is_the_delegate_name(self):
         """The delegate resolves its name from the Agent (SubAgent.resolved_name)."""
         builder = TTMBuilder(name="TestBuilder")
-        builder.add_sub_agent(name="Researcher", description="Researches topics")
+        builder.add_sub_agent(self._delegate("Researcher"))
         assert self._roster(builder)["Researcher"].resolved_name == "Researcher"
 
-    def test_add_sub_agent_duplicate_raises(self):
-        """Registering the same sub-agent twice raises SubAgentAlreadyRegisteredError."""
+    def test_add_sub_agent_without_a_name_raises(self):
+        """A nameless Agent cannot be delegated to, so it is rejected at registration."""
         builder = TTMBuilder(name="TestBuilder")
-        builder.add_sub_agent(name="Researcher")
+        with pytest.raises(SubAgentNameRequiredError):
+            builder.add_sub_agent(Agent(deps_type=DinamicDepend))
+
+    def test_add_sub_agent_duplicate_raises(self):
+        """Registering the same delegate name twice raises SubAgentAlreadyRegisteredError."""
+        builder = TTMBuilder(name="TestBuilder")
+        builder.add_sub_agent(self._delegate("Researcher"))
         with pytest.raises(SubAgentAlreadyRegisteredError, match="Researcher"):
-            builder.add_sub_agent(name="Researcher")
+            builder.add_sub_agent(self._delegate("Researcher"))
 
     def test_sub_agent_takes_a_name_held_by_a_module(self):
-        """Modules and sub-agents share one roster (manager.py __register_sub_agent)."""
+        """Modules and sub-agents share one roster (manager.py __register_delegate)."""
         service = Service(
             name="User",
             service=UserService,
@@ -427,7 +410,7 @@ class TestTTMBuilderAddSubAgent:
             description="Commerce module",
         )
         with pytest.raises(SubAgentAlreadyRegisteredError, match="Commerce"):
-            builder.add_sub_agent(name="Commerce")
+            builder.add_sub_agent(self._delegate("Commerce"))
 
     def test_module_takes_a_name_held_by_a_sub_agent(self):
         """The collision is symmetric, and add_module keeps its own error type."""
@@ -437,7 +420,7 @@ class TestTTMBuilderAddSubAgent:
             instructions="User management"
         )
         builder = TTMBuilder(name="TestBuilder")
-        builder.add_sub_agent(name="Commerce", description="Commerce delegate")
+        builder.add_sub_agent(self._delegate("Commerce"))
         with pytest.raises(ModuleAlreadyRegisteredError, match="Commerce"):
             builder.add_module(
                 name="Commerce",
@@ -448,9 +431,9 @@ class TestTTMBuilderAddSubAgent:
     def test_sub_agent_duplicate_is_catchable_as_module_duplicate(self):
         """Back-compat: guarding the roster with ModuleAlreadyRegisteredError still works."""
         builder = TTMBuilder(name="TestBuilder")
-        builder.add_sub_agent(name="Researcher")
+        builder.add_sub_agent(self._delegate("Researcher"))
         with pytest.raises(ModuleAlreadyRegisteredError):
-            builder.add_sub_agent(name="Researcher")
+            builder.add_sub_agent(self._delegate("Researcher"))
 
     def test_modules_and_sub_agents_share_one_subagents_capability(self):
         """One roster means one SubAgents capability, hence one delegate tool."""
@@ -472,23 +455,25 @@ class TestTTMBuilderAddSubAgent:
             services=[service],
             description="Commerce module",
         )
-        builder.add_sub_agent(name="Researcher", description="Researches topics")
+        researcher = self._delegate("Researcher", description="Researches topics")
+        builder.add_sub_agent(researcher)
         builder.build()
 
         caps = [c for c in builder._TTMBuilder__manager.capabilities(None)
                 if isinstance(c, SubAgents)]
         assert len(caps) == 1
         assert list(caps[0]._by_name) == ["Commerce", "Researcher"]
+        assert caps[0]._by_name["Researcher"].agent is researcher
 
     def test_add_sub_agent_registers_no_services_on_the_parent_dependency(self):
         """A sub-agent has no services, so it puts nothing on the parent's dependency."""
         builder = TTMBuilder(name="TestBuilder")
-        builder.add_sub_agent(name="Researcher", description="Researches topics")
+        builder.add_sub_agent(self._delegate("Researcher", description="Researches topics"))
         with pytest.raises(AttributeError):
             _ = builder.dependency.Researcher
 
     def test_add_module_still_registers_services_on_the_parent_dependency(self):
-        """add_module keeps its contract after delegating to add_sub_agent."""
+        """add_module keeps its own contract next to add_sub_agent."""
         service = Service(
             name="User",
             service=UserService,

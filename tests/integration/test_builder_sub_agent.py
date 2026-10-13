@@ -90,7 +90,7 @@ class TestSubAgentDelegation:
         assert UserService.calls == ["Alice"]
 
     async def test_sub_agent_without_services_answers(self):
-        """A sub-agent needs nothing but its own parameters to be delegable."""
+        """A sub-agent needs nothing but to be a built Agent of its own."""
         def respond(messages, info: AgentInfo) -> ModelResponse:
             names = [tool.name for tool in info.function_tools]
             if "delegate_task" in names and not any(
@@ -103,16 +103,59 @@ class TestSubAgentDelegation:
             return ModelResponse(parts=[TextPart("answered")])
 
         builder = TTMBuilder(name="Root")
-        builder.add_sub_agent(
+        builder.add_sub_agent(Agent(
             name="Reasoner",
             description="Reasons without tools",
             instructions="Answer from the task alone",
-        )
+            deps_type=DinamicDepend,
+        ))
         builder.build(FunctionModel(respond))
 
         result = await builder.agent.run("go", deps=builder.dependency)
 
         assert result.output is not None
+
+    async def test_delegate_runs_the_agent_it_was_given(self):
+        """The delegate is the Agent the caller built: its own model and tools run."""
+        calls: list[str] = []
+
+        def search(query: str) -> str:
+            calls.append(query)
+            return "found"
+
+        def respond(messages, info: AgentInfo) -> ModelResponse:
+            names = [tool.name for tool in info.function_tools]
+            if "delegate_task" in names and not any(
+                type(p).__name__ == "ToolReturnPart" for m in messages for p in m.parts
+            ):
+                return ModelResponse(parts=[ToolCallPart(
+                    "delegate_task",
+                    {"agent_name": "Researcher", "task": "look up cats"},
+                )])
+            return ModelResponse(parts=[TextPart("parent finished")])
+
+        def delegate(messages, info: AgentInfo) -> ModelResponse:
+            names = [tool.name for tool in info.function_tools]
+            if "search" in names and not any(
+                type(p).__name__ == "ToolReturnPart" for m in messages for p in m.parts
+            ):
+                return ModelResponse(parts=[ToolCallPart("search", {"query": "cats"})])
+            return ModelResponse(parts=[TextPart("cats are found")])
+
+        builder = TTMBuilder(name="Root")
+        builder.add_sub_agent(Agent(
+            FunctionModel(delegate),
+            name="Researcher",
+            description="Researches topics",
+            instructions="Search before answering",
+            deps_type=DinamicDepend,
+            tools=[search],
+        ))
+        builder.build(FunctionModel(respond))
+
+        await builder.agent.run("go", deps=builder.dependency)
+
+        assert calls == ["cats"]
 
     async def test_delegate_tool_needs_the_services_on_the_parent_dependency(self):
         """Guards the invariant `add_module` upholds.
