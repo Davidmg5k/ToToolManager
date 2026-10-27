@@ -3,7 +3,7 @@ from typing import Any
 from to_tool_manager.exception import DependencyNotSetError
 
 
-class DinamicDepend:
+class Dependency:
     """Dynamic dependency for services."""
 
     def __init__(self):

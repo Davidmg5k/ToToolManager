@@ -13,7 +13,7 @@ from pydantic_ai import (
 from pydantic_ai.models import KnownModelName, Model
 
 from to_tool_manager.core.builder.ttm_builder import TTMBuilder
-from to_tool_manager.core.main.shared.dinamic_depend import DinamicDepend
+from to_tool_manager.core.main.shared.dependency import Dependency
 
 
 class BaseAgent(ABC):
@@ -148,7 +148,7 @@ class BaseAgent(ABC):
             pydantic-ai deliberately accepts heterogeneous values.
         """
         self.__agent: Agent | None = None
-        self.__dependency: DinamicDepend | None = None
+        self.__dependency: Dependency | None = None
 
         self.__name: str = name
         self.__capabilities: List | None = capabilities
@@ -247,7 +247,7 @@ class BaseAgent(ABC):
         return self.__agent
 
     @property
-    def dependency(self) -> DinamicDepend:
+    def dependency(self) -> Dependency:
         """Returns the dependency container populated by the last `init_agent()` call.
 
         The container holds one instance per service registered through

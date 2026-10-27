@@ -5,10 +5,10 @@ from typing import TYPE_CHECKING, Callable, Sequence
 if TYPE_CHECKING:
     from to_tool_manager.core.main.service import Service
 
-from to_tool_manager.core.main.shared.dinamic_depend import DinamicDepend
+from to_tool_manager.core.main.shared.dependency import Dependency
 
 
-def service_to_dependency(service: Service, dinamic_depend: DinamicDepend) -> None:
+def service_to_dependency(service: Service, dinamic_depend: Dependency) -> None:
     """Registers the service as a dynamic dependency.
 
     Precondition: service is a valid Service, dinamic_depend is valid
@@ -24,7 +24,7 @@ def build_module_capabilities(
     services: Sequence[Service],
     capabilities: list,
     apply_middleware_fn: Callable[[Service], None],
-    dep: DinamicDepend,
+    dep: Dependency,
 ) -> list:
     """Builds capabilities for each service in a module.
 

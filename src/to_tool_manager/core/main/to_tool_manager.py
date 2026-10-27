@@ -13,7 +13,7 @@ from pydantic_ai_harness.subagents import SubAgents
 
 from to_tool_manager.core.main.module import Module
 from to_tool_manager.core.main.service import Service
-from to_tool_manager.core.main.shared.dinamic_depend import DinamicDepend
+from to_tool_manager.core.main.shared.dependency import Dependency
 from to_tool_manager.core.middleware.middleware import Middleware
 from to_tool_manager.exception import (
     AgentNotBuiltError,
@@ -58,8 +58,8 @@ class ToToolManager:
         Postcondition: __services, __modules and __middlewares initialized
         """
         self.__name = name
-        self.__agent: Agent[DinamicDepend] | None = None
-        self.__dep = DinamicDepend()
+        self.__agent: Agent[Dependency] | None = None
+        self.__dep = Dependency()
 
         # Store Agent parameters for build_agent()
         self.__agent_params: Dict[str, Any] = {
@@ -100,7 +100,7 @@ class ToToolManager:
         return self.__name
 
     @property
-    def agent(self) -> Agent[DinamicDepend]:
+    def agent(self) -> Agent[Dependency]:
         """Returns the built agent.
 
         Precondition: build_agent() has been called
@@ -232,7 +232,7 @@ class ToToolManager:
     def build_agent(self,
         resources: Sequence[Service | Module] | None = None,
         middlewares: Sequence[Middleware] | None = None
-    ) -> Agent[DinamicDepend]:
+    ) -> Agent[Dependency]:
         """Builds the agent with registered services and modules.
 
         Precondition: services or modules registered
@@ -275,7 +275,7 @@ class ToToolManager:
 
         agent = Agent(
             name=self.__name,
-            deps_type=DinamicDepend,
+            deps_type=Dependency,
             **agent_params,
         )
 

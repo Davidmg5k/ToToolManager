@@ -3,7 +3,7 @@ from pydantic_ai_skills import Skill
 from to_tool_manager.core.builder.manager import Manager
 from to_tool_manager.core.main.module import Module
 from to_tool_manager.core.main.service import Service
-from to_tool_manager.core.main.shared.dinamic_depend import DinamicDepend
+from to_tool_manager.core.main.shared.dependency import Dependency
 from to_tool_manager.core.main.to_tool_manager import ToToolManager
 from to_tool_manager.core.middleware.middleware import Middleware
 from to_tool_manager.exception import (
@@ -62,7 +62,7 @@ class TestManagerRegistration:
     def test_add_service_duplicate_raises(self):
         """Adding the same service twice raises ServiceAlreadyRegisteredError (manager.py:84)."""
         manager = Manager()
-        dep = DinamicDepend()
+        dep = Dependency()
         service = Service(
             name="User",
             service=UserService,
@@ -98,7 +98,7 @@ class TestManagerRegistration:
     def test_apply_middlewares_to_services_initializes_none(self):
         """apply_middlewares_to_services initializes None middleware lists (manager.py:158)."""
         manager = Manager()
-        dep = DinamicDepend()
+        dep = Dependency()
         service = Service(
             name="User",
             service=UserService,

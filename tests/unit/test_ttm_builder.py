@@ -3,7 +3,7 @@ import pytest
 from pydantic_ai import Agent
 from to_tool_manager.core.builder.ttm_builder import TTMBuilder
 from to_tool_manager.core.main.service import Service
-from to_tool_manager.core.main.shared.dinamic_depend import DinamicDepend
+from to_tool_manager.core.main.shared.dependency import Dependency
 from to_tool_manager.core.middleware.middleware import Middleware
 from to_tool_manager.infra.types.main.service import Exclude, Include
 from to_tool_manager.exception import (
@@ -332,7 +332,7 @@ class TestTTMBuilderAddSubAgent:
     @staticmethod
     def _delegate(name: str = "Researcher", **kwargs) -> Agent:
         """A delegate Agent in the shape the parent can forward its deps into."""
-        return Agent(name=name, deps_type=DinamicDepend, **kwargs)
+        return Agent(name=name, deps_type=Dependency, **kwargs)
 
     def test_add_sub_agent_returns_self(self):
         """add_sub_agent returns self (fluent API)"""
@@ -387,7 +387,7 @@ class TestTTMBuilderAddSubAgent:
         """A nameless Agent cannot be delegated to, so it is rejected at registration."""
         builder = TTMBuilder(name="TestBuilder")
         with pytest.raises(SubAgentNameRequiredError):
-            builder.add_sub_agent(Agent(deps_type=DinamicDepend))
+            builder.add_sub_agent(Agent(deps_type=Dependency))
 
     def test_add_sub_agent_duplicate_raises(self):
         """Registering the same delegate name twice raises SubAgentAlreadyRegisteredError."""
@@ -731,14 +731,14 @@ class TestTTMBuilderExtraPaths:
         from pydantic_ai import Agent
 
         builder = TTMBuilder(name="TestBuilder")
-        agent = Agent(name="External", deps_type=DinamicDepend)
+        agent = Agent(name="External", deps_type=Dependency)
         builder.agent = agent
         assert builder.agent is agent
 
     def test_dependency_property(self):
         """dependency property exposes the builder dependency (ttm_builder.py:114)."""
         builder = TTMBuilder(name="TestBuilder")
-        assert isinstance(builder.dependency, DinamicDepend)
+        assert isinstance(builder.dependency, Dependency)
 
     def test_build_applies_general_middlewares(self):
         """build() applies registered general middlewares to services (ttm_builder.py:184, 463-464)."""

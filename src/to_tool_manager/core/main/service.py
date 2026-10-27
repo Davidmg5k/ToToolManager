@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Tuple
 from pydantic_ai import Capability
 from pydantic_ai.tools import Tool
 
-from to_tool_manager.core.main.shared.dinamic_depend import DinamicDepend
+from to_tool_manager.core.main.shared.dependency import Dependency
 from to_tool_manager.core.main.shared.discover import MethodMeta, discover_methods
 from to_tool_manager.core.main.shared.tool_factory import make_tool
 from to_tool_manager.core.main.shared.util import service_to_dependency
@@ -91,7 +91,7 @@ class Service:
             defer_loading=True,
         )
 
-    def service_to_dependency(self, dinamic_depend: DinamicDepend) -> None:
+    def service_to_dependency(self, dinamic_depend: Dependency) -> None:
         """Registers the service as a dynamic dependency.
 
         Precondition: dinamic_depend is a valid DinamicDepend

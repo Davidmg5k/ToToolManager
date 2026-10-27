@@ -14,7 +14,7 @@ from pydantic_ai.usage import UsageLimits
 from pydantic_ai_harness.subagents import SubAgent
 
 from to_tool_manager.core.main.service import Service
-from to_tool_manager.core.main.shared.dinamic_depend import DinamicDepend
+from to_tool_manager.core.main.shared.dependency import Dependency
 from to_tool_manager.core.main.shared.util import build_module_capabilities
 from to_tool_manager.core.middleware.middleware import Middleware
 from to_tool_manager.exception import (
@@ -69,18 +69,18 @@ class Module:
     contain_errors: bool | None = None
 
     def __post_init__(self):
-        self.__agent: Agent[DinamicDepend] | None = None
-        self.__dep = DinamicDepend()
+        self.__agent: Agent[Dependency] | None = None
+        self.__dep = Dependency()
         self._validate_no_self_disable()
 
     @property
-    def agent(self) -> Agent[DinamicDepend]:
+    def agent(self) -> Agent[Dependency]:
         if self.__agent is None:
             raise AgentNotBuiltError("Module")
         return self.__agent
 
     @agent.setter
-    def agent(self, agent: Agent[DinamicDepend]):
+    def agent(self, agent: Agent[Dependency]):
         if self.__agent:
             raise AgentAlreadyBuiltError("Module")
         self.__agent = agent
@@ -107,7 +107,7 @@ class Module:
             if mw_name in disable_set:
                 raise SelfDisableMiddlewareError(mw_name)
 
-    def build_as_agent(self) -> SubAgent[DinamicDepend]:
+    def build_as_agent(self) -> SubAgent[Dependency]:
         """Builds the module as a SubAgent with its services.
 
         Precondition: none -- an empty `services` yields a plain delegate
@@ -133,7 +133,7 @@ class Module:
         agent = Agent(
             name=self.name,
             description=self.description,
-            deps_type=DinamicDepend,
+            deps_type=Dependency,
             capabilities=capabilities,
             model=self.model,
             instructions=self.instructions,

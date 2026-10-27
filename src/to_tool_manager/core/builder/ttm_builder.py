@@ -17,7 +17,7 @@ from pydantic_ai_skills import Skill
 from to_tool_manager.core.main.module import Module
 from to_tool_manager.core.main.service import Service
 from to_tool_manager.core.builder.manager import Manager
-from to_tool_manager.core.main.shared.dinamic_depend import DinamicDepend
+from to_tool_manager.core.main.shared.dependency import Dependency
 from to_tool_manager.core.main.to_tool_manager import ToToolManager
 from to_tool_manager.core.middleware.middleware import Middleware
 from to_tool_manager.exception.agent import AgentAlreadyBuiltError
@@ -60,7 +60,7 @@ class TTMBuilder:
         """
         self.__manager = Manager()
         self.__agent: Agent | None = None
-        self.__dep = DinamicDepend()
+        self.__dep = Dependency()
 
         self.__name = name
         self.__capabilities = capabilities
@@ -107,7 +107,7 @@ class TTMBuilder:
         self.__agent = agent
 
     @property
-    def dependency(self) -> DinamicDepend:
+    def dependency(self) -> Dependency:
         """Returns the dependency instance with registered services.
 
         Precondition: add_service() has been called at least once
@@ -166,7 +166,7 @@ class TTMBuilder:
             toolsets=toolsets,  # type: ignore
             capabilities=capabilities,
             instructions=effective_instructions or self.__name,
-            deps_type=DinamicDepend,
+            deps_type=Dependency,
             system_prompt=effective_system_prompt,
             model_settings=effective_model_settings,
             retries=effective_retries,

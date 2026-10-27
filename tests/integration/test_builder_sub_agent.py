@@ -14,7 +14,7 @@ from to_tool_manager.core.builder.manager import Manager
 from to_tool_manager.core.builder.ttm_builder import TTMBuilder
 from to_tool_manager.core.main.module import Module
 from to_tool_manager.core.main.service import Service
-from to_tool_manager.core.main.shared.dinamic_depend import DinamicDepend
+from to_tool_manager.core.main.shared.dependency import Dependency
 from to_tool_manager.exception import DependencyNotSetError
 
 
@@ -107,7 +107,7 @@ class TestSubAgentDelegation:
             name="Reasoner",
             description="Reasons without tools",
             instructions="Answer from the task alone",
-            deps_type=DinamicDepend,
+            deps_type=Dependency,
         ))
         builder.build(FunctionModel(respond))
 
@@ -148,7 +148,7 @@ class TestSubAgentDelegation:
             name="Researcher",
             description="Researches topics",
             instructions="Search before answering",
-            deps_type=DinamicDepend,
+            deps_type=Dependency,
             tools=[search],
         ))
         builder.build(FunctionModel(respond))
@@ -178,13 +178,13 @@ class TestSubAgentDelegation:
         agent = Agent(
             _delegating_model("User"),
             name="Root",
-            deps_type=DinamicDepend,
+            deps_type=Dependency,
             capabilities=manager.capabilities(None),
         )
 
         UserService.calls = []
         try:
-            await agent.run("go", deps=DinamicDepend())
+            await agent.run("go", deps=Dependency())
         except DependencyNotSetError as exc:
             assert "User" in str(exc)
         else:

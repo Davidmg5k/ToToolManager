@@ -4,7 +4,7 @@ from typing import Any, Callable
 from pydantic_ai.tools import RunContext
 
 from to_tool_manager.core.main.shared.discover import MethodMeta
-from to_tool_manager.core.main.shared.dinamic_depend import DinamicDepend
+from to_tool_manager.core.main.shared.dependency import Dependency
 
 
 def make_tool(service_name: str, method_meta: MethodMeta) -> Callable[..., Any]:
@@ -25,7 +25,7 @@ def make_tool(service_name: str, method_meta: MethodMeta) -> Callable[..., Any]:
     is_effectively_async = inspect.iscoroutinefunction(method_func)
 
     if is_effectively_async:
-        async def async_wrapper(ctx: RunContext[DinamicDepend], **kwargs: Any) -> Any:
+        async def async_wrapper(ctx: RunContext[Dependency], **kwargs: Any) -> Any:
             instance = getattr(ctx.deps, service_name)
             bound = method_func.__get__(instance, type(instance))
             try:
@@ -34,7 +34,7 @@ def make_tool(service_name: str, method_meta: MethodMeta) -> Callable[..., Any]:
                 return f"Error in {service_name}.{method_name}: {type(e).__name__}: {e}"
         wrapper = async_wrapper
     else:
-        def sync_wrapper(ctx: RunContext[DinamicDepend], **kwargs: Any) -> Any:
+        def sync_wrapper(ctx: RunContext[Dependency], **kwargs: Any) -> Any:
             instance = getattr(ctx.deps, service_name)
             bound = method_func.__get__(instance, type(instance))
             try:
@@ -64,7 +64,7 @@ def make_tool(service_name: str, method_meta: MethodMeta) -> Callable[..., Any]:
     # Build explicit signature so pydantic_ai generates the correct JSON schema.
     # Without this, inspect.signature() sees **kwargs and the LLM doesn't see the real parameters.
     sig_params = [
-        inspect.Parameter('ctx', inspect.Parameter.POSITIONAL_OR_KEYWORD, annotation=RunContext[DinamicDepend])
+        inspect.Parameter('ctx', inspect.Parameter.POSITIONAL_OR_KEYWORD, annotation=RunContext[Dependency])
     ]
     for pname, param in method_meta.parameters.items():
         sig_params.append(param.replace(kind=inspect.Parameter.KEYWORD_ONLY))

@@ -14,7 +14,7 @@ Postcondition under test (precondición de integración con frameworks):
 
 import pytest
 
-from to_tool_manager.core.main.shared.dinamic_depend import DinamicDepend
+from to_tool_manager.core.main.shared.dependency import Dependency
 from to_tool_manager.exception import DependencyNotSetError
 
 
@@ -23,44 +23,44 @@ class TestDinamicDependContract:
 
     def test_set_and_get_attribute(self):
         """Dynamically set attributes are retrievable by name."""
-        dep = DinamicDepend()
+        dep = Dependency()
         dep.user = {"id": 1}
         assert dep.user == {"id": 1}
 
     def test_hasattr_returns_false_for_missing(self):
         """hasattr() must return False instead of raising."""
-        dep = DinamicDepend()
+        dep = Dependency()
         dep.user = {"id": 1}
         assert hasattr(dep, "user") is True
         assert hasattr(dep, "missing") is False
 
     def test_getattr_with_default_for_missing(self):
         """getattr() must return the default for missing attributes."""
-        dep = DinamicDepend()
+        dep = Dependency()
         assert getattr(dep, "missing", "DEFAULT") == "DEFAULT"
 
     def test_direct_access_raises_dependency_not_set(self):
         """Direct access to a missing attribute raises DependencyNotSetError."""
-        dep = DinamicDepend()
+        dep = Dependency()
         with pytest.raises(DependencyNotSetError):
             dep.missing
 
     def test_error_is_attribute_error(self):
         """DependencyNotSetError must be an AttributeError subclass."""
-        dep = DinamicDepend()
+        dep = Dependency()
         with pytest.raises(AttributeError):
             dep.missing
 
     def test_error_is_catchable_as_service_error(self):
         """Backwards compatibility: still catchable as ServiceError/TTMError."""
-        dep = DinamicDepend()
+        dep = Dependency()
         with pytest.raises(Exception) as exc_info:
             dep.missing
         assert isinstance(exc_info.value, DependencyNotSetError)
 
     def test_internal_attributes_use_object_semantics(self):
         """Private attrs (underscore-prefixed) bypass the dynamic store."""
-        dep = DinamicDepend()
+        dep = Dependency()
         dep._internal = 42
         assert dep._internal == 42
         data = object.__getattribute__(dep, "_data")
@@ -68,14 +68,14 @@ class TestDinamicDependContract:
 
     def test_name_attribute_on_exception(self):
         """The exception carries the missing attribute name."""
-        dep = DinamicDepend()
+        dep = Dependency()
         with pytest.raises(DependencyNotSetError) as exc_info:
             dep.missing
         assert exc_info.value.name == "missing"
 
     def test_overwrite_allowed(self):
         """Attributes can be overwritten dynamically."""
-        dep = DinamicDepend()
+        dep = Dependency()
         dep.value = 1
         dep.value = 2
         assert dep.value == 2

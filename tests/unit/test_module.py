@@ -1,7 +1,7 @@
 import pytest
 from to_tool_manager.core.main.module import Module
 from to_tool_manager.core.main.service import Service
-from to_tool_manager.core.main.shared.dinamic_depend import DinamicDepend
+from to_tool_manager.core.main.shared.dependency import Dependency
 from to_tool_manager.exception import (
     AgentAlreadyBuiltError,
     AgentNotBuiltError,
@@ -439,7 +439,7 @@ class TestModuleEdgePaths:
             services=[service],
             description="Commerce module"
         )
-        assert isinstance(module.dependency, DinamicDepend)
+        assert isinstance(module.dependency, Dependency)
 
     def test_non_middleware_skipped_in_self_disable_validation(self):
         """Non-Middleware entries are skipped in _validate_no_self_disable (module.py:90)"""

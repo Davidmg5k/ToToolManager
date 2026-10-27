@@ -7,7 +7,7 @@ from pydantic_ai_skills import Skill
 
 from to_tool_manager.core.main.module import Module
 from to_tool_manager.core.main.service import Service
-from to_tool_manager.core.main.shared.dinamic_depend import DinamicDepend
+from to_tool_manager.core.main.shared.dependency import Dependency
 from to_tool_manager.core.main.to_tool_manager import ToToolManager
 from to_tool_manager.core.middleware.middleware import Middleware
 from to_tool_manager.exception import (
@@ -31,7 +31,7 @@ class Manager:
     def __init__(self) -> None:
         self.__services: Dict[str, Capability] = {}
         self.__service_objects: Dict[str, Service] = {}
-        self.__sub_agents: Dict[str, SubAgent[DinamicDepend]] = {}
+        self.__sub_agents: Dict[str, SubAgent[Dependency]] = {}
         self.__skills: List[Skill] = []
         self.__ttm: Dict[str, ToToolManager] = {}
 
@@ -68,7 +68,7 @@ class Manager:
         # `AbstractCapability`. `AbstractCapability` is the common base, and the
         # deps type must be spelled out because it is invariant -- a bare
         # `Capability` would reject `SubAgents[DinamicDepend]`.
-        caps: List[AbstractCapability[DinamicDepend]] = list(
+        caps: List[AbstractCapability[Dependency]] = list(
             self.__services.values()
         )
         sub_agents = self.__sub_agents
@@ -89,7 +89,7 @@ class Manager:
         """
         return self.__service_objects
 
-    def add_service(self, service: Service, dep: DinamicDepend):
+    def add_service(self, service: Service, dep: Dependency):
         """Adds a service to the manager.
 
         Precondition: service.name is unique, dep is valid
@@ -116,7 +116,7 @@ class Manager:
             module.build_as_agent,
         )
 
-    def add_sub_agent(self, sub_agent: SubAgent[DinamicDepend]):
+    def add_sub_agent(self, sub_agent: SubAgent[Dependency]):
         """Adds a delegate Agent to the manager.
 
         The delegate arrives already built: its name -- the key of the roster
@@ -141,7 +141,7 @@ class Manager:
         self,
         name: str,
         already_registered_error: type[ModuleAlreadyRegisteredError],
-        build_delegate: Callable[[], SubAgent[DinamicDepend]],
+        build_delegate: Callable[[], SubAgent[Dependency]],
     ) -> None:
         """Registers a delegate in the sub-agent roster, failing if the name is taken.
 
