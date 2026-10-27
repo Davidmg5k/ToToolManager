@@ -24,7 +24,8 @@ Hierarchy:
     │   └── MiddlewareTargetMismatchError
     └── BuilderError
         ├── ToToolManagerAlreadyRegisteredError
-        └── ToToolManagerNotFoundError
+        ├── ToToolManagerNotFoundError
+        └── FastMCPNotInstalledError
 """
 
 from to_tool_manager.exception._ttm_error import TTMError
@@ -59,6 +60,7 @@ from to_tool_manager.exception.builder import (
     BuilderError,
     ToToolManagerAlreadyRegisteredError,
     ToToolManagerNotFoundError,
+    FastMCPNotInstalledError,
 )
 
 __all__ = [
@@ -83,4 +85,5 @@ __all__ = [
     "BuilderError",
     "ToToolManagerAlreadyRegisteredError",
     "ToToolManagerNotFoundError",
+    "FastMCPNotInstalledError",
 ]

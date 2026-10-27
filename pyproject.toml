@@ -31,7 +31,6 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "fastmcp>=4.0.2",
     "pydantic-ai-harness>=0.28.0",
     "pydantic-ai-skills>=1.4.0",
     "pydantic-ai-slim[cli,openai]>=2.37.0",
@@ -77,6 +76,9 @@ dev = [
     "pytest-cov>=6.0.0",
     "beautifulsoup4>=4.15.0",
     "pydantic-ai-harness[playwright]>=0.28.0",
+]
+fastmcp = [
+    "fastmcp>=4.0.9",
 ]
 
 [tool.coverage.run]

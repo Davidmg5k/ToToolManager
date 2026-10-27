@@ -56,6 +56,7 @@ from to_tool_manager.exception import (
     BuilderError,
     ToToolManagerAlreadyRegisteredError,
     ToToolManagerNotFoundError,
+    FastMCPNotInstalledError,
 )
 
 __all__ = [
@@ -91,6 +92,7 @@ __all__ = [
     "BuilderError",
     "ToToolManagerAlreadyRegisteredError",
     "ToToolManagerNotFoundError",
+    "FastMCPNotInstalledError",
 ]
 
 

@@ -1,6 +1,5 @@
-from typing import Any, List, Sequence, Tuple, cast
+from typing import TYPE_CHECKING, Any, List, Sequence, Tuple, cast
 
-from fastmcp import FastMCP
 from pydantic_ai import (
     Agent,
     AgentModelSettings,
@@ -24,6 +23,13 @@ from to_tool_manager.exception.agent import AgentAlreadyBuiltError
 from to_tool_manager.infra.types.main.service import Include, Exclude
 from to_tool_manager.infra.types.main.signature import MethodsType
 from to_tool_manager.exception import AgentNotBuiltError
+from to_tool_manager.exception.builder import FastMCPNotInstalledError
+
+if TYPE_CHECKING:
+    # Import-only for annotations: `fastmcp` is an optional dependency-group
+    # (see pyproject.toml), so importing it at module level would break
+    # `import to_tool_manager` for every consumer that does not install it.
+    from fastmcp import FastMCP
 
 
 class TTMBuilder:
@@ -341,14 +347,24 @@ class TTMBuilder:
     def to_mcp_tool(self, 
         name: str, 
         instructions: str
-    ) -> FastMCP:
+    ) -> 'FastMCP':
         """Converts the builder into an MCP server.
 
-        Precondition: name and instructions are valid strings
-        Postcondition: returns FastMCP with registered tools
-        
+        Precondition: name and instructions are valid strings and the optional
+            `fastmcp` dependency-group is installed
+        Postcondition: returns FastMCP with registered tools, or raises
+            FastMCPNotInstalledError when `fastmcp` is absent
+
         Reference: REQ-008
         """
+        # Imported here, not at module level: `fastmcp` is an optional
+        # dependency-group, so its absence must not break `import
+        # to_tool_manager` -- only this MCP entry point is gated.
+        try:
+            from fastmcp import FastMCP
+        except ImportError as exc:
+            raise FastMCPNotInstalledError() from exc
+
         if self.__agent is None:
             self.build()
 
