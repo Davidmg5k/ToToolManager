@@ -33,7 +33,7 @@ classifiers = [
 dependencies = [
     "pydantic-ai-harness>=0.28.0",
     "pydantic-ai-skills>=1.4.0",
-    "pydantic-ai-slim[cli,openai]>=2.37.0",
+    "pydantic-ai-slim[cli]>=2.37.0",
     "pydantic-graph>=2.37.0",
     "subagents-pydantic-ai>=0.2.21",
 ]
