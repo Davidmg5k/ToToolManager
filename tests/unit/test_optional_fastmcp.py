@@ -74,7 +74,7 @@ class TestToMCPToolWithoutFastMCP:
         with pytest.raises(FastMCPNotInstalledError) as exc_info:
             _builder().to_mcp_tool(name="MCP", instructions="Tools")
 
-        assert "fastmcp is not installed" in str(exc_info.value)
+        assert "fastmcp server support is not installed" in str(exc_info.value)
 
     def test_error_is_a_ttm_builder_error(self, monkeypatch):
         """Postcondition: catchable via the public exception hierarchy."""

@@ -824,7 +824,7 @@ builder.build()
 
 **Return**: `FastMCP` — a server instance you can run or mount.
 
-**Raises**: `FastMCPNotInstalledError` — if `fastmcp` is not installed. The message states the install command; the original `ImportError` is chained as `__cause__`.
+**Raises**: `FastMCPNotInstalledError` — if the `fastmcp` group is missing (or only `fastmcp-slim[client]` is present, without the server extra). The message states the install command; the upstream `ImportError` is chained as `__cause__`.
 
 **Args**:
 
@@ -1280,7 +1280,7 @@ TTMError
 | `MiddlewareTargetMismatchError` | `'{name}' is not a {expected}. Use the correct method for the target type.` | Calling `add/remove_middleware_to_service` on a module name, or `…_to_module` on a service name. |
 | `ToToolManagerAlreadyRegisteredError` | `ToToolManager '{name}' already registered` | `TTMBuilder.add_ttm` with a duplicate name. |
 | `ToToolManagerNotFoundError` | `ToToolManager '{name}' not found` | Internal `Manager` lookup by TTM name. Not reachable through the documented public flow. |
-| `FastMCPNotInstalledError` | `fastmcp is not installed, so TTMBuilder.to_mcp_tool() is unavailable. Install it in your project with: uv add "fastmcp>=4.0.9" (inside this repository: uv sync --all-groups).` | `TTMBuilder.to_mcp_tool()` when the optional `fastmcp` group is absent. The package still imports; only this entry point is gated. |
+| `FastMCPNotInstalledError` | `fastmcp server support is not installed, so TTMBuilder.to_mcp_tool() is unavailable. Install it in your project with: uv add "fastmcp>=4.0.9" (inside this repository: uv sync --all-groups).` | `TTMBuilder.to_mcp_tool()` when the `fastmcp` group is absent — or when only `fastmcp-slim[client]` landed and the server extra is missing. The package still imports; only this entry point is gated. The upstream `ImportError` is chained as `__cause__`. |
 
 `HumanInputRetry` is raised by *your* HITL logic and caught by the middleware; it is not part of this hierarchy.
 
@@ -1827,6 +1827,20 @@ Service exceptions are caught by the generated wrapper and returned as the strin
 
 `GraphMiddlewareRunner.run` returns `None` both when a middleware blocks and when the graph legitimately ends with `None`. Log inside `before_transition` if you need to tell them apart.
 
+### `uv add` fails with "pywin32 ... doesn't have a source distribution or wheel for the current platform"
+
+`pywin32` arrives transitively (`fastmcp` → `mcp`) and is Windows-only. On Windows it publishes wheels for **standard** CPython `cp9`–`cp315` only — there is no free-threaded (`cp314t`/`cp315t`) wheel and no sdist to build from. Run a standard interpreter instead:
+
+```bash
+uv python pin 3.14     # standard CPython, not 3.14t
+```
+
+Check what you are on with `uv run python -c "import sys; print(sys.version, sys.implementation)"`. Linux and macOS are unaffected: the `sys_platform == 'win32'` marker keeps `pywin32` out of the graph. Note that adding the optional `fastmcp` group re-introduces this dependency.
+
+### `FastMCPNotInstalledError` when I export to MCP
+
+The `fastmcp` group is not part of the published metadata, so installing `to-tool-manager` alone never brings it. Run `uv add fastmcp` in your project (or `uv sync --all-groups` in this repository). Everything except `to_mcp_tool()` works without it.
+
 ---
 
 ## Development
@@ -1834,15 +1848,17 @@ Service exceptions are caught by the generated wrapper and returned as the strin
 ```bash
 git clone https://github.com/Davidmg5k/ToToolManager.git
 cd ToToolManager
-uv sync --extra pydantic-ai
+uv sync --extra pydantic-ai --group fastmcp
 ```
+
+`--group fastmcp` is not optional here: the MCP tests import `fastmcp`, and `uv run` re-syncs with the default groups only — without it the suite fails with `FastMCPNotInstalledError`.
 
 | Task | Command |
 |---|---|
-| Run the test suite | `uv run pytest -q` |
-| Type-check | `uv run --with pyright pyright src/` |
+| Run the test suite | `uv run --group fastmcp pytest -q` |
+| Type-check | `uv run --group fastmcp --with pyright pyright src/` |
 | Dependency audit | `uv run --with pip-audit pip-audit` |
-| Coverage | `uv run pytest --cov` (gate: `fail_under = 79`) |
+| Coverage | `uv run --group fastmcp pytest --cov` (gate: `fail_under = 79`) |
 
 The suite is organised as `tests/unit`, `tests/integration`, `tests/system`, `tests/use_cases` and `tests/perf`. CI runs tests on Python 3.12 and 3.13, plus pyright and pip-audit (`.github/workflows/ci.yml`).
 

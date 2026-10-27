@@ -45,7 +45,8 @@ class FastMCPNotInstalledError(BuilderError):
 
     def __init__(self) -> None:
         super().__init__(
-            "fastmcp is not installed, so TTMBuilder.to_mcp_tool() is unavailable. "
-            'Install it in your project with: uv add "fastmcp>=4.0.9" '
+            "fastmcp server support is not installed, so TTMBuilder.to_mcp_tool() "
+            'is unavailable. Install it in your project with: '
+            'uv add "fastmcp>=4.0.9" '
             "(inside this repository: uv sync --all-groups)."
         )
