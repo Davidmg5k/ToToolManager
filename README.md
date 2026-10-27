@@ -101,7 +101,8 @@ Building an LLM application normally forces you to repeat this loop for every ca
 |---|---|
 | Python | `>=3.12` (tested on 3.12 and 3.13) |
 | Build backend | `uv_build>=0.8.15,<0.9.0` |
-| Runtime deps | `pydantic-ai-slim[cli,openai]`, `pydantic-ai-harness`, `pydantic-ai-skills`, `pydantic-graph`, `subagents-pydantic-ai`, `fastmcp` |
+| Runtime deps | `pydantic-ai-slim[cli,openai]`, `pydantic-ai-harness`, `pydantic-ai-skills`, `pydantic-graph`, `subagents-pydantic-ai` |
+| Optional group | `fastmcp` — required **only** by `TTMBuilder.to_mcp_tool()`; not installed by default (see [Installation](#installation)) |
 | Model access | Whatever provider your pydantic-ai model needs (OpenAI by default via the `openai` extra) |
 
 **Direct dependencies** (from `pyproject.toml`):
@@ -113,7 +114,12 @@ Building an LLM application normally forces you to repeat this loop for every ca
 | `pydantic-ai-skills` | `>=1.4.0` |
 | `pydantic-graph` | `>=2.37.0` |
 | `subagents-pydantic-ai` | `>=0.2.21` |
-| `fastmcp` | `>=4.0.2` |
+
+**Optional dependency-group** (PEP 735). Dependency-groups are *not* published in the package metadata, so a consumer that installs `to-tool-manager` does **not** receive `fastmcp` — install it explicitly to use the MCP export:
+
+| Package | Constraint | Unlocks |
+|---|---|---|
+| `fastmcp` | `>=4.0.9` | `TTMBuilder.to_mcp_tool()` and [Exporting tools to an MCP server](#exporting-tools-to-an-mcp-server) |
 
 `cryptography>=50.0.0` is pinned as a transitive override to pick up the PYSEC-2026-3552 fix regardless of what the auth stack resolves to.
 
@@ -138,6 +144,17 @@ git clone https://github.com/Davidmg5k/ToToolManager.git
 cd ToToolManager
 uv sync --extra pydantic-ai
 ```
+
+### Enabling the MCP export
+
+`fastmcp` is a PEP 735 dependency-group, so it is **never installed automatically** — neither by `pip`/`uv add to-tool-manager` nor by a plain `uv sync`. Install it explicitly:
+
+```bash
+uv add fastmcp             # consuming project
+uv sync --group fastmcp    # clone of this repository (or --all-groups)
+```
+
+Without it the package still imports and every non-MCP API works; only `TTMBuilder.to_mcp_tool()` raises [`FastMCPNotInstalledError`](#exceptions).
 
 ---
 
@@ -803,7 +820,11 @@ builder.build()
 
 **Description**: Exports the builder's tools as a `FastMCP` server, exposing each service method as a flat tool with the original signature (the injected `ctx` parameter is stripped and the types are preserved). Tools belonging to `Module` sub-agents are skipped — the sub-agent manages them internally. Builds the agent first if needed.
 
+**Precondition**: the optional `fastmcp` dependency-group is installed. It is imported lazily, inside this method, so its absence never breaks `import to_tool_manager`.
+
 **Return**: `FastMCP` — a server instance you can run or mount.
+
+**Raises**: `FastMCPNotInstalledError` — if `fastmcp` is not installed. The message states the install command; the original `ImportError` is chained as `__cause__`.
 
 **Args**:
 
@@ -1239,7 +1260,8 @@ TTMError
 │   └── MiddlewareTargetMismatchError(name: str, expected: str)
 └── BuilderError
     ├── ToToolManagerAlreadyRegisteredError(name: str)
-    └── ToToolManagerNotFoundError(name: str)
+    ├── ToToolManagerNotFoundError(name: str)
+    └── FastMCPNotInstalledError()
 ```
 
 | Exception | Message | Raised when |
@@ -1258,6 +1280,7 @@ TTMError
 | `MiddlewareTargetMismatchError` | `'{name}' is not a {expected}. Use the correct method for the target type.` | Calling `add/remove_middleware_to_service` on a module name, or `…_to_module` on a service name. |
 | `ToToolManagerAlreadyRegisteredError` | `ToToolManager '{name}' already registered` | `TTMBuilder.add_ttm` with a duplicate name. |
 | `ToToolManagerNotFoundError` | `ToToolManager '{name}' not found` | Internal `Manager` lookup by TTM name. Not reachable through the documented public flow. |
+| `FastMCPNotInstalledError` | `fastmcp is not installed, so TTMBuilder.to_mcp_tool() is unavailable. Install it in your project with: uv add "fastmcp>=4.0.9" (inside this repository: uv sync --all-groups).` | `TTMBuilder.to_mcp_tool()` when the optional `fastmcp` group is absent. The package still imports; only this entry point is gated. |
 
 `HumanInputRetry` is raised by *your* HITL logic and caught by the middleware; it is not part of this hierarchy.
 
@@ -1595,6 +1618,8 @@ A module may not disable a middleware it declares itself — doing so raises `Se
 ### Exporting tools to an MCP server
 
 `to_mcp_tool` republishes the builder's tools over MCP with flat signatures, ready for Claude Desktop or any MCP client.
+
+**Prerequisite**: `fastmcp` must be installed (`uv add fastmcp`). It is an optional dependency-group, not a runtime dependency — without it this call raises `FastMCPNotInstalledError` while the rest of the package keeps working.
 
 ```python
 mcp = builder.to_mcp_tool(
