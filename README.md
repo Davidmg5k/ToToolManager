@@ -194,7 +194,7 @@ manager = ToToolManager(
             instructions="Use for user creation and lookup.",
         )
     ],
-    model="openai:gpt-4o",
+    model="test",
 )
 
 agent = manager.build_agent()   # ready to use
@@ -206,7 +206,19 @@ Run it with the pydantic-ai CLI:
 pydantic-ai to_tool_manager.quickstart:agent
 ```
 
-> Building the agent validates the model, so it needs provider credentials to be present. While developing offline, swap the model for pydantic-ai's built-in test model: `model="test"`. It needs no API key and still exercises discovery, middleware and tool wrapping.
+> The quickstart uses pydantic-ai's built-in test model, so it runs with **no API key and no network** — it still exercises discovery, middleware and tool wrapping.
+
+To drive a real model, install that provider's package first — `to-tool-manager` ships none of them — and pass its name instead:
+
+```bash
+pip install "pydantic-ai-slim[openai]"   # or [anthropic], [groq], …
+```
+
+```python
+model="openai:gpt-4o"
+```
+
+Building the agent validates the model, so a real provider needs its credentials present at build time.
 
 ---
 
