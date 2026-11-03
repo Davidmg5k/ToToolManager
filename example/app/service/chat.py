@@ -1,4 +1,4 @@
-﻿from datetime import datetime
+﻿from datetime import datetime, timezone
 
 from app.exception import NotFoundException
 from app.service.resource.repository import ChatSessionRepository, ChatMessageRepository
@@ -25,13 +25,13 @@ class ChatService:
 
     async def update_session_title(self, data: UpdateChatSession):
         self.__session_repo.get_or_raise(data.chat_id, "ChatSession")
-        return self.__session_repo.update(data.chat_id, {"title": data.title, "updated_at": datetime.utcnow()})
+        return self.__session_repo.update(data.chat_id, {"title": data.title, "updated_at": datetime.now(timezone.utc)})
 
     async def update_session_status(self, data: UpdateChatSessionStatus):
         self.__session_repo.get_or_raise(data.chat_id, "ChatSession")
         return self.__session_repo.update(data.chat_id, {
             "is_processing": data.is_processing,
-            "updated_at": datetime.utcnow(),
+            "updated_at": datetime.now(timezone.utc),
         })
 
     async def delete_session(self, data: GetChatSession):
@@ -42,7 +42,7 @@ class ChatService:
 
     async def add_message(self, data: CreateChatMessage):
         msg = self.__message_repo.create(data)
-        self.__session_repo.update(data.chat_id, {"updated_at": datetime.utcnow()})
+        self.__session_repo.update(data.chat_id, {"updated_at": datetime.now(timezone.utc)})
         return msg
 
     async def get_messages(self, data: GetChatSession):

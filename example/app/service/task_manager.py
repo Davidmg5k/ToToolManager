@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
@@ -22,7 +22,7 @@ class _ChatTask:
         self.task_id = task_id
         self.chat_id = chat_id
         self.status = ChatTaskStatus.PENDING
-        self.created_at = datetime.utcnow()
+        self.created_at = datetime.now(timezone.utc)
         self.completed_at: datetime | None = None
         self.error: str | None = None
         self._async_task: asyncio.Task | None = None
@@ -91,7 +91,7 @@ class ChatTaskManager:
             ):
                 raise ValueError(f"Chat {chat_id} already has a running task")
 
-        task_id = f"{key}:{int(datetime.utcnow().timestamp())}"
+        task_id = f"{key}:{int(datetime.now(timezone.utc).timestamp())}"
         task = _ChatTask(task_id, chat_id)
         task.status = ChatTaskStatus.PENDING
         self._active[key] = task
@@ -117,7 +117,7 @@ class ChatTaskManager:
             except asyncio.CancelledError:
                 pass
             task.status = ChatTaskStatus.FAILED
-            task.completed_at = datetime.utcnow()
+            task.completed_at = datetime.now(timezone.utc)
             await self._notify(task)
             self._cleanup_session_flag(chat_id, False)
             return True
@@ -145,7 +145,7 @@ class ChatTaskManager:
             if title:
                 from app.service.resource.repository import ChatSessionRepository
                 session_repo = ChatSessionRepository(chat_session)
-                session_repo.update(chat_id, {"title": title, "updated_at": datetime.utcnow()})
+                session_repo.update(chat_id, {"title": title, "updated_at": datetime.now(timezone.utc)})
 
             from app.controller import (
                 build_user_service,
@@ -207,17 +207,17 @@ class ChatTaskManager:
                 chat_id=chat_id, role="assistant", content=full_response,
             ))
             session_repo.update(chat_id, {
-                "updated_at": datetime.utcnow(),
+                "updated_at": datetime.now(timezone.utc),
                 "is_processing": False,
             })
 
             task.status = ChatTaskStatus.COMPLETED
-            task.completed_at = datetime.utcnow()
+            task.completed_at = datetime.now(timezone.utc)
 
         except asyncio.CancelledError:
             task.status = ChatTaskStatus.FAILED
             task.error = "Cancelled"
-            task.completed_at = datetime.utcnow()
+            task.completed_at = datetime.now(timezone.utc)
             self._set_session_flag(chat_id, False)
             raise
 
@@ -225,7 +225,7 @@ class ChatTaskManager:
             logger.exception("Background task failed for chat %s", chat_id)
             task.status = ChatTaskStatus.FAILED
             task.error = str(exc)
-            task.completed_at = datetime.utcnow()
+            task.completed_at = datetime.now(timezone.utc)
 
             try:
                 from app.service.resource.repository import (
@@ -240,7 +240,7 @@ class ChatTaskManager:
                     content=f"[Error] {exc}",
                 ))
                 session_repo.update(chat_id, {
-                    "updated_at": datetime.utcnow(),
+                    "updated_at": datetime.now(timezone.utc),
                     "is_processing": False,
                 })
             except Exception:
@@ -291,7 +291,7 @@ class ChatTaskManager:
             obj = session.exec(stmt).first()
             if obj is not None:
                 obj.is_processing = value
-                obj.updated_at = datetime.utcnow()
+                obj.updated_at = datetime.now(timezone.utc)
                 session.add(obj)
                 session.commit()
         except Exception:

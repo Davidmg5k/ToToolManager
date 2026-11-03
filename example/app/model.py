@@ -1,4 +1,4 @@
-﻿from datetime import datetime
+﻿from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
 from sqlalchemy import Enum as SAEnum
@@ -10,6 +10,20 @@ from app.types.inventory import CreateProduct
 from app.types.payment import CreatePayment, PaymentMethod, PaymentStatus
 from app.types.notification import CreateNotification, NotificationChannel, NotificationStatus
 from app.types.chat import CreateChatSession, CreateChatMessage
+
+
+def _utcnow() -> datetime:
+    """Current UTC time, timezone-aware.
+
+    Precondition: none.
+    Postcondition: returns `datetime.now(timezone.utc)` — a naive `utcnow()`
+    raises `ValueError: Datetime values must have timezone information` on
+    flush, because SQLModel's `Datetime` column type stores tz-aware values.
+
+    Returns:
+        datetime: the current instant with `tzinfo=timezone.utc`.
+    """
+    return datetime.now(timezone.utc)
 
 
 class User(CreateUser, table=True):
@@ -53,11 +67,11 @@ class NotificationRecord(CreateNotification, table=True):
 class ChatSession(CreateChatSession, table=True):
     chat_id: UUID = Field(default_factory=uuid4, primary_key=True)
     is_processing: bool = Field(default=False)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
+    updated_at: datetime = Field(default_factory=_utcnow)
 
 
 class ChatMessage(CreateChatMessage, table=True):
     message_id: UUID = Field(default_factory=uuid4, primary_key=True)
     chat_id: UUID = Field(foreign_key="chatsession.chat_id", index=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)

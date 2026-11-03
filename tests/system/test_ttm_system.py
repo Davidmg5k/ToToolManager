@@ -22,6 +22,8 @@ Validation order by blast radius (axioma-auditoria):
 Test model: groq:openai/gpt-oss-120b
 """
 
+import os
+
 import pytest
 from dotenv import load_dotenv
 
@@ -38,6 +40,22 @@ load_dotenv()
 # GLOBAL MODEL FOR SYSTEM TESTS
 # ============================================================
 TEST_MODEL = "groq:openai/gpt-oss-120b"
+
+# ============================================================
+# CREDENTIAL GATE
+# ============================================================
+# Every test marked with `requires_groq_key` builds a real Groq-backed Agent
+# (or runs it), so it needs a live credential: without one pydantic-ai raises
+# `UserError: Set the GROQ_API_KEY environment variable ...` before any code
+# under test executes, failing the suite for a reason unrelated to the code.
+#
+# These are skipped (not xfailing) so the gate stays honest — with the key
+# present they run for real and must pass. Declared after `load_dotenv()` so a
+# repository-local `.env` is honoured.
+requires_groq_key = pytest.mark.skipif(
+    not os.environ.get("GROQ_API_KEY"),
+    reason="GROQ_API_KEY not set; skipping tests that build or run a real Groq agent",
+)
 
 
 # ============================================================
@@ -332,6 +350,7 @@ class TestToToolManagerIntegration:
 class TestTTMBuilderWithLLM:
     """System tests for TTMBuilder with groq:openai/gpt-oss-120b."""
 
+    @requires_groq_key
     def test_builder_creates_agent_with_model(self):
         """REQ-004: TTMBuilder creates Agent with specified model."""
         builder = TTMBuilder(name="TestAgent")
@@ -345,6 +364,7 @@ class TestTTMBuilderWithLLM:
         assert builder.agent is not None
         assert builder.agent.name == "TestAgent"
 
+    @requires_groq_key
     def test_builder_fluent_api_with_model(self):
         """REQ-004: TTMBuilder fluent API works with model."""
         builder = (
@@ -364,6 +384,7 @@ class TestTTMBuilderWithLLM:
         builder.build(TEST_MODEL)
         assert builder.agent is not None
 
+    @requires_groq_key
     def test_builder_with_module_and_model(self):
         """REQ-004: TTMBuilder works with modules and model."""
         service = Service(
@@ -393,6 +414,7 @@ class TestTTMBuilderWithLLM:
         # build() is called automatically in __exit__
         assert builder.agent is not None
 
+    @requires_groq_key
     def test_to_mcp_tool(self):
         """REQ-008: to_mcp_tool() creates MCP server."""
         from fastmcp import FastMCP
@@ -414,6 +436,7 @@ class TestTTMBuilderWithLLM:
         assert mcp_app.name == "OrderMCP"
 
 
+@requires_groq_key
 class TestAgentExecutionWithLLM:
     """Real agent execution tests with groq:openai/gpt-oss-120b."""
 
@@ -514,6 +537,7 @@ class TestAgentExecutionWithLLM:
 # REQ-001 through REQ-008
 # ============================================================
 
+@requires_groq_key
 class TestAcceptanceFullFlow:
     """Acceptance tests: full usage flow."""
 
