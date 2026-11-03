@@ -3066,7 +3066,7 @@ source = { editable = "." }
 dependencies = [
     { name = "pydantic-ai-harness" },
     { name = "pydantic-ai-skills" },
-    { name = "pydantic-ai-slim", extra = ["cli", "openai"] },
+    { name = "pydantic-ai-slim", extra = ["cli"] },
     { name = "pydantic-graph" },
     { name = "subagents-pydantic-ai" },
 ]
@@ -3102,7 +3102,7 @@ requires-dist = [
     { name = "pydantic-ai-harness", marker = "extra == 'pydantic-ai'", specifier = ">=0.7.0,<1.0.0" },
     { name = "pydantic-ai-skills", specifier = ">=1.4.0" },
     { name = "pydantic-ai-skills", marker = "extra == 'pydantic-ai'", specifier = ">=1.2.0,<2.0.0" },
-    { name = "pydantic-ai-slim", extras = ["cli", "openai"], specifier = ">=2.37.0" },
+    { name = "pydantic-ai-slim", extras = ["cli"], specifier = ">=2.37.0" },
     { name = "pydantic-graph", specifier = ">=2.37.0" },
     { name = "subagents-pydantic-ai", specifier = ">=0.2.21" },
     { name = "subagents-pydantic-ai", marker = "extra == 'pydantic-ai'", specifier = ">=0.2.10,<0.3.0" },
