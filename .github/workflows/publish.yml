@@ -1,0 +1,90 @@
+name: Publish to PyPI
+
+# Trigger: pushing a version tag (`v0.9.6`). Publishing is deliberately NOT
+# wired to push/PR events — a release must be an explicit, human-initiated act.
+#
+# Trusted Publishing (OIDC): PyPI has a pending publisher registered for this
+# repository, so no API token or secret is stored anywhere. PyPI matches the
+# publisher on OWNER/REPO + WORKFLOW FILENAME + REF, which is why this file
+# must be named `publish.yml` in the PyPI publisher configuration.
+#
+# Risk order (axioma-despliegue): every check runs in `gate` first; `publish`
+# only runs if the gate passed, and it re-builds nothing — it uploads the exact
+# artifact the gate validated.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: Release gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify tag matches pyproject version
+        run: |
+          PKG_VERSION="$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")"
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match pyproject version ${PKG_VERSION}. Refusing to publish."
+            exit 1
+          fi
+          echo "Publishing version ${PKG_VERSION}"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --extra pydantic-ai
+
+      - name: Run tests
+        run: uv run pytest -q
+
+      - name: Run pyright
+        run: uv run --with pyright pyright src/
+
+      - name: Validate pyproject
+        run: uvx --with "packaging>=24.2" validate-pyproject pyproject.toml
+
+      - name: Build distributions
+        run: uv build
+
+      - name: Check metadata
+        run: uvx twine check --strict dist/*
+
+      - name: Upload artifact for the publish job
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Upload to PyPI
+    needs: gate
+    runs-on: ubuntu-latest
+    # `id-token: write` is mandatory for Trusted Publishing and must stay at
+    # job level to avoid exposing it to the test/typecheck steps.
+    permissions:
+      id-token: write
+    steps:
+      - name: Download the artifact validated by the gate
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
