@@ -4,11 +4,12 @@ version = "0.9.6"
 description = "Convert Python service classes into AI tool specifications for LLM integration"
 readme = {file = "README.md", content-type = "text/markdown"}
 authors = [
-    { name = "Conectar Wali SAS", email = "conectarwalisas@gmail.com" }
+    { name = "David Martínez Guerrero", email = "dmartinezguerrero77@gmail.com" },
+    { name = "Conectar Wali SAS", email = "dev@conectarwalisas.com.co" }
 ]
 requires-python = ">=3.12"
 license = "MIT"
-repository = "https://github.com/Davidmg5k/ToToolManager"
+license-files = ["LICENSE"]
 keywords = [
     "llm",
     "agents",
