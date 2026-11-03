@@ -24,7 +24,7 @@
   - [`Module`](#module)
   - [`ToToolManager`](#totoolmanager)
   - [`TTMBuilder`](#ttmbuilder)
-  - [`DinamicDepend`](#dinamicdepend)
+  - [`Dependency`](#dependency)
   - [`BaseAgent`](#baseagent)
   - [`Include` / `Exclude` / `MethodsType`](#include--exclude--methodstype)
 - [Middleware](#middleware)
@@ -101,15 +101,15 @@ Building an LLM application normally forces you to repeat this loop for every ca
 |---|---|
 | Python | `>=3.12` (tested on 3.12 and 3.13) |
 | Build backend | `uv_build>=0.8.15,<0.9.0` |
-| Runtime deps | `pydantic-ai-slim[cli,openai]`, `pydantic-ai-harness`, `pydantic-ai-skills`, `pydantic-graph`, `subagents-pydantic-ai` |
+| Runtime deps | `pydantic-ai-slim[cli]`, `pydantic-ai-harness`, `pydantic-ai-skills`, `pydantic-graph`, `subagents-pydantic-ai` |
 | Optional group | `fastmcp` — required **only** by `TTMBuilder.to_mcp_tool()`; not installed by default (see [Installation](#installation)) |
-| Model access | Whatever provider your pydantic-ai model needs (OpenAI by default via the `openai` extra) |
+| Model access | Not included. Install the provider package for whichever model you use (see [Quickstart](#quickstart)) |
 
 **Direct dependencies** (from `pyproject.toml`):
 
 | Package | Constraint |
 |---|---|
-| `pydantic-ai-slim[cli,openai]` | `>=2.37.0` |
+| `pydantic-ai-slim[cli]` | `>=2.37.0` |
 | `pydantic-ai-harness` | `>=0.28.0` |
 | `pydantic-ai-skills` | `>=1.4.0` |
 | `pydantic-graph` | `>=2.37.0` |
@@ -351,7 +351,7 @@ A `@dataclass(slots=True)` describing one class whose public methods become tool
 
 **Args**:
 
-- `dinamic_depend`: `DinamicDepend` — container that will hold the instance.
+- `dinamic_depend`: `Dependency` — container that will hold the instance.
 
 **Kwargs**: None.
 
@@ -403,7 +403,7 @@ A `@dataclass` describing a sub-agent: a named `Agent` plus its per-delegate run
 
 **Description**: Returns the sub-agent's `Agent`.
 
-**Return**: `Agent[DinamicDepend]` — the built agent.
+**Return**: `Agent[Dependency]` — the built agent.
 
 **Raises**: `AgentNotBuiltError` — if `build_as_agent()` has not been called yet.
 
@@ -415,7 +415,7 @@ The setter accepts an `Agent` and raises `AgentAlreadyBuiltError` if one is alre
 
 **Description**: Returns the container holding one instance per service of this module.
 
-**Return**: `DinamicDepend` — the dependency container, populated during `build_as_agent()`.
+**Return**: `Dependency` — the dependency container, populated during `build_as_agent()`.
 
 **Args** / **Kwargs**: None.
 
@@ -423,7 +423,7 @@ The setter accepts an `Agent` and raises `AgentAlreadyBuiltError` if one is alre
 
 **Description**: Applies this module's middleware to each service (respecting both disable lists), builds each service's capability, registers every instance on `self.dependency`, constructs the `Agent` and returns it wrapped in a `SubAgent`.
 
-**Return**: `SubAgent[DinamicDepend]` — the sub-agent to hand to `ToToolManager` or `TTMBuilder`.
+**Return**: `SubAgent[Dependency]` — the sub-agent to hand to `ToToolManager` or `TTMBuilder`.
 
 **Raises**: `AgentAlreadyBuiltError` — on a second call; the `agent` setter refuses to overwrite. Build each `Module` exactly once.
 
@@ -480,7 +480,7 @@ Registers services and modules, then builds the top-level `Agent`.
 
 **Description**: Returns the built agent.
 
-**Return**: `Agent[DinamicDepend]` — the agent created by `build_agent()`.
+**Return**: `Agent[Dependency]` — the agent created by `build_agent()`.
 
 **Raises**: `AgentNotBuiltError` — if `build_agent()` has not been called.
 
@@ -530,7 +530,7 @@ Registers services and modules, then builds the top-level `Agent`.
 
 **Description**: Registers every service instance as a dependency, builds each module into a `SubAgent`, collects them into a `SubAgents` toolset and constructs the top-level `Agent`. Calling it more than once is safe — the agent is replaced.
 
-**Return**: `Agent[DinamicDepend]` — the assembled agent, also available through `.agent`.
+**Return**: `Agent[Dependency]` — the assembled agent, also available through `.agent`.
 
 **Args**:
 
@@ -645,7 +645,7 @@ Fluent, declarative assembly. Same output as `ToToolManager`, different ergonomi
 
 **Description**: Returns the container holding one instance per registered service.
 
-**Return**: `DinamicDepend` — populated as services are added.
+**Return**: `Dependency` — populated as services are added.
 
 **Args** / **Kwargs**: None.
 
@@ -683,7 +683,7 @@ Fluent, declarative assembly. Same output as `ToToolManager`, different ergonomi
 
 **Description**: Registers an already built `pydantic_ai.Agent` as a delegate the main agent can delegate to, and returns `self`. The delegate is the Agent you constructed, so its model, prompt, instructions, tools and toolsets travel with it — the builder only wraps it as a `SubAgent` and puts it on the roster. A sub-agent is a **delegate, not a module**: it carries no services of its own. To delegate a group of services, use [`add_module`](#ttmbuilderadd_module--method) instead.
 
-The Agent's `name` is the roster key and the name the parent model delegates to, so build it with `name=...`. Build it with `deps_type=DinamicDepend` as well if its tools read the framework's dependency container: the parent forwards its own `DinamicDepend` into every delegate run.
+The Agent's `name` is the roster key and the name the parent model delegates to, so build it with `name=...`. Build it with `deps_type=Dependency` as well if its tools read the framework's dependency container: the parent forwards its own `Dependency` into every delegate run.
 
 Modules and sub-agents share **one roster**, so a name is taken whichever way it was registered, and they are exposed through a single `SubAgents` capability — hence a single `delegate_task` tool.
 
@@ -691,7 +691,7 @@ Modules and sub-agents share **one roster**, so a name is taken whichever way it
 
 **Args**:
 
-- `agent`: `Agent[DinamicDepend]` — *(required)* the delegate, already built. Its `name` is the roster key and the delegation name; its `description` is what the parent model reads when deciding to delegate.
+- `agent`: `Agent[Dependency]` — *(required)* the delegate, already built. Its `name` is the roster key and the delegation name; its `description` is what the parent model reads when deciding to delegate.
 
 Per-delegation run controls (`usage_limits`, `timeout_seconds`, `max_calls`, `on_failure`, `contain_errors`) are not part of this method — they live on [`Module`](#module) and are applied by `ToToolManager`.
 
@@ -835,7 +835,7 @@ builder.build()
 
 ---
 
-### `DinamicDepend`
+### `Dependency`
 
 The dependency container attached to every agent. Not re-exported from the package root; reach it through `TTMBuilder.dependency` or `Module.dependency`, and inside tools through `ctx.deps`.
 
@@ -908,7 +908,7 @@ Abstract base class for platform agents. It hides the `TTMBuilder` lifecycle beh
 
 **Description**: Returns the dependency container populated by the last `init_agent()` call — one instance per service registered in `_composer()`, the same object tools receive as `ctx.deps`.
 
-**Return**: `DinamicDepend` — the populated container.
+**Return**: `Dependency` — the populated container.
 
 **Raises**: `RuntimeError` — if `init_agent()` has not been called yet, or its last call failed.
 
@@ -957,7 +957,7 @@ wrapper = UserAgent(
 wrapper.init_agent()
 
 agent = wrapper.agent                 # pydantic_ai.Agent, ready to run
-deps = wrapper.dependency             # DinamicDepend with the "users" service
+deps = wrapper.dependency             # Dependency with the "users" service
 ```
 
 ---
@@ -1270,7 +1270,7 @@ TTMError
 | `SelfDisableMiddlewareError` | `Cannot disable middleware '{middleware_name}' in the same class that declares it. Disable it in the parent layer (ToToolManager or Module) instead.` | `Module(...)` construction, when `disable_middlewares` names one of its own middlewares. |
 | `ServiceNotFoundError` | `Unknown service '{name}'` | `ToToolManager.get_service`, `add_middleware_to_*`, `remove_middleware_to_*`, or `TTMBuilder.remove_middleware_to_service` for an unknown name. |
 | `ServiceAlreadyRegisteredError` | `Service '{name}' already registered` | `TTMBuilder.add_service` with a duplicate name. |
-| `DependencyNotSetError` | `DinamicDepend has no attribute '{name}'` | Reading a service name that was never registered. Also an `AttributeError`, so `hasattr` returns `False`. |
+| `DependencyNotSetError` | `DinamicDepend has no attribute '{name}'` | Reading a service name that was never registered. Also an `AttributeError`, so `hasattr` returns `False`. The message still says `DinamicDepend` — the legacy name of the class now called [`Dependency`](#dependency). |
 | `ModuleAlreadyRegisteredError` | `Module '{name}' already registered` | `TTMBuilder.add_module` with a duplicate name. |
 | `SubAgentAlreadyRegisteredError` | `Sub-agent '{name}' already registered in the sub-agent roster` | `TTMBuilder.add_sub_agent` with an Agent whose name is already held by a module or another sub-agent. Subclasses `ModuleAlreadyRegisteredError`, so guarding the roster with the latter keeps catching it. |
 | `SubAgentNameRequiredError` | `Sub-agent has no name. Build it as Agent(name=..., ...) -- the name is what the parent model delegates to.` | `TTMBuilder.add_sub_agent` with an `Agent` built without a `name`. Raised at registration, not at build time. |
@@ -1434,7 +1434,7 @@ builder.build()
 service_instance = builder.dependency.user_service
 ```
 
-Because the instance is registered on `DinamicDepend`, you can also reach it from inside a tool or a middleware via `ctx.deps.user_service`.
+Because the instance is registered on `Dependency`, you can also reach it from inside a tool or a middleware via `ctx.deps.user_service`.
 
 ### Async services and DI
 
@@ -1569,7 +1569,7 @@ with TTMBuilder("root", model="openai:gpt-4o") as builder:
 agent = builder.agent      # build() runs on context-manager exit
 ```
 
-Everything about the delegate is yours to configure, because the delegate *is* the `Agent`: its model and prompt above, or its own `tools=[...]` / `toolsets=[...]`. If one of its tools reads the framework's dependency container, build it with `deps_type=DinamicDepend` (`to_tool_manager.core.main.shared.dinamic_depend`; not re-exported from the package root) — the parent forwards its own `DinamicDepend` into every delegate run.
+Everything about the delegate is yours to configure, because the delegate *is* the `Agent`: its model and prompt above, or its own `tools=[...]` / `toolsets=[...]`. If one of its tools reads the framework's dependency container, build it with `deps_type=Dependency` (`to_tool_manager.core.main.shared.dependency`; not re-exported from the package root) — the parent forwards its own `Dependency` into every delegate run.
 
 Modules and sub-agents occupy one roster, so the parent sees every delegate through a single `delegate_task` tool, and a name is taken whichever way it was registered.
 
