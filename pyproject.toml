@@ -58,6 +58,14 @@ requires = ["uv_build>=0.8.15,<0.9.0"]
 build-backend = "uv_build"
 
 [tool.uv]
+# The MCP contract tests (`TTMBuilder.to_mcp_tool()`) need the `fastmcp` group,
+# so it is part of the default development environment. Without it a sync still
+# installs `fastmcp-slim[client]` transitively (via pydantic-ai-slim, lock:2101),
+# which ships the `fastmcp` module but NOT its `[server]` extra -- leaving
+# `uncalled_for` absent and 14 tests red with FastMCPNotInstalledError.
+# Dependency groups are never published in the package metadata (PEP 735), so
+# this affects only this repository's development environment.
+default-groups = ["dev", "fastmcp"]
 # Transitive dependency of the fastmcp/pydantic-ai-harness auth stack
 # (authlib, google-auth, joserfc, pyjwt all pull it in). Forces a floor
 # on cryptography specifically -- rather than adding it as a direct

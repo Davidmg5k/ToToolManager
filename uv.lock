@@ -3063,6 +3063,7 @@ wheels = [
 name = "to-tool-manager"
 version = "0.9.6"
 source = { editable = "." }
+default-groups = ["dev", "fastmcp"]
 dependencies = [
     { name = "pydantic-ai-harness" },
     { name = "pydantic-ai-skills" },

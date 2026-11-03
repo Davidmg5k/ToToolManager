@@ -24,7 +24,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv sync --extra pydantic-ai
+        run: uv sync --extra pydantic-ai --all-groups
 
       - name: Run tests
         run: uv run pytest -q
@@ -43,7 +43,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: uv sync --extra pydantic-ai
+        run: uv sync --extra pydantic-ai --all-groups
 
       - name: Run pyright
         run: uv run --with pyright pyright src/
@@ -62,7 +62,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: uv sync --extra pydantic-ai
+        run: uv sync --extra pydantic-ai --all-groups
 
       - name: Run pip-audit
         run: uv run --with pip-audit pip-audit

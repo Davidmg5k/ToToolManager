@@ -45,8 +45,13 @@ jobs:
         with:
           python-version: "3.12"
 
+      # `--all-groups` is required: the MCP contract tests need the `fastmcp`
+      # group. Without it `uv sync` still installs `fastmcp-slim[client]`
+      # (transitively, via pydantic-ai-slim), which provides the `fastmcp`
+      # module but not its `[server]` extra — so `to_mcp_tool()` fails with
+      # FastMCPNotInstalledError and 14 tests go red.
       - name: Install dependencies
-        run: uv sync --extra pydantic-ai
+        run: uv sync --extra pydantic-ai --all-groups
 
       - name: Run tests
         run: uv run pytest -q
